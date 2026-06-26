@@ -1,5 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
   LayoutDashboard,
   Package,
@@ -15,12 +16,27 @@ import {
   TrendingUp,
   DollarSign,
   Plus,
+  FileText,
+  Loader2,
+  type LucideIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetTrigger, SheetTitle } from "@/components/ui/sheet";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { cn } from "@/lib/utils";
+import { getSesion, cerrarSesion, getMenuPaginas, type PaginaMenu } from "@/lib/api";
+
+// Mapea palabras clave del título de la página a un icono.
+function iconoParaPagina(title: string): LucideIcon {
+  const t = title.toLowerCase();
+  if (/(inventario|producto|stock|almac)/.test(t)) return Package;
+  if (/(venta|factura|pedido|caja)/.test(t)) return ShoppingCart;
+  if (/(cliente|proveedor|contacto|usuario)/.test(t)) return Users;
+  if (/(reporte|estad|grafic|dashboard)/.test(t)) return BarChart3;
+  if (/(ajuste|config|parametr|setting)/.test(t)) return Settings;
+  return FileText;
+}
 
 export const Route = createFileRoute("/home")({
   head: () => ({
@@ -48,6 +64,21 @@ function HomePage() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const navigate = useNavigate();
 
+  // Redirige al login si no hay sesión
+  const sesion = getSesion();
+  if (!sesion) {
+    navigate({ to: "/" });
+    return null;
+  }
+
+  const usuario = sesion.usuario || "Usuario";
+  const iniciales = usuario.slice(0, 2).toUpperCase();
+
+  function logout() {
+    cerrarSesion();
+    navigate({ to: "/" });
+  }
+
   function handleNav(key: NavKey) {
     setActive(key);
     setMobileOpen(false);
@@ -57,14 +88,14 @@ function HomePage() {
     <div className="flex min-h-screen bg-background">
       {/* Desktop sidebar */}
       <aside className="hidden lg:flex w-64 shrink-0 flex-col bg-sidebar text-sidebar-foreground">
-        <SidebarContent active={active} onNav={handleNav} onLogout={() => navigate({ to: "/" })} />
+        <SidebarContent active={active} onNav={handleNav} onLogout={logout} usuario={usuario} iniciales={iniciales} />
       </aside>
 
       {/* Mobile sidebar */}
       <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
         <SheetContent side="left" className="w-72 border-0 bg-sidebar p-0 text-sidebar-foreground">
           <SheetTitle className="sr-only">Menú de navegación</SheetTitle>
-          <SidebarContent active={active} onNav={handleNav} onLogout={() => navigate({ to: "/" })} />
+          <SidebarContent active={active} onNav={handleNav} onLogout={logout} usuario={usuario} iniciales={iniciales} />
         </SheetContent>
       </Sheet>
 
@@ -94,14 +125,14 @@ function HomePage() {
             </Button>
             <ThemeToggle />
             <div className="ml-2 hidden h-9 w-9 place-items-center rounded-full bg-gradient-primary font-display text-sm font-bold text-primary-foreground sm:grid">
-              AD
+              {iniciales}
             </div>
           </div>
         </header>
 
         {/* Page content */}
         <main className="flex-1 p-4 sm:p-6 lg:p-8">
-          {active === "dashboard" && <DashboardView />}
+          {active === "dashboard" && <DashboardView usuario={usuario} />}
           {active !== "dashboard" && <PlaceholderView label={NAV.find((n) => n.key === active)!.label} />}
         </main>
       </div>
@@ -113,18 +144,20 @@ function SidebarContent({
   active,
   onNav,
   onLogout,
+  usuario,
+  iniciales,
 }: {
   active: NavKey;
   onNav: (k: NavKey) => void;
   onLogout: () => void;
+  usuario: string;
+  iniciales: string;
 }) {
   return (
     <div className="flex h-full flex-col">
       {/* Brand */}
       <div className="flex h-16 items-center gap-3 border-b border-sidebar-border px-5">
-        <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-gradient-primary shadow-glow">
-          <Droplet className="h-5 w-5 text-primary-foreground" />
-        </div>
+        <img src={`${import.meta.env.BASE_URL}logo.png`} alt="Lubrimec" className="h-12 w-12 shrink-0 rounded-xl bg-white object-contain p-1 shadow-glow" />
         <div className="min-w-0">
           <div className="font-display text-lg font-bold leading-none">Lubrimesys</div>
           <div className="mt-1 text-[10px] uppercase tracking-widest text-sidebar-foreground/50">
@@ -160,11 +193,10 @@ function SidebarContent({
       <div className="border-t border-sidebar-border p-3">
         <div className="mb-2 flex items-center gap-3 rounded-lg bg-sidebar-accent/50 px-3 py-2.5">
           <div className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-gradient-primary font-display text-sm font-bold text-primary-foreground">
-            AD
+            {iniciales}
           </div>
           <div className="min-w-0">
-            <div className="truncate text-sm font-semibold">Admin</div>
-            <div className="truncate text-xs text-sidebar-foreground/60">admin@lubrimesys.com</div>
+            <div className="truncate text-sm font-semibold">{usuario}</div>
           </div>
         </div>
         <button
@@ -179,7 +211,7 @@ function SidebarContent({
   );
 }
 
-function DashboardView() {
+function DashboardView({ usuario }: { usuario: string }) {
   const stats = [
     { label: "Ventas hoy", value: "$ 12.450", change: "+12,4%", icon: DollarSign },
     { label: "Pedidos", value: "324", change: "+8,1%", icon: ShoppingCart },
@@ -201,7 +233,7 @@ function DashboardView() {
       <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4 sm:flex sm:flex-wrap sm:justify-between">
         <div className="min-w-0">
           <h1 className="truncate font-display text-2xl font-bold tracking-tight sm:text-3xl">
-            Buenos días, Admin
+            Buenos días, {usuario}
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
             Aquí tienes el resumen de tu negocio.
@@ -271,29 +303,57 @@ function DashboardView() {
         {/* Quick actions */}
         <div className="rounded-2xl border border-border bg-card p-5 shadow-elegant">
           <h2 className="font-display text-lg font-bold">Accesos rápidos</h2>
-          <div className="mt-4 grid grid-cols-2 gap-3">
-            {[
-              { l: "Inventario", i: Package },
-              { l: "Clientes", i: Users },
-              { l: "Reportes", i: BarChart3 },
-              { l: "Ajustes", i: Settings },
-            ].map((q) => {
-              const I = q.i;
-              return (
-                <button
-                  key={q.l}
-                  className="flex flex-col items-start gap-2 rounded-xl border border-border bg-background p-4 text-left transition-all hover:-translate-y-0.5 hover:border-primary hover:shadow-glow"
-                >
-                  <div className="grid h-9 w-9 place-items-center rounded-lg bg-primary/10 text-primary">
-                    <I className="h-4 w-4" />
-                  </div>
-                  <span className="text-sm font-semibold">{q.l}</span>
-                </button>
-              );
-            })}
-          </div>
+          <QuickActions />
         </div>
       </div>
+    </div>
+  );
+}
+
+function QuickActions() {
+  const { data, isLoading, isError, error } = useQuery({
+    queryKey: ["menu-paginas"],
+    queryFn: getMenuPaginas,
+    staleTime: 5 * 60 * 1000,
+    retry: false,
+  });
+
+  if (isLoading) {
+    return (
+      <div className="mt-4 grid place-items-center py-8 text-muted-foreground">
+        <Loader2 className="h-5 w-5 animate-spin" />
+      </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <p className="mt-4 text-sm text-destructive">
+        {error instanceof Error ? error.message : "No se pudieron cargar las páginas"}
+      </p>
+    );
+  }
+
+  if (!data || data.length === 0) {
+    return <p className="mt-4 text-sm text-muted-foreground">No hay páginas disponibles.</p>;
+  }
+
+  return (
+    <div className="mt-4 grid grid-cols-2 gap-3">
+      {data.map((p: PaginaMenu) => {
+        const I = iconoParaPagina(p.page_title);
+        return (
+          <button
+            key={`${p.application_id}-${p.page_id}`}
+            className="flex flex-col items-start gap-2 rounded-xl border border-border bg-background p-4 text-left transition-all hover:-translate-y-0.5 hover:border-primary hover:shadow-glow"
+          >
+            <div className="grid h-9 w-9 place-items-center rounded-lg bg-primary/10 text-primary">
+              <I className="h-4 w-4" />
+            </div>
+            <span className="text-sm font-semibold">{p.page_title}</span>
+          </button>
+        );
+      })}
     </div>
   );
 }

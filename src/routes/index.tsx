@@ -1,11 +1,12 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useState, type FormEvent } from "react";
-import { Eye, EyeOff, Loader2, Lock, Mail, Droplet } from "lucide-react";
+import { Eye, EyeOff, Loader2, Lock, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { login } from "@/lib/api";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -21,17 +22,23 @@ function LoginPage() {
   const navigate = useNavigate();
   const [showPwd, setShowPwd] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [email, setEmail] = useState("");
+  const [usuario, setUsuario] = useState("");
   const [password, setPassword] = useState("");
+  const [recordar, setRecordar] = useState(false);
+  const [error, setError] = useState("");
 
-  function onSubmit(e: FormEvent) {
+  async function onSubmit(e: FormEvent) {
     e.preventDefault();
+    setError("");
     setLoading(true);
-    // Frontend-only mock: simulate login latency
-    setTimeout(() => {
-      setLoading(false);
+    try {
+      await login(usuario, password, recordar);
       navigate({ to: "/home" });
-    }, 700);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "No se pudo iniciar sesión");
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
@@ -50,9 +57,7 @@ function LoginPage() {
         {/* Brand panel */}
         <div className="hidden lg:flex flex-col justify-between bg-gradient-hero p-12 text-white">
           <div className="flex items-center gap-3">
-            <div className="grid h-12 w-12 place-items-center rounded-xl bg-gradient-primary shadow-glow">
-              <Droplet className="h-6 w-6 text-primary-foreground" />
-            </div>
+            <img src={`${import.meta.env.BASE_URL}logo.png`} alt="Lubrimec" className="h-16 w-16 rounded-2xl bg-white object-contain p-1.5 shadow-glow" />
             <span className="font-display text-2xl font-bold tracking-tight">Lubrimesys</span>
           </div>
 
@@ -84,9 +89,7 @@ function LoginPage() {
         <div className="flex items-center justify-center p-6 sm:p-12">
           <div className="w-full max-w-md">
             <div className="mb-8 flex items-center gap-3 lg:hidden">
-              <div className="grid h-11 w-11 place-items-center rounded-xl bg-gradient-primary shadow-glow">
-                <Droplet className="h-5 w-5 text-primary-foreground" />
-              </div>
+              <img src={`${import.meta.env.BASE_URL}logo.png`} alt="Lubrimec" className="h-14 w-14 rounded-2xl bg-white object-contain p-1.5 shadow-glow" />
               <span className="font-display text-xl font-bold">Lubrimesys</span>
             </div>
 
@@ -99,16 +102,16 @@ function LoginPage() {
 
             <form onSubmit={onSubmit} className="space-y-5">
               <div className="space-y-2">
-                <Label htmlFor="email">Correo</Label>
+                <Label htmlFor="usuario">Usuario</Label>
                 <div className="relative">
-                  <Mail className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <User className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                   <Input
-                    id="email"
-                    type="email"
+                    id="usuario"
+                    type="text"
                     required
-                    placeholder="tu@correo.com"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="joseg"
+                    value={usuario}
+                    onChange={(e) => setUsuario(e.target.value)}
                     className="h-11 pl-10"
                   />
                 </div>
@@ -144,11 +147,21 @@ function LoginPage() {
               </div>
 
               <div className="flex items-center gap-2">
-                <Checkbox id="remember" />
+                <Checkbox
+                  id="remember"
+                  checked={recordar}
+                  onCheckedChange={(v) => setRecordar(v === true)}
+                />
                 <Label htmlFor="remember" className="text-sm font-normal text-muted-foreground">
                   Mantener sesión iniciada
                 </Label>
               </div>
+
+              {error && (
+                <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                  {error}
+                </p>
+              )}
 
               <Button
                 type="submit"
