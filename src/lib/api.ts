@@ -33,7 +33,7 @@ export function cerrarSesion() {
 function handleUnauthorized() {
   cerrarSesion();
   if (typeof window !== "undefined") {
-    window.location.href = "/";
+    window.location.href = import.meta.env.BASE_URL || "/";
   }
 }
 
