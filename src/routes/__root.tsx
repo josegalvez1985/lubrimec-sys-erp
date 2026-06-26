@@ -7,7 +7,7 @@ import {
   HeadContent,
   Scripts,
 } from "@tanstack/react-router";
-import { type ReactNode } from "react";
+import { type ReactNode, useEffect } from "react";
 
 import appCss from "../styles.css?url";
 import { ThemeProvider } from "../components/theme-provider";
@@ -83,7 +83,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     ],
     links: [
       { rel: "stylesheet", href: appCss },
-      { rel: "manifest", href: `${import.meta.env.BASE_URL}manifest.webmanifest` },
+      { rel: "manifest", href: `${import.meta.env.BASE_URL}manifest.webmanifest`, crossOrigin: "use-credentials" },
       { rel: "icon", href: `${import.meta.env.BASE_URL}logo.png`, type: "image/png" },
       { rel: "apple-touch-icon", href: `${import.meta.env.BASE_URL}logo.png` },
       { rel: "preconnect", href: "https://fonts.googleapis.com" },
@@ -116,6 +116,12 @@ function RootShell({ children }: { children: ReactNode }) {
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
+
+  useEffect(() => {
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`);
+    }
+  }, []);
 
   return (
     <QueryClientProvider client={queryClient}>

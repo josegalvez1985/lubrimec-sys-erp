@@ -1,12 +1,13 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useState, type FormEvent } from "react";
-import { Eye, EyeOff, Loader2, Lock, User } from "lucide-react";
+import { Download, Eye, EyeOff, Loader2, Lock, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { login } from "@/lib/api";
+import { usePWAInstall } from "@/hooks/use-pwa-install";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -26,6 +27,7 @@ function LoginPage() {
   const [password, setPassword] = useState("");
   const [recordar, setRecordar] = useState(false);
   const [error, setError] = useState("");
+  const { canInstall, install } = usePWAInstall();
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -49,7 +51,18 @@ function LoginPage() {
         <div className="absolute -bottom-32 -left-32 h-96 w-96 rounded-full bg-primary/20 blur-3xl" />
       </div>
 
-      <div className="absolute top-4 right-4 z-10">
+      <div className="absolute top-4 right-4 z-10 flex items-center gap-2">
+        {canInstall && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={install}
+            className="gap-2 border-primary/30 bg-background/80 text-primary backdrop-blur hover:bg-primary hover:text-primary-foreground"
+          >
+            <Download className="h-4 w-4" />
+            Instalar app
+          </Button>
+        )}
         <ThemeToggle />
       </div>
 
