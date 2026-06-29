@@ -30,6 +30,8 @@ jobs:
         run: npm run build
         env:
           GITHUB_PAGES: "true"
+          VITE_API_URL: "https://oracleapex.com/ords/josegalvez/lubrimec/"
+          VITE_APP_ID: "86972"
 
       - name: Preparar salida para Pages
         run: |
