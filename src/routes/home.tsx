@@ -18,6 +18,7 @@ import {
   DollarSign,
   Plus,
   FileText,
+  Tag,
   Loader2,
   type LucideIcon,
 } from "lucide-react";
@@ -28,6 +29,7 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { cn } from "@/lib/utils";
 import { getSesion, cerrarSesion, getMenuPaginas, type PaginaMenu } from "@/lib/api";
 import { usePWAInstall } from "@/hooks/use-pwa-install";
+import { MarcasView } from "@/components/marcas-view";
 
 // Mapea palabras clave del título de la página a un icono.
 function iconoParaPagina(title: string): LucideIcon {
@@ -50,10 +52,11 @@ export const Route = createFileRoute("/home")({
   component: HomePage,
 });
 
-type NavKey = "dashboard" | "inventario" | "ventas" | "clientes" | "reportes" | "ajustes";
+type NavKey = "dashboard" | "marcas" | "inventario" | "ventas" | "clientes" | "reportes" | "ajustes";
 
 const NAV: { key: NavKey; label: string; icon: typeof LayoutDashboard }[] = [
   { key: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { key: "marcas", label: "Marcas", icon: Tag },
   { key: "inventario", label: "Inventario", icon: Package },
   { key: "ventas", label: "Ventas", icon: ShoppingCart },
   { key: "clientes", label: "Clientes", icon: Users },
@@ -152,7 +155,10 @@ function HomePage() {
         {/* Page content */}
         <main className="flex-1 p-4 sm:p-6 lg:p-8">
           {active === "dashboard" && <DashboardView usuario={usuario} />}
-          {active !== "dashboard" && <PlaceholderView label={NAV.find((n) => n.key === active)!.label} />}
+          {active === "marcas" && <MarcasView />}
+          {active !== "dashboard" && active !== "marcas" && (
+            <PlaceholderView label={NAV.find((n) => n.key === active)!.label} />
+          )}
         </main>
       </div>
     </div>
