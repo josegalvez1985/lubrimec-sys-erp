@@ -91,3 +91,73 @@ export async function getMenuPaginas(): Promise<PaginaMenu[]> {
   }
   return (data.data ?? []) as PaginaMenu[];
 }
+
+// ─── Marcas ──────────────────────────────────────────────────────────────────
+
+export type Marca = {
+  id_marca: number;
+  descripcion: string | null;
+  cod_empresa: number;
+  valoracion: number | null;
+};
+
+export type MarcaInput = {
+  descripcion: string | null;
+  cod_empresa: number;
+  valoracion: number | null;
+};
+
+async function authFetch(path: string, init: RequestInit = {}) {
+  const s = getSesion();
+  if (!s) throw new Error("No hay sesión activa");
+  const res = await fetch(url(path), {
+    ...init,
+    headers: {
+      ...(init.headers ?? {}),
+      Authorization: `Bearer ${s.token}`,
+    },
+  });
+  if (res.status === 401) {
+    handleUnauthorized();
+    throw new Error("Sesión expirada");
+  }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data?.success === false) {
+    throw new Error(data?.message ?? "Operación fallida");
+  }
+  return data;
+}
+
+export async function listarMarcas(codEmpresa: number): Promise<Marca[]> {
+  const q = new URLSearchParams({ cod_empresa: String(codEmpresa) });
+  const data = await authFetch(`marcas?${q}`);
+  return (data.data ?? []) as Marca[];
+}
+
+export async function obtenerMarca(idMarca: number, codEmpresa: number): Promise<Marca> {
+  const q = new URLSearchParams({ cod_empresa: String(codEmpresa) });
+  const data = await authFetch(`marcas/${idMarca}?${q}`);
+  return data.data as Marca;
+}
+
+export async function crearMarca(input: MarcaInput): Promise<number> {
+  const data = await authFetch("marcas", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  return data.id_marca as number;
+}
+
+export async function actualizarMarca(idMarca: number, input: MarcaInput): Promise<void> {
+  await authFetch(`marcas/${idMarca}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+}
+
+export async function eliminarMarca(idMarca: number, codEmpresa: number): Promise<void> {
+  const q = new URLSearchParams({ cod_empresa: String(codEmpresa) });
+  await authFetch(`marcas/${idMarca}?${q}`, { method: "DELETE" });
+}
