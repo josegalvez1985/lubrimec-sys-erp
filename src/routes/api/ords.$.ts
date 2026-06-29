@@ -17,8 +17,13 @@ async function forward(request: Request, splat: string): Promise<Response> {
 
   const init: RequestInit = { method: request.method, headers };
   if (request.method !== "GET" && request.method !== "HEAD") {
-    init.body = await request.text();
-    headers.set("content-type", request.headers.get("content-type") ?? "application/json");
+    const body = await request.text();
+    // Solo reenvía cuerpo + content-type si realmente hay payload; un DELETE sin
+    // body con content-type JSON hace que ORDS responda 400 ("Expected {,[ but got EOF").
+    if (body.length > 0) {
+      init.body = body;
+      headers.set("content-type", request.headers.get("content-type") ?? "application/json");
+    }
   }
 
   const res = await fetch(target, init);
@@ -34,6 +39,8 @@ export const Route = createFileRoute("/api/ords/$")({
     handlers: {
       GET: ({ request, params }) => forward(request, params._splat ?? ""),
       POST: ({ request, params }) => forward(request, params._splat ?? ""),
+      PUT: ({ request, params }) => forward(request, params._splat ?? ""),
+      DELETE: ({ request, params }) => forward(request, params._splat ?? ""),
     },
   },
 });
