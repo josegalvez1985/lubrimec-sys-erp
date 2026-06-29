@@ -126,9 +126,9 @@ export function MarcasView() {
     },
   });
 
-  const marcas = (data ?? []).filter((m) =>
-    (m.descripcion ?? "").toLowerCase().includes(filtro.toLowerCase()),
-  );
+  const marcas = (data ?? [])
+    .filter((m) => (m.descripcion ?? "").toLowerCase().includes(filtro.toLowerCase()))
+    .sort((a, b) => b.id_marca - a.id_marca);
 
   return (
     <div className="rounded-2xl border border-border bg-card shadow-elegant">

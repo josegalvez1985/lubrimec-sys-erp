@@ -65,6 +65,17 @@ BEGIN
 END;
 ~');
 
+  -- Mapea el header HTTP Authorization al bind :authorization.
+  ORDS.DEFINE_PARAMETER(
+      p_module_name        => 'lubrimec',
+      p_pattern            => 'marcas',
+      p_method             => 'GET',
+      p_name               => 'Authorization',
+      p_bind_variable_name => 'authorization',
+      p_source_type        => 'HEADER',
+      p_param_type         => 'STRING',
+      p_access_method      => 'IN');
+
   -- POST /marcas  -> insertar
   ORDS.DEFINE_HANDLER(
       p_module_name => 'lubrimec',
@@ -97,6 +108,16 @@ BEGIN
         p_valoracion  => TO_NUMBER(:valoracion));
 END;
 ~');
+
+  ORDS.DEFINE_PARAMETER(
+      p_module_name        => 'lubrimec',
+      p_pattern            => 'marcas',
+      p_method             => 'POST',
+      p_name               => 'Authorization',
+      p_bind_variable_name => 'authorization',
+      p_source_type        => 'HEADER',
+      p_param_type         => 'STRING',
+      p_access_method      => 'IN');
 
   ----------------------------------------------------------------------------
   -- Plantilla item: /marcas/:id
@@ -142,6 +163,16 @@ BEGIN
 END;
 ~');
 
+  ORDS.DEFINE_PARAMETER(
+      p_module_name        => 'lubrimec',
+      p_pattern            => 'marcas/:id',
+      p_method             => 'GET',
+      p_name               => 'Authorization',
+      p_bind_variable_name => 'authorization',
+      p_source_type        => 'HEADER',
+      p_param_type         => 'STRING',
+      p_access_method      => 'IN');
+
   -- PUT /marcas/:id  -> actualizar
   ORDS.DEFINE_HANDLER(
       p_module_name => 'lubrimec',
@@ -176,6 +207,16 @@ BEGIN
 END;
 ~');
 
+  ORDS.DEFINE_PARAMETER(
+      p_module_name        => 'lubrimec',
+      p_pattern            => 'marcas/:id',
+      p_method             => 'PUT',
+      p_name               => 'Authorization',
+      p_bind_variable_name => 'authorization',
+      p_source_type        => 'HEADER',
+      p_param_type         => 'STRING',
+      p_access_method      => 'IN');
+
   -- DELETE /marcas/:id  -> eliminar
   ORDS.DEFINE_HANDLER(
       p_module_name => 'lubrimec',
@@ -207,6 +248,16 @@ BEGIN
         p_cod_empresa => TO_NUMBER(:cod_empresa));
 END;
 ~');
+
+  ORDS.DEFINE_PARAMETER(
+      p_module_name        => 'lubrimec',
+      p_pattern            => 'marcas/:id',
+      p_method             => 'DELETE',
+      p_name               => 'Authorization',
+      p_bind_variable_name => 'authorization',
+      p_source_type        => 'HEADER',
+      p_param_type         => 'STRING',
+      p_access_method      => 'IN');
 
   COMMIT;
 EXCEPTION

@@ -15,8 +15,9 @@ Frontend (src/lib/api.ts)
 
 - **Backend:** Oracle APEX/ORDS. Esquema `JOSEGALVEZ`, módulo ORDS `lubrimec`,
   base path `/ords/josegalvez/lubrimec/`.
-- **Auth:** token Bearer validado con `PKG_AUTH_LUBRIMEC.VALIDAR_TOKEN(:token)`.
-  Devuelve el usuario o `NULL` si es inválido/expirado.
+- **Auth:** token Bearer. El handler lee el header `Authorization` en el bind
+  `:authorization`, le quita el prefijo `Bearer ` y lo pasa al paquete, que valida con
+  `PKG_AUTH_LUBRIMEC.VALIDAR_TOKEN(token)`. Devuelve el usuario o `NULL` si es inválido.
 - **Contrato JSON uniforme:** `{ success: bool, message?: str, data?: obj|array, ... }`.
 - **Proxy:** todas las llamadas del front pasan por `/api/ords/$` para evitar CORS
   del navegador. Por eso el header CORS en los handlers es defensivo, no crítico.
@@ -46,16 +47,22 @@ como query param `?cod_empresa=:n`.
      500 Internal Server Error.
 
 2. **Crear el script ORDS** `db/ORDS_<TABLA>.sql`.
-   - **IMPORTANTE:** ORDS rechaza `OPTIONS` en `DEFINE_HANDLER` directo
-     (restricción `ORDS_HANDLERS_MD_CK`). Solución: el handler GET de cada plantilla
-     lleva en su `p_source` un bloque PL/SQL que **borra y recrea** todos los handlers
-     de esa plantilla (incluido OPTIONS) con `DEFINE_HANDLER` anidado. Ese bloque sí
-     puede crear OPTIONS porque se ejecuta dentro de PL/SQL, no por el check de ORDS.
-   - Comillas: el `p_source` exterior usa `''` (dobles) y el interior `''''` (cuádruples).
-     Partir palabras conflictivas con `'' || ''` cuando ORDS confunde el cierre
-     (ver `p_method` y `lubrimec` en los archivos de referencia).
-   - Dos plantillas: `<tabla>` (colección: GET listar, POST, OPTIONS) y
-     `<tabla>/:id` (item: GET obtener, PUT, DELETE, OPTIONS).
+   - **Estructura PLANA:** cada `DEFINE_HANDLER` instala directamente la lógica de
+     negocio en su `p_source`. **NO** usar el patrón anidado "GET que se redefine a sí
+     mismo" (un GET cuyo `p_source` borra y recrea handlers): dejaba instalado el bloque
+     de setup en vez de la query real y provocaba **HTTP 500**. Fue la causa del fallo de
+     `menu/paginas`; ver el fix en `db/ORDS_MENU_PAGINAS.sql`.
+   - Como el `p_source` es plano, usar `q'~ ... ~'` (quote alternativo) en vez de duplicar
+     comillas. El CORS se emite con `HTP.P('Access-Control-...')` dentro del bloque.
+   - **Bind del token — OBLIGATORIO:** tras cada `DEFINE_HANDLER` agregar un
+     `ORDS.DEFINE_PARAMETER` que mapee el header `Authorization` → bind `:authorization`
+     (`p_source_type => 'HEADER'`, `p_bind_variable_name => 'authorization'`). Sin esto
+     `:authorization` llega NULL y todo responde "Token invalido o expirado".
+   - Limpieza idempotente al inicio: `ORDS.DELETE_HANDLER` por cada método (en `BEGIN
+     ... EXCEPTION WHEN OTHERS THEN NULL; END;`) para poder re-ejecutar el script.
+   - Dos plantillas: `<tabla>` (colección: GET listar, POST) y
+     `<tabla>/:id` (item: GET obtener, PUT, DELETE). OPTIONS no hace falta: el proxy
+     server-side evita el preflight CORS del navegador.
 
 3. **Agregar el cliente** en `src/lib/api.ts`.
    - Tipo `Tabla` (campos exactos de la tabla) y `TablaInput` (sin PK).
@@ -77,7 +84,8 @@ como query param `?cod_empresa=:n`.
 ## Archivos de referencia (tabla `marcas`)
 
 - `db/PKG_MARCAS_LUBRIMEC.sql` — paquete CRUD modelo.
-- `db/ORDS_MARCAS.sql` — script ORDS modelo (incluye el truco OPTIONS anidado).
+- `db/ORDS_MARCAS.sql` — script ORDS modelo (estructura plana + `DEFINE_PARAMETER` del header).
+- `db/ORDS_MENU_PAGINAS.sql` — endpoint de solo lectura (sin paquete), también modelo plano.
 - `src/lib/api.ts` (sección `Marcas`) — cliente frontend modelo.
 
 ## Notas / gotchas
@@ -85,6 +93,24 @@ como query param `?cod_empresa=:n`.
 - `cod_empresa` **no** viene en la sesión (`Sesion` solo trae token/usuario/app_user/app_id).
   Pasarlo explícito a `listar*`. Si se necesita global, agregarlo a `Sesion` en el login.
 - Los binds de body en POST/PUT (`:descripcion`, etc.) ORDS los mapea automático
-  desde el JSON del request. Los de ruta (`:id`) desde la URL; los de query desde `?`.
+  desde el JSON del request. Los de ruta (`:id`) desde la URL.
+- **Query params (`?app_id=...`) NO se auto-bindean** a `:app_id` de forma fiable; suelen
+  llegar NULL. Leerlos del query string crudo dentro del handler:
+  `OWA_UTIL.GET_CGI_ENV('QUERY_STRING')` + parseo manual (ver `get_qs` en
+  `db/ORDS_MENU_PAGINAS.sql`). Síntoma de bind NULL: el `WHERE` filtra por NULL → 0 filas.
 - `TO_NUMBER(:param)` para binds numéricos que llegan como texto (query/body).
 - El proxy reenvía solo `authorization` + `content-type`; no propaga otros headers.
+- **Vistas APEX desde ORDS:** un handler que consulta `APEX_APPLICATION_PAGES`,
+  `APEX_APPLICATION_LIST_ENTRIES`, etc. devuelve 0 filas aunque la query corra bien en
+  SQL Commands. Falta el contexto de workspace. Fijarlo antes de la query:
+  `wwv_flow_api.set_security_group_id(p_security_group_id => 36593577189528884915);`
+  (workspace JOSEGALVEZ). Ver `db/ORDS_MENU_PAGINAS.sql`.
+- **Ordenamiento:** preferir ordenar en el front (ej. `marcas` se ordena por `id_marca`
+  desc en `marcas-view.tsx`). El `ORDER BY` del paquete es solo un default.
+- El proxy soporta **GET, POST, PUT, DELETE**. Solo envía body+`content-type` si hay
+  payload: un DELETE con `content-type: application/json` y cuerpo vacío hace que ORDS
+  responda 400 (`Expected one of <<{,[>> but got EOF`).
+- **menu/paginas:** devuelve las páginas del usuario (`page_id`, `page_title`,
+  `parent_entry_text`). El front arma el menú dinámico desde ahí; cada `page_id` se mapea
+  a un componente en `VISTAS` (ver `src/GUIA_FRONT.md`). `app_user` debe ir en MAYÚSCULAS
+  (los `app_user_id` en `roles_paginas` están en mayúsculas).

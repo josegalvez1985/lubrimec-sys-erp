@@ -55,7 +55,7 @@ export async function login(
   const sesion: Sesion = {
     token: data.token,
     usuario: data.usuario ?? usuario,
-    app_user: String(data.app_user ?? usuario),
+    app_user: String(data.app_user ?? usuario).toUpperCase(),
     app_id: String(data.app_id ?? DEFAULT_APP_ID),
   };
   guardarSesion(sesion, recordar);
@@ -67,12 +67,21 @@ export type PaginaMenu = {
   application_id: number;
   page_id: number;
   estadistica_user: number;
+  // Jerarquía del menú (APEX_APPLICATION_LIST_ENTRIES):
+  entry_text: string | null; // label visible de la página
+  parent_entry_text: string | null; // nombre de la categoría padre (nivel 2)
+  list_entry_id: number | null;
+  list_entry_parent_id: number | null;
+  seq_categoria: number; // orden de la categoría padre
+  seq_pagina: number; // orden de la página dentro de su categoría
 };
 
 export async function getMenuPaginas(): Promise<PaginaMenu[]> {
   const s = getSesion();
   if (!s) throw new Error("No hay sesión activa");
-  const q = new URLSearchParams({ app_id: s.app_id, app_user: s.app_user });
+  // app_user_id en roles_paginas está en MAYÚSCULAS; el login puede guardarlo en
+  // minúsculas (según lo tipeado), por eso se normaliza aquí.
+  const q = new URLSearchParams({ app_id: DEFAULT_APP_ID, app_user: s.app_user.toUpperCase() });
   const url_final = `${url("menu/paginas")}?${q}`;
   console.log("[api] menu/paginas request:", url_final, "token:", s.token.slice(0, 16), "app_id:", s.app_id, "app_user:", s.app_user);
   const res = await fetch(url_final, {
