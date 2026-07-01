@@ -104,7 +104,7 @@ function LoginPage() {
             className="inline-flex h-9 items-center gap-2 rounded-md border border-primary/30 bg-background/80 px-3 text-sm font-medium text-primary backdrop-blur transition-colors hover:bg-primary hover:text-primary-foreground"
           >
             <Download className="h-4 w-4" />
-            Descargar app
+            Descargar apk
           </a>
           <ThemeToggle />
         </div>
