@@ -2,7 +2,6 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState, type ReactElement } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
-  Download,
   LayoutDashboard,
   Package,
   ShoppingCart,
@@ -73,7 +72,6 @@ import {
 import { ThemeToggle } from "@/components/theme-toggle";
 import { cn } from "@/lib/utils";
 import { getSesion, cerrarSesion, getMenuPaginas, type PaginaMenu } from "@/lib/api";
-import { usePWAInstall } from "@/hooks/use-pwa-install";
 import { MarcasView } from "@/components/marcas-view";
 import { WhatsappView } from "@/components/whatsapp-view";
 
@@ -202,7 +200,6 @@ function HomePage() {
   const [active, setActive] = useState<NavKey>("dashboard");
   const [mobileOpen, setMobileOpen] = useState(false);
   const navigate = useNavigate();
-  const { canInstall, install } = usePWAInstall();
 
   // Páginas del usuario (define el menú lateral y los accesos rápidos).
   const paginasQuery = useQuery({
@@ -269,22 +266,6 @@ function HomePage() {
           <div className="flex-1 sm:hidden" />
 
           <div className="flex items-center gap-1">
-            {canInstall && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={install}
-                className="hidden gap-2 border-primary/30 text-primary hover:bg-primary hover:text-primary-foreground sm:flex"
-              >
-                <Download className="h-4 w-4" />
-                Instalar
-              </Button>
-            )}
-            {canInstall && (
-              <Button variant="ghost" size="icon" onClick={install} className="sm:hidden text-primary" aria-label="Instalar app">
-                <Download className="h-5 w-5" />
-              </Button>
-            )}
             <Button variant="ghost" size="icon" aria-label="Notificaciones" className="relative">
               <Bell className="h-5 w-5" />
               <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-primary" />

@@ -145,8 +145,14 @@ El proyecto tiene un APK que es una **WebView remota**: carga la app publicada e
 (`server.url` en `capacitor.config.ts`). El contenido web es dinámico → páginas nuevas y cambios se
 ven con solo `git push` (Pages), sin regenerar el APK. Guía de build completa: `GENERAR_APK.md`.
 
-- **Descargar APK:** botón en el login (`src/routes/index.tsx`), visible solo en Android y fuera del
-  APK. Apunta al asset `lubrimesys.apk` del último Release de GitHub.
+- **Descargar APK:** botón en el login (`src/routes/index.tsx`), visible solo en Android (userAgent) y
+  fuera del APK. Apunta al asset `lubrimesys.apk` del último Release de GitHub. Se **oculta si la app
+  ya está instalada**: `navigator.getInstalledRelatedApps()` contra `related_applications` del
+  `public/manifest.webmanifest` (appId `com.lubrimec.sys`). Ese API solo detecta la app si el
+  navegador la conoce (Chrome/Android); en sideload puro puede no detectarla. Debajo del botón va la
+  nota de activar **"Instalar apps de fuentes desconocidas"** (Android bloquea instalar APKs fuera de
+  Play hasta habilitar ese permiso; no se puede automatizar desde la web). **No hay botón de instalar
+  PWA** (se eliminó el hook `use-pwa-install`).
 - **Aviso de actualización:** `src/components/apk-update-banner.tsx` + `src/hooks/use-apk-update.ts`.
   Dentro del APK compara su versión (`@capacitor/app`) contra `public/apk-version.json`; si hay una
   mayor, muestra un banner con botón para descargar el APK nuevo. Al publicar una versión: subir

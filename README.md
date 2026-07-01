@@ -53,7 +53,7 @@ npm run dev        # http://localhost:5173
 - `src/routes/` — rutas (login `index.tsx`, `home.tsx`) y proxy ORDS (`api/ords.$.ts`).
 - `src/components/` — vistas de páginas (`marcas-view.tsx`, `whatsapp-view.tsx`) y UI (`ui/`).
 - `src/lib/api.ts` — cliente HTTP: sesión, `authFetch`, funciones por tabla.
-- `src/hooks/` — hooks (PWA install, aviso de actualización del APK).
+- `src/hooks/` — hooks (aviso de actualización del APK).
 - `db/` — paquetes PL/SQL y scripts ORDS de cada tabla.
 - `android/` — proyecto Capacitor para el APK.
 
@@ -90,7 +90,11 @@ El APK es una **WebView remota** que carga la app de GitHub Pages (`server.url` 
 `git push` (Pages), **sin regenerar el APK**.
 
 - Build y publicación: **[GENERAR_APK.md](GENERAR_APK.md)**.
-- Descarga: botón "Descargar app" en el login (solo Android), apunta al Release de GitHub.
+- Descarga: botón "Descargar app" en el login (solo Android), apunta al Release de GitHub. Se oculta
+  si la app nativa ya está instalada (`navigator.getInstalledRelatedApps()` + `related_applications`
+  en `public/manifest.webmanifest`). Incluye la nota de activar "Instalar apps de fuentes
+  desconocidas" (Android bloquea la instalación de APKs sideload hasta habilitar ese permiso). No hay
+  botón de "Instalar PWA".
 - Actualización: banner dentro del APK que compara su versión (`@capacitor/app`) contra
   `public/apk-version.json` y avisa cuando hay una nueva. El usuario descarga e instala manualmente
   (Android no autoactualiza APKs fuera de Play Store).
