@@ -99,8 +99,6 @@ function LoginPage() {
         <div className="flex items-center gap-2">
           <a
             href={APK_URL}
-            target="_blank"
-            rel="noopener noreferrer"
             className="inline-flex h-9 items-center gap-2 rounded-md border border-primary/30 bg-background/80 px-3 text-sm font-medium text-primary backdrop-blur transition-colors hover:bg-primary hover:text-primary-foreground"
           >
             <Download className="h-4 w-4" />
