@@ -74,6 +74,7 @@ import { cn } from "@/lib/utils";
 import { getSesion, cerrarSesion, getMenuPaginas, type PaginaMenu } from "@/lib/api";
 import { MarcasView } from "@/components/marcas-view";
 import { WhatsappView } from "@/components/whatsapp-view";
+import { PerfilModal } from "@/components/perfil-modal";
 
 // Icono por page_id (APEX). Tiene prioridad sobre el match por palabra clave.
 const ICONO_PAGINA: Record<number, LucideIcon> = {
@@ -199,6 +200,7 @@ const VISTAS: Record<number, () => ReactElement> = {
 function HomePage() {
   const [active, setActive] = useState<NavKey>("dashboard");
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [perfilOpen, setPerfilOpen] = useState(false);
   const navigate = useNavigate();
 
   // Páginas del usuario (define el menú lateral y los accesos rápidos).
@@ -286,6 +288,10 @@ function HomePage() {
               <DropdownMenuContent align="end" className="w-48">
                 <DropdownMenuLabel className="truncate">{usuario}</DropdownMenuLabel>
                 <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => setPerfilOpen(true)}>
+                  <Settings className="mr-2 h-4 w-4" />
+                  Perfil
+                </DropdownMenuItem>
                 <DropdownMenuItem onClick={logout} className="text-destructive focus:text-destructive">
                   <LogOut className="mr-2 h-4 w-4" />
                   Cerrar sesión
@@ -306,6 +312,8 @@ function HomePage() {
           )}
         </main>
       </div>
+
+      <PerfilModal open={perfilOpen} onOpenChange={setPerfilOpen} />
     </div>
   );
 }

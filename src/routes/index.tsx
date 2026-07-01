@@ -1,12 +1,19 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useState, useEffect, type FormEvent } from "react";
-import { Download, Eye, EyeOff, Loader2, Lock, User } from "lucide-react";
+import { Download, Eye, EyeOff, Fingerprint, Loader2, Lock, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { login } from "@/lib/api";
+import {
+  esNativo,
+  biometriaDisponible,
+  biometriaActivada,
+  activarBiometria,
+  obtenerCredencialesBiometricas,
+} from "@/lib/biometric";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -27,6 +34,9 @@ function LoginPage() {
   const [recordar, setRecordar] = useState(false);
   const [error, setError] = useState("");
   const [apkInstalada, setApkInstalada] = useState(false);
+  const [bioSoportada, setBioSoportada] = useState(false);
+  const [bioActiva, setBioActiva] = useState(false);
+  const [activarBio, setActivarBio] = useState(false);
 
   // Mostrar "Descargar APK" solo en Android y fuera de la app ya instalada (WebView Capacitor).
   const enAndroid =
@@ -50,12 +60,45 @@ function LoginPage() {
 
   const mostrarApk = enAndroid && !apkInstalada;
 
+  // Estado de biometría (solo dentro del APK).
+  useEffect(() => {
+    if (!esNativo()) return;
+    biometriaDisponible().then((disp) => {
+      setBioSoportada(disp);
+      setBioActiva(disp && biometriaActivada());
+    });
+  }, []);
+
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setError("");
     setLoading(true);
     try {
       await login(usuario, password, recordar);
+      // Si el usuario pidió activar biometría, guardar credenciales tras login OK.
+      if (activarBio && bioSoportada) {
+        try {
+          await activarBiometria(usuario, password);
+        } catch {
+          // canceló la verificación: continuar sin activar
+        }
+      }
+      navigate({ to: "/home" });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "No se pudo iniciar sesión");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // Ingreso con biometría: recupera credenciales guardadas y hace login.
+  async function onBiometricLogin() {
+    setError("");
+    const cred = await obtenerCredencialesBiometricas();
+    if (!cred) return; // canceló o falló
+    setLoading(true);
+    try {
+      await login(cred.usuario, cred.password, true);
       navigate({ to: "/home" });
     } catch (err) {
       setError(err instanceof Error ? err.message : "No se pudo iniciar sesión");
@@ -200,6 +243,19 @@ function LoginPage() {
                 </Label>
               </div>
 
+              {bioSoportada && !bioActiva && (
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    id="activar-bio"
+                    checked={activarBio}
+                    onCheckedChange={(v) => setActivarBio(v === true)}
+                  />
+                  <Label htmlFor="activar-bio" className="text-sm font-normal text-muted-foreground">
+                    Activar acceso biométrico en este dispositivo
+                  </Label>
+                </div>
+              )}
+
               {error && (
                 <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
                   {error}
@@ -220,6 +276,19 @@ function LoginPage() {
                   "Iniciar sesión"
                 )}
               </Button>
+
+              {bioActiva && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={onBiometricLogin}
+                  disabled={loading}
+                  className="h-11 w-full gap-2 border-primary/30 text-primary hover:bg-primary hover:text-primary-foreground"
+                >
+                  <Fingerprint className="h-5 w-5" />
+                  Ingresar con biometría
+                </Button>
+              )}
 
               <p className="text-center text-xs text-muted-foreground">
                 ¿Problemas para acceder? Contacta al administrador del sistema.

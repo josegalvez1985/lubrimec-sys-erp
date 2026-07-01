@@ -102,11 +102,16 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
   errorComponent: ErrorComponent,
 });
 
+// Fija la clase `dark` antes del primer pintado para que el theme guardado se
+// aplique sin parpadeo (evita el desajuste SSR/cliente en el login).
+const THEME_INIT_SCRIPT = `(function(){try{var t=localStorage.getItem('lubrimesys-theme');if(!t){t=window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';}document.documentElement.classList.toggle('dark',t==='dark');}catch(e){}})();`;
+
 function RootShell({ children }: { children: ReactNode }) {
   return (
     <html lang="es">
       <head>
         <HeadContent />
+        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
       </head>
       <body>
         {children}

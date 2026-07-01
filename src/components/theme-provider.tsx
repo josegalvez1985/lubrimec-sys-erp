@@ -5,21 +5,28 @@ type Theme = "light" | "dark";
 interface ThemeContextValue {
   theme: Theme;
   toggle: () => void;
+  setTheme: (theme: Theme) => void;
 }
 
 const ThemeContext = createContext<ThemeContextValue | undefined>(undefined);
 
 const STORAGE_KEY = "lubrimesys-theme";
 
-export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [theme, setTheme] = useState<Theme>("dark");
+function leerThemeInicial(): Theme {
+  if (typeof window === "undefined") return "dark";
+  const stored = localStorage.getItem(STORAGE_KEY) as Theme | null;
+  if (stored === "light" || stored === "dark") return stored;
+  return window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
 
+export function ThemeProvider({ children }: { children: ReactNode }) {
+  // Lazy init: en el cliente arranca con el theme real (localStorage / preferencia),
+  // así el toggle refleja el estado correcto desde el primer render.
+  const [theme, setTheme] = useState<Theme>(leerThemeInicial);
+
+  // Sincroniza tras hidratar (el primer render en cliente puede diferir del SSR).
   useEffect(() => {
-    const stored = (typeof window !== "undefined" && localStorage.getItem(STORAGE_KEY)) as Theme | null;
-    const prefersDark =
-      typeof window !== "undefined" && window.matchMedia?.("(prefers-color-scheme: dark)").matches;
-    const initial: Theme = stored ?? (prefersDark ? "dark" : "light");
-    setTheme(initial);
+    setTheme(leerThemeInicial());
   }, []);
 
   useEffect(() => {
@@ -30,8 +37,11 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     } catch {}
   }, [theme]);
 
+  const setThemeExplicit = (t: Theme) => setTheme(t);
+  const toggle = () => setTheme((t) => (t === "dark" ? "light" : "dark"));
+
   return (
-    <ThemeContext.Provider value={{ theme, toggle: () => setTheme((t) => (t === "dark" ? "light" : "dark")) }}>
+    <ThemeContext.Provider value={{ theme, toggle, setTheme: setThemeExplicit }}>
       {children}
     </ThemeContext.Provider>
   );
