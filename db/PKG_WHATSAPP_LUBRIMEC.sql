@@ -119,8 +119,6 @@ CREATE OR REPLACE PACKAGE BODY PKG_WHATSAPP_LUBRIMEC AS
         l_usuario   VARCHAR2(256);
         l_job       VARCHAR2(128);
         l_env_id    NUMBER;
-        l_numero    VARCHAR2(100);
-        l_existe    NUMBER;
     BEGIN
         l_usuario := f_usuario(p_token);
         IF l_usuario IS NULL THEN
@@ -133,31 +131,11 @@ CREATE OR REPLACE PACKAGE BODY PKG_WHATSAPP_LUBRIMEC AS
             RETURN;
         END IF;
 
-        -- Numeros manuales: insertarlos como pendientes si no existen ya.
-        IF p_numeros_manual IS NOT NULL THEN
-            APEX_JSON.PARSE(p_numeros_manual);
-            FOR i IN 1 .. APEX_JSON.GET_COUNT('.') LOOP
-                l_numero := TRIM(APEX_JSON.GET_VARCHAR2('[%d]', i));
-                IF l_numero IS NOT NULL THEN
-                    SELECT COUNT(*) INTO l_existe
-                    FROM   numeros_whatsapp WHERE numero = l_numero;
-                    IF l_existe = 0 THEN
-                        INSERT INTO numeros_whatsapp (numero, mensajeado)
-                        VALUES (l_numero, 'N');
-                    ELSE
-                        -- Manual = reenviar siempre: reactiva a 'N' aunque ya se haya
-                        -- enviado ('S'). Los de la base que no se escriben a mano y ya
-                        -- estan en 'S' NO se tocan (el proc los omite).
-                        UPDATE numeros_whatsapp SET mensajeado = 'N' WHERE numero = l_numero;
-                    END IF;
-                END IF;
-            END LOOP;
-        END IF;
-
-        -- Persistir el envio (mensaje + imagen) para que el job lo tome. La tabla
-        -- WHATSAPP_ENVIOS desacopla el request del proceso en background.
-        INSERT INTO WHATSAPP_ENVIOS (mensaje, imagen_url, usuario, estado)
-        VALUES (p_mensaje, p_imagen_url, l_usuario, 'PENDIENTE')
+        -- Persistir el envio. Si p_numeros_manual viene (pestana Manual), se guarda
+        -- la lista y el proc envia SOLO a esos numeros (no toca numeros_whatsapp).
+        -- Si es NULL (pestana De la base), el proc procesa los pendientes de la tabla.
+        INSERT INTO WHATSAPP_ENVIOS (mensaje, imagen_url, numeros_manual, usuario, estado)
+        VALUES (p_mensaje, p_imagen_url, p_numeros_manual, l_usuario, 'PENDIENTE')
         RETURNING id INTO l_env_id;
 
         l_job := 'WSP_ENVIO_' || l_env_id;

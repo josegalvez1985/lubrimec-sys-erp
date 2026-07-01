@@ -13,13 +13,14 @@
 --------------------------------------------------------------------------------
 
 CREATE OR REPLACE PROCEDURE ENVIAR_MENSAJES_WHATSAPP (
-    p_mensaje    IN  VARCHAR2,
-    p_imagen_url IN  VARCHAR2 DEFAULT NULL,
-    p_error      OUT VARCHAR2
+    p_mensaje        IN  VARCHAR2,
+    p_imagen_url     IN  VARCHAR2 DEFAULT NULL,
+    p_numeros_manual IN  CLOB     DEFAULT NULL,  -- JSON array: si viene, envia SOLO a estos
+    p_error          OUT VARCHAR2
 ) AS
 
     v_api_url           VARCHAR2(500)  := 'https://wasenderapi.com/api/send-message';
-    v_api_key           VARCHAR2(500)  := '95f3747b28d911bd7ea91f261101bd4bcc258a51bbebd55f439e673bba7929bd';
+    v_api_key           VARCHAR2(500)  := 'e83c588e35133bccc177db1df36ab10701640d02437dfb17438cc5aaa288350c';
     v_max_reintentos    NUMBER         := 3;
     v_pausa_entre_msgs  NUMBER         := 20;
     v_max_registros     NUMBER         := 100;
@@ -98,7 +99,9 @@ CREATE OR REPLACE PROCEDURE ENVIAR_MENSAJES_WHATSAPP (
                 v_status_local := APEX_WEB_SERVICE.G_STATUS_CODE;
 
                 IF v_status_local IN (200, 201, 202) THEN
-                    UPDATE numeros_whatsapp SET mensajeado = 'S' WHERE id = p_id;
+                    IF p_id IS NOT NULL THEN
+                        UPDATE numeros_whatsapp SET mensajeado = 'S' WHERE id = p_id;
+                    END IF;
                     REGISTRAR_LOG(p_numero_original, p_numero_limpio, 'ENVIADO', v_status_local, v_response_local, NULL);
                     v_contador_enviados := v_contador_enviados + 1;
                     v_enviado_local := TRUE; p_enviado := TRUE;
@@ -107,7 +110,9 @@ CREATE OR REPLACE PROCEDURE ENVIAR_MENSAJES_WHATSAPP (
                     IF v_intento_local < v_max_reintentos THEN
                         IF v_status_local = 429 THEN DBMS_SESSION.SLEEP(5); ELSE DBMS_SESSION.SLEEP(2); END IF;
                     ELSE
-                        UPDATE numeros_whatsapp SET mensajeado = 'E' WHERE id = p_id;
+                        IF p_id IS NOT NULL THEN
+                            UPDATE numeros_whatsapp SET mensajeado = 'E' WHERE id = p_id;
+                        END IF;
                         REGISTRAR_LOG(p_numero_original, p_numero_limpio, 'ERROR', v_status_local, v_response_local,
                                       'Error temporal despues de ' || v_max_reintentos || ' intentos');
                         v_contador_errores := v_contador_errores + 1;
@@ -115,7 +120,9 @@ CREATE OR REPLACE PROCEDURE ENVIAR_MENSAJES_WHATSAPP (
                     END IF;
 
                 ELSE
-                    UPDATE numeros_whatsapp SET mensajeado = 'E' WHERE id = p_id;
+                    IF p_id IS NOT NULL THEN
+                        UPDATE numeros_whatsapp SET mensajeado = 'E' WHERE id = p_id;
+                    END IF;
                     REGISTRAR_LOG(p_numero_original, p_numero_limpio, 'ERROR', v_status_local, v_response_local,
                                   'Error HTTP ' || v_status_local);
                     v_contador_errores := v_contador_errores + 1;
@@ -126,7 +133,9 @@ CREATE OR REPLACE PROCEDURE ENVIAR_MENSAJES_WHATSAPP (
                 IF v_intento_local < v_max_reintentos THEN
                     DBMS_SESSION.SLEEP(2);
                 ELSE
-                    UPDATE numeros_whatsapp SET mensajeado = 'E' WHERE id = p_id;
+                    IF p_id IS NOT NULL THEN
+                        UPDATE numeros_whatsapp SET mensajeado = 'E' WHERE id = p_id;
+                    END IF;
                     REGISTRAR_LOG(p_numero_original, p_numero_limpio, 'EXCEPCION', NULL, NULL, SQLERRM);
                     v_contador_errores := v_contador_errores + 1;
                     v_enviado_local := TRUE; p_enviado := TRUE;
@@ -152,21 +161,36 @@ BEGIN
         v_img_json := '';
     END IF;
 
-    BEGIN
-        SELECT * BULK COLLECT INTO v_numeros_tabla
-        FROM numeros_whatsapp
-        WHERE NVL(mensajeado, 'N') NOT IN ('S')
-        FETCH FIRST v_max_registros ROWS ONLY;
-
-        v_contador_total := v_numeros_tabla.COUNT;
+    -- Origen de los numeros: MANUAL (lista recibida) o BASE (tabla numeros_whatsapp).
+    IF p_numeros_manual IS NOT NULL AND DBMS_LOB.GETLENGTH(p_numeros_manual) > 0 THEN
+        BEGIN
+            APEX_JSON.PARSE(p_numeros_manual);
+            v_contador_total := APEX_JSON.GET_COUNT('.');
+        EXCEPTION WHEN OTHERS THEN
+            p_error := 'Numeros manuales invalidos: ' || SQLERRM;
+            RETURN;
+        END;
         IF v_contador_total = 0 THEN
             p_error := 'No hay numeros para procesar';
             RETURN;
         END IF;
-    EXCEPTION WHEN OTHERS THEN
-        p_error := 'Error al cargar numeros: ' || SQLERRM;
-        RETURN;
-    END;
+    ELSE
+        BEGIN
+            SELECT * BULK COLLECT INTO v_numeros_tabla
+            FROM numeros_whatsapp
+            WHERE NVL(mensajeado, 'N') NOT IN ('S')
+            FETCH FIRST v_max_registros ROWS ONLY;
+
+            v_contador_total := v_numeros_tabla.COUNT;
+            IF v_contador_total = 0 THEN
+                p_error := 'No hay numeros para procesar';
+                RETURN;
+            END IF;
+        EXCEPTION WHEN OTHERS THEN
+            p_error := 'Error al cargar numeros: ' || SQLERRM;
+            RETURN;
+        END;
+    END IF;
 
     BEGIN
         APEX_WEB_SERVICE.SET_REQUEST_HEADERS(
@@ -177,18 +201,32 @@ BEGIN
         apex_debug.message('ERROR en headers: ' || SQLERRM);
     END;
 
-    FOR i IN 1..v_numeros_tabla.COUNT LOOP
+    FOR i IN 1..v_contador_total LOOP
         BEGIN
-            v_numero_original := v_numeros_tabla(i).numero;
-            v_numero_limpio   := LIMPIAR_NUMERO(v_numero_original);
+            -- MANUAL: numero de la lista (sin id, no toca la tabla).
+            -- BASE:   numero de la coleccion cargada de numeros_whatsapp.
+            IF p_numeros_manual IS NOT NULL AND DBMS_LOB.GETLENGTH(p_numeros_manual) > 0 THEN
+                v_numero_original := TRIM(APEX_JSON.GET_VARCHAR2('[%d]', i));
+            ELSE
+                v_numero_original := v_numeros_tabla(i).numero;
+            END IF;
+
+            v_numero_limpio := LIMPIAR_NUMERO(v_numero_original);
 
             IF v_numero_limpio IS NULL THEN
-                UPDATE numeros_whatsapp SET mensajeado = 'E' WHERE id = v_numeros_tabla(i).id;
+                IF p_numeros_manual IS NULL THEN
+                    UPDATE numeros_whatsapp SET mensajeado = 'E' WHERE id = v_numeros_tabla(i).id;
+                END IF;
                 REGISTRAR_LOG(v_numero_original, NULL, 'INVALIDO', NULL, NULL,
                               'Numero invalido o sin suficientes digitos');
                 v_contador_invalidos := v_contador_invalidos + 1;
             ELSE
-                ENVIAR_CON_REINTENTOS(v_numeros_tabla(i).id, v_numero_original, v_numero_limpio, v_enviado);
+                -- p_id NULL en manual: no se actualiza numeros_whatsapp.
+                IF p_numeros_manual IS NOT NULL AND DBMS_LOB.GETLENGTH(p_numeros_manual) > 0 THEN
+                    ENVIAR_CON_REINTENTOS(NULL, v_numero_original, v_numero_limpio, v_enviado);
+                ELSE
+                    ENVIAR_CON_REINTENTOS(v_numeros_tabla(i).id, v_numero_original, v_numero_limpio, v_enviado);
+                END IF;
             END IF;
 
             DBMS_SESSION.SLEEP(v_pausa_entre_msgs);

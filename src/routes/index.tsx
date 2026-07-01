@@ -29,6 +29,14 @@ function LoginPage() {
   const [error, setError] = useState("");
   const { canInstall, install } = usePWAInstall();
 
+  // Mostrar "Descargar APK" solo en Android y fuera de la app ya instalada (WebView Capacitor).
+  const mostrarApk =
+    typeof navigator !== "undefined" &&
+    /android/i.test(navigator.userAgent) &&
+    !/lubrimesys|capacitor/i.test(navigator.userAgent);
+  const APK_URL =
+    "https://github.com/josegalvez1985/lubrimec-sys-erp/releases/latest/download/lubrimesys.apk";
+
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setError("");
@@ -52,6 +60,19 @@ function LoginPage() {
       </div>
 
       <div className="absolute top-4 right-4 z-10 flex items-center gap-2">
+        {mostrarApk && (
+          <Button
+            asChild
+            variant="outline"
+            size="sm"
+            className="gap-2 border-primary/30 bg-background/80 text-primary backdrop-blur hover:bg-primary hover:text-primary-foreground"
+          >
+            <a href={APK_URL} download>
+              <Download className="h-4 w-4" />
+              Descargar app
+            </a>
+          </Button>
+        )}
         {canInstall && (
           <Button
             variant="outline"
