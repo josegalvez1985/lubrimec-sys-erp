@@ -65,6 +65,27 @@ El login apunta a un asset fijo llamado **`lubrimesys.apk`** en el último relea
 
 Con eso, el botón "Descargar app" (visible en el login desde un Android) descarga el APK.
 
+## Build automático en la nube (GitHub Actions)
+
+En vez de compilar y subir a mano, el workflow **`.github/workflows/build-apk.yml`** compila el
+APK en GitHub y lo publica en el Release, sin usar tu PC. Se dispara al **empujar un tag `vX.Y.Z`**:
+
+```powershell
+# tras hacer push de los cambios a main
+git tag v1.1.0
+git push origin v1.1.0
+```
+
+Eso: hace `npm install` + `npx cap sync android` + `assembleDebug`, renombra a `lubrimesys.apk`
+y crea/actualiza el Release del tag con ese asset. El botón "Descargar app" del login lo toma
+automáticamente. También se puede correr a mano desde la pestaña **Actions → Build & Release APK →
+Run workflow** (`workflow_dispatch`).
+
+> **Firma:** el APK sale firmado con la *debug key* que Actions genera en cada run (efímera). Es
+> instalable por sideload, pero la firma cambia entre builds → para **actualizar** sobre una versión
+> anterior el usuario puede tener que **desinstalar** primero. Para una firma estable (actualización
+> in-place), configurar un keystore propio como secret y firmar el release (ver "Firmar" abajo).
+
 ## ¿Cuándo hay que regenerar el APK?
 
 El APK es una **WebView remota**: carga la app desde Pages. Por eso el contenido web es dinámico.

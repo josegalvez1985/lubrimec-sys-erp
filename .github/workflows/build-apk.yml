@@ -1,0 +1,53 @@
+name: Build & Release APK
+
+# Compila el APK en la nube y lo publica en el Release. Se dispara al empujar un tag
+# vX.Y.Z (ej. git tag v1.1.0 && git push origin v1.1.0). El APK es una WebView remota
+# (carga la web desde Pages), así que solo hace falta regenerarlo al cambiar algo nativo
+# o la versión. El asset se sube como "lubrimesys.apk" (nombre fijo que usa el login).
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write # necesario para crear/editar el Release y subir el asset
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - run: npm install
+
+      - name: Capacitor sync (Android)
+        run: npx cap sync android
+
+      - name: Compilar APK (debug, firmado con debug key)
+        run: |
+          cd android
+          chmod +x ./gradlew
+          ./gradlew assembleDebug --stacktrace
+
+      - name: Renombrar a lubrimesys.apk
+        run: cp android/app/build/outputs/apk/debug/app-debug.apk lubrimesys.apk
+
+      - name: Publicar en el Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: lubrimesys.apk
+          fail_on_unmatched_files: true
