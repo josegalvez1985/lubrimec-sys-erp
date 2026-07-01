@@ -44,7 +44,12 @@ function LoginPage() {
     /android/i.test(navigator.userAgent) &&
     !/lubrimesys|capacitor/i.test(navigator.userAgent);
   // El APK se sirve desde GitHub Pages (public/lubrimesys.apk), mismo origen que la web.
-  const APK_URL = `${import.meta.env.BASE_URL}lubrimesys.apk`;
+  // URL absoluta al origen actual para que el navegador la trate como descarga directa
+  // (evita que el router del SPA o rutas relativas intercepten el click).
+  const APK_URL =
+    typeof window !== "undefined"
+      ? new URL(`${import.meta.env.BASE_URL}lubrimesys.apk`, window.location.origin).href
+      : `${import.meta.env.BASE_URL}lubrimesys.apk`;
 
   // Si la app nativa ya está instalada, ocultar el botón de descarga.
   useEffect(() => {
@@ -119,15 +124,15 @@ function LoginPage() {
         <div className="flex items-center gap-2">
           {mostrarApk && (
             <Button
-              asChild
               variant="outline"
               size="sm"
+              onClick={() => {
+                window.location.href = APK_URL;
+              }}
               className="gap-2 border-primary/30 bg-background/80 text-primary backdrop-blur hover:bg-primary hover:text-primary-foreground"
             >
-              <a href={APK_URL} download>
-                <Download className="h-4 w-4" />
-                Descargar app
-              </a>
+              <Download className="h-4 w-4" />
+              Descargar app
             </Button>
           )}
           <ThemeToggle />
