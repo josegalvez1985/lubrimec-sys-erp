@@ -25,6 +25,9 @@ Componente React (react-query)
   evitar CORS. En **GitHub Pages** (estático, sin proxy) `VITE_API_URL` apunta directo a ORDS, que
   ya emite `Access-Control-Allow-Origin: *`.
 - Contrato JSON uniforme: `{ success, message?, data? }`.
+- **Sin caché:** los datos pueden crearse/editarse desde otros sistemas, así que toda consulta va
+  al servidor en el momento (react-query `staleTime 0`, `fetch` `no-store`, el Service Worker no
+  cachea la API). Detalle en [src/GUIA_FRONT.md](src/GUIA_FRONT.md#sin-caché-todo-dato-se-consulta-en-el-momento).
 
 ## Desarrollo
 

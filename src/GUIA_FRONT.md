@@ -99,11 +99,29 @@ sus permisos. Cada usuario ve un menú distinto.
    Con eso la entrada del menú y su acceso rápido abren el componente automáticamente.
    No hay que tocar el sidebar ni el endpoint: el menú se arma solo desde la respuesta.
 
+## Sin caché: todo dato se consulta en el momento
+
+**Regla del proyecto:** los datos vienen de sistemas externos (se crean/modifican desde otras
+apps), así que **nunca** se sirve nada cacheado. Al abrir/refrescar una vista, la consulta va al
+servidor. Esto ya está configurado globalmente en 3 niveles; al crear una página nueva **no hay
+que hacer nada extra**, solo respetar el patrón:
+
+1. **react-query (global):** `src/router.tsx` fija defaults `staleTime: 0`, `gcTime: 0`,
+   `refetchOnMount/WindowFocus/Reconnect: "always"`. No pongas `staleTime` en `useQuery` (rompería
+   la regla). Para refrescar tras una mutación igual conviene `qc.invalidateQueries`.
+2. **HTTP (global):** `authFetch` (y `login`, `getMenuPaginas`) mandan `cache: "no-store"`. Toda
+   función nueva que use `authFetch` ya queda cubierta. Si hacés un `fetch` directo (raro), agregá
+   `cache: "no-store"`.
+3. **Service Worker (`public/sw.js`):** NO cachea la API (rutas `/api/ords/`, `/ords/`,
+   `oracleapex.com` pasan directo a la red). Solo cachea assets estáticos. Si cambiás `sw.js`, subí
+   la constante `CACHE` (`lubrimesys-vN`) para forzar la reinstalación.
+
 ## El componente (`src/components/marcas-view.tsx` — modelo)
 
 - **react-query** para todo el estado servidor:
   - `useQuery({ queryKey: ["tabla", codEmpresa], queryFn, retry: false })` para listar.
   - `useMutation` + `qc.invalidateQueries({ queryKey: ["tabla"] })` en `onSuccess`.
+  - **No** agregar `staleTime` (la regla global es 0; ver "Sin caché").
 - **Ordenamiento en el front:** ordenar el array del query antes de render, no en el back.
   Ej. marcas: `.sort((a, b) => b.id_marca - a.id_marca)`. El `ORDER BY` del paquete es
   solo un default.
