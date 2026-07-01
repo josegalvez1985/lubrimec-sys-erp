@@ -120,3 +120,19 @@ sus permisos. Cada usuario ve un menú distinto.
 - [ ] ¿`VITE_API_URL` = `/api/ords/` en el entorno donde falla?
 - [ ] ¿La respuesta es JSON? Si llega HTML "Service Unavailable" → error 500 en el handler
       PL/SQL (revisar el bloque del handler en ORDS).
+
+## APK Android (Capacitor)
+
+El proyecto tiene un APK que es una **WebView remota**: carga la app publicada en GitHub Pages
+(`server.url` en `capacitor.config.ts`). El contenido web es dinámico → páginas nuevas y cambios se
+ven con solo `git push` (Pages), sin regenerar el APK. Guía de build completa: `GENERAR_APK.md`.
+
+- **Descargar APK:** botón en el login (`src/routes/index.tsx`), visible solo en Android y fuera del
+  APK. Apunta al asset `lubrimesys.apk` del último Release de GitHub.
+- **Aviso de actualización:** `src/components/apk-update-banner.tsx` + `src/hooks/use-apk-update.ts`.
+  Dentro del APK compara su versión (`@capacitor/app`) contra `public/apk-version.json`; si hay una
+  mayor, muestra un banner con botón para descargar el APK nuevo. Al publicar una versión: subir
+  `versionName` en `android/app/build.gradle`, regenerar/subir el APK al Release, y actualizar la
+  versión en `public/apk-version.json`.
+- Solo hay que **regenerar el APK** si cambia ícono, nombre, `appId`, `server.url`, un plugin nativo,
+  o la versión. Nunca por cambios de contenido web.

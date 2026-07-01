@@ -23,6 +23,12 @@ dist-ssr
 .wrangler/
 .dev.vars
 
+# APK artifacts (Capacitor). android/ se commitea; sus build/ los ignora android/.gitignore.
+*.apk
+*.aab
+*.keystore
+*.jks
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

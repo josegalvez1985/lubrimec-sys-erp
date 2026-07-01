@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { toast } from "sonner";
 import {
   MessageSquare,
   Search,
@@ -229,6 +230,21 @@ export function WhatsappView() {
   // Terminó cuando ya llegaron logs para todos los destinos del envío en curso.
   const totalEnvio = totalDestinoEnvio ?? totalDestino;
   const terminado = enCurso && totalEnvio > 0 && logs.length >= totalEnvio;
+
+  // Toast al terminar (una sola vez por envío). Se cierra manualmente (duration Infinity).
+  const notificadoRef = useRef(false);
+  useEffect(() => {
+    if (!enCurso) notificadoRef.current = false;
+  }, [enCurso]);
+  useEffect(() => {
+    if (terminado && !notificadoRef.current) {
+      notificadoRef.current = true;
+      toast.success("Envío finalizado", {
+        description: `${enviados} enviados${fallidos > 0 ? ` · ${fallidos} fallidos` : ""}`,
+        duration: Infinity,
+      });
+    }
+  }, [terminado, enviados, fallidos]);
 
   // El botón se rehabilita apenas termina el envío (no hace falta cerrar la vista).
   const puedeEnviar =

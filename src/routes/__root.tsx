@@ -11,6 +11,8 @@ import { type ReactNode, useEffect } from "react";
 
 import appCss from "../styles.css?url";
 import { ThemeProvider } from "../components/theme-provider";
+import { Toaster } from "../components/ui/sonner";
+import { ApkUpdateBanner } from "../components/apk-update-banner";
 
 function NotFoundComponent() {
   return (
@@ -126,7 +128,9 @@ function RootComponent() {
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
+        <ApkUpdateBanner />
         <Outlet />
+        <Toaster position="top-right" closeButton />
       </ThemeProvider>
     </QueryClientProvider>
   );
