@@ -33,37 +33,12 @@ function LoginPage() {
   const [password, setPassword] = useState("");
   const [recordar, setRecordar] = useState(false);
   const [error, setError] = useState("");
-  const [apkInstalada, setApkInstalada] = useState(false);
   const [bioSoportada, setBioSoportada] = useState(false);
   const [bioActiva, setBioActiva] = useState(false);
   const [activarBio, setActivarBio] = useState(false);
 
-  // Mostrar "Descargar APK" solo en Android y fuera de la app ya instalada (WebView Capacitor).
-  const enAndroid =
-    typeof navigator !== "undefined" &&
-    /android/i.test(navigator.userAgent) &&
-    !/lubrimesys|capacitor/i.test(navigator.userAgent);
   // El APK se sirve desde GitHub Pages (public/lubrimesys.apk), mismo origen que la web.
-  // URL absoluta al origen actual para que el navegador la trate como descarga directa
-  // (evita que el router del SPA o rutas relativas intercepten el click).
-  const APK_URL =
-    typeof window !== "undefined"
-      ? new URL(`${import.meta.env.BASE_URL}lubrimesys.apk`, window.location.origin).href
-      : `${import.meta.env.BASE_URL}lubrimesys.apk`;
-
-  // Si la app nativa ya está instalada, ocultar el botón de descarga.
-  useEffect(() => {
-    const nav = navigator as Navigator & {
-      getInstalledRelatedApps?: () => Promise<{ id?: string }[]>;
-    };
-    if (!enAndroid || typeof nav.getInstalledRelatedApps !== "function") return;
-    nav
-      .getInstalledRelatedApps()
-      .then((apps) => setApkInstalada(apps.length > 0))
-      .catch(() => {});
-  }, [enAndroid]);
-
-  const mostrarApk = enAndroid && !apkInstalada;
+  const APK_URL = `${import.meta.env.BASE_URL}lubrimesys.apk`;
 
   // Estado de biometría (solo dentro del APK).
   useEffect(() => {
@@ -122,26 +97,19 @@ function LoginPage() {
 
       <div className="absolute top-4 right-4 z-10 flex flex-col items-end gap-2">
         <div className="flex items-center gap-2">
-          {mostrarApk && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                window.location.href = APK_URL;
-              }}
-              className="gap-2 border-primary/30 bg-background/80 text-primary backdrop-blur hover:bg-primary hover:text-primary-foreground"
-            >
-              <Download className="h-4 w-4" />
-              Descargar app
-            </Button>
-          )}
+          <a
+            href={APK_URL}
+            download
+            className="inline-flex h-9 items-center gap-2 rounded-md border border-primary/30 bg-background/80 px-3 text-sm font-medium text-primary backdrop-blur transition-colors hover:bg-primary hover:text-primary-foreground"
+          >
+            <Download className="h-4 w-4" />
+            Descargar app
+          </a>
           <ThemeToggle />
         </div>
-        {mostrarApk && (
-          <p className="max-w-[200px] text-right text-[10px] leading-tight text-muted-foreground">
-            Android 6.0+. Activa "Instalar apps de fuentes desconocidas".
-          </p>
-        )}
+        <p className="max-w-[200px] text-right text-[10px] leading-tight text-muted-foreground">
+          Android: activa "Instalar apps de fuentes desconocidas".
+        </p>
       </div>
 
       <div className="relative z-10 grid min-h-screen lg:grid-cols-2">
