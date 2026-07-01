@@ -27,6 +27,8 @@ dist-ssr
 *.apk
 *.aab
 *.keystore
+# Excepción: el APK publicado se sirve desde Pages, así que SÍ se commitea.
+!public/lubrimesys.apk
 *.jks
 
 # Editor directories and files

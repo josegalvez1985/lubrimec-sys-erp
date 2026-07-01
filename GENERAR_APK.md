@@ -38,6 +38,12 @@ cd android
 # --- OPCIÓN B: RELEASE (para distribuir; sale SIN firmar, ver "Firmar") ---
 # .\gradlew assembleRelease --stacktrace
 # salida: android\app\build\outputs\apk\release\app-release-unsigned.apk
+
+# 4. Publicar: copiar el APK a public/ (lo sirve GitHub Pages para la descarga).
+# -Force SOBRESCRIBE el public\lubrimesys.apk anterior: el nombre es fijo, siempre se
+# reemplaza el APK viejo por el nuevo (no se acumulan versiones en el repo).
+cd ..
+Copy-Item android\app\build\outputs\apk\debug\app-debug.apk public\lubrimesys.apk -Force
 ```
 
 Abrir la carpeta del resultado:
@@ -54,37 +60,25 @@ explorer .\app\build\outputs\apk\debug\
 
 El APK debug ya viene firmado con la debug key, así que se instala sin pasos extra.
 
-## Subir a GitHub Releases (para el botón "Descargar app" del login)
+## Publicar el APK (para el botón "Descargar app" del login)
 
-El login apunta a un asset fijo llamado **`lubrimesys.apk`** en el último release:
-`https://github.com/josegalvez1985/lubrimec-sys-erp/releases/latest/download/lubrimesys.apk`
+El APK se sirve **desde GitHub Pages**, igual que la web (no se usa GitHub Releases). El botón
+"Descargar app" del login apunta a `public/lubrimesys.apk`, que Pages publica en:
+`https://josegalvez1985.github.io/lubrimec-sys-erp/lubrimesys.apk`
 
-1. Renombrar el APK a `lubrimesys.apk`.
-2. En GitHub → Releases → *Draft a new release* → crear un tag (ej. `v1.0.0`).
-3. Adjuntar `lubrimesys.apk` como asset. Publicar.
+Cada vez que generes un APK nuevo:
 
-Con eso, el botón "Descargar app" (visible en el login desde un Android) descarga el APK.
+1. Copiar el APK compilado a **`public/lubrimesys.apk`** (sobrescribe el anterior):
+   ```powershell
+   Copy-Item android\app\build\outputs\apk\debug\app-debug.apk public\lubrimesys.apk -Force
+   ```
+2. Subir `versionName` (y `versionCode`) en `android/app/build.gradle` y poner la **misma versión**
+   en `public/apk-version.json` (para el banner de aviso de actualización).
+3. `git add public/lubrimesys.apk public/apk-version.json android/app/build.gradle` → commit → push.
+   El workflow de Pages lo publica y el botón "Descargar app" sirve el APK nuevo.
 
-## Build automático en la nube (GitHub Actions)
-
-En vez de compilar y subir a mano, el workflow **`.github/workflows/build-apk.yml`** compila el
-APK en GitHub y lo publica en el Release, sin usar tu PC. Se dispara al **empujar un tag `vX.Y.Z`**:
-
-```powershell
-# tras hacer push de los cambios a main
-git tag v1.1.0
-git push origin v1.1.0
-```
-
-Eso: hace `npm install` + `npx cap sync android` + `assembleDebug`, renombra a `lubrimesys.apk`
-y crea/actualiza el Release del tag con ese asset. El botón "Descargar app" del login lo toma
-automáticamente. También se puede correr a mano desde la pestaña **Actions → Build & Release APK →
-Run workflow** (`workflow_dispatch`).
-
-> **Firma:** el APK sale firmado con la *debug key* que Actions genera en cada run (efímera). Es
-> instalable por sideload, pero la firma cambia entre builds → para **actualizar** sobre una versión
-> anterior el usuario puede tener que **desinstalar** primero. Para una firma estable (actualización
-> in-place), configurar un keystore propio como secret y firmar el release (ver "Firmar" abajo).
+> El APK está excluido del `.gitignore` general (`*.apk`) con la excepción `!public/lubrimesys.apk`,
+> así que **este sí se commitea** (los demás `.apk` de `android/build/` siguen ignorados).
 
 ## ¿Cuándo hay que regenerar el APK?
 

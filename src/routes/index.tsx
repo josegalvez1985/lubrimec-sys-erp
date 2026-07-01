@@ -43,8 +43,8 @@ function LoginPage() {
     typeof navigator !== "undefined" &&
     /android/i.test(navigator.userAgent) &&
     !/lubrimesys|capacitor/i.test(navigator.userAgent);
-  const APK_URL =
-    "https://github.com/josegalvez1985/lubrimec-sys-erp/releases/latest/download/lubrimesys.apk";
+  // El APK se sirve desde GitHub Pages (public/lubrimesys.apk), mismo origen que la web.
+  const APK_URL = `${import.meta.env.BASE_URL}lubrimesys.apk`;
 
   // Si la app nativa ya está instalada, ocultar el botón de descarga.
   useEffect(() => {
