@@ -170,3 +170,108 @@ export async function eliminarMarca(idMarca: number, codEmpresa: number): Promis
   const q = new URLSearchParams({ cod_empresa: String(codEmpresa) });
   await authFetch(`marcas/${idMarca}?${q}`, { method: "DELETE" });
 }
+
+// ─── Mensajes a WhatsApp (página 117) ──────────────────────────────────────────
+
+// Número de la tabla numeros_whatsapp (pendientes de enviar).
+export type NumeroWhatsapp = {
+  id: number;
+  numero: string;
+  mensajeado: string; // 'N' pendiente | 'S' enviado | 'E' error
+};
+
+// El envío corre en background (job en Oracle). El endpoint responde de inmediato.
+export type RespuestaEnvio = {
+  envio_id: number;
+  job: string;
+};
+
+export type EnvioWhatsappInput = {
+  mensaje: string | null; // texto / caption de la imagen
+  imagen_url: string | null; // URL pública de la imagen (wasender no acepta base64)
+  numeros_manual: string[] | null; // números escritos a mano (se agregan a la tabla)
+};
+
+// Línea de LOG_WHATSAPP para seguir el progreso del envío.
+export type LogWhatsapp = {
+  numero: string;
+  estado: string; // ENVIADO | ERROR | INVALIDO | EXCEPCION
+  http: number | null;
+  detalle: string | null;
+  fecha: string; // ISO
+};
+
+// Números pendientes desde la BD (numeros_whatsapp con mensajeado != 'S').
+export async function listarNumerosWhatsapp(): Promise<NumeroWhatsapp[]> {
+  const data = await authFetch("whatsapp/numeros");
+  return (data.data ?? []) as NumeroWhatsapp[];
+}
+
+// Carga masiva de números a numeros_whatsapp. Devuelve cuántos se insertaron/omitieron.
+export async function cargarNumerosWhatsapp(
+  numeros: string[],
+): Promise<{ insertados: number; omitidos: number }> {
+  const data = await authFetch("whatsapp/numeros/cargar", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ numeros: JSON.stringify(numeros) }),
+  });
+  return { insertados: data.insertados ?? 0, omitidos: data.omitidos ?? 0 };
+}
+
+// Borra TODOS los números de la tabla.
+export async function borrarNumerosWhatsapp(): Promise<number> {
+  const data = await authFetch("whatsapp/numeros", { method: "DELETE" });
+  return data.borrados ?? 0;
+}
+
+// Sube la imagen a ORDS (BLOB) y devuelve su URL pública, que wasender usará como
+// imageUrl. Va por el proxy ORDS; la sirve el endpoint público whatsapp/imagen/:id.
+// dataUrl: "data:image/png;base64,....". Se extrae el mime y se manda base64 puro.
+export async function subirImagenWhatsapp(dataUrl: string, nombre?: string): Promise<string> {
+  const m = /^data:([^;]+);base64,(.+)$/s.exec(dataUrl);
+  const mime = m?.[1] ?? "image/jpeg";
+  const base64 = m?.[2] ?? dataUrl;
+  const data = await authFetch("whatsapp/imagen", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ base64, mime, nombre: nombre ?? null }),
+  });
+  if (!data?.url) throw new Error(data?.message ?? "No se pudo subir la imagen");
+  return data.url as string;
+}
+
+// Lanza el envío (texto y/o imagen). Devuelve el id del envío para seguir el progreso.
+export async function enviarWhatsapp(input: EnvioWhatsappInput): Promise<RespuestaEnvio> {
+  const data = await authFetch("whatsapp/enviar", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      mensaje: input.mensaje,
+      imagen_url: input.imagen_url,
+      // el back espera un JSON array serializado en el bind :numeros_manual
+      numeros_manual: input.numeros_manual ? JSON.stringify(input.numeros_manual) : null,
+    }),
+  });
+  return { envio_id: data.envio_id as number, job: data.job as string };
+}
+
+// Progreso del envío: filas de LOG_WHATSAPP desde una marca de tiempo (ISO).
+// Se usa en polling: un fallo puntual (incl. 401) NO debe cerrar sesión ni
+// redirigir al login (sacaría al usuario de la pantalla en pleno envío). Por eso
+// no usa authFetch; ante error devuelve [] y el poll reintenta en el próximo tick.
+export async function logsWhatsapp(desde?: string): Promise<LogWhatsapp[]> {
+  const s = getSesion();
+  if (!s) return [];
+  const q = desde ? `?${new URLSearchParams({ desde })}` : "";
+  try {
+    const res = await fetch(url(`whatsapp/logs${q}`), {
+      headers: { Authorization: `Bearer ${s.token}` },
+    });
+    if (!res.ok) return [];
+    const data = await res.json().catch(() => ({}));
+    return (data.data ?? []) as LogWhatsapp[];
+  } catch {
+    return [];
+  }
+}

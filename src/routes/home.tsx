@@ -75,6 +75,7 @@ import { cn } from "@/lib/utils";
 import { getSesion, cerrarSesion, getMenuPaginas, type PaginaMenu } from "@/lib/api";
 import { usePWAInstall } from "@/hooks/use-pwa-install";
 import { MarcasView } from "@/components/marcas-view";
+import { WhatsappView } from "@/components/whatsapp-view";
 
 // Icono por page_id (APEX). Tiene prioridad sobre el match por palabra clave.
 const ICONO_PAGINA: Record<number, LucideIcon> = {
@@ -194,6 +195,7 @@ type NavKey = "dashboard" | number;
 // Las páginas del menú sin entrada aquí muestran un Placeholder con su título.
 const VISTAS: Record<number, () => ReactElement> = {
   6: () => <MarcasView />, // Marcas
+  117: () => <WhatsappView />, // Mensajes a Whatsapp
 };
 
 function HomePage() {
