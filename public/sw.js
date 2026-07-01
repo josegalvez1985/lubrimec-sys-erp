@@ -1,4 +1,4 @@
-const CACHE = "lubrimesys-v1";
+const CACHE = "lubrimesys-v2";
 const PRECACHE = ["/", "/index.html"];
 
 self.addEventListener("install", (e) => {
@@ -13,8 +13,22 @@ self.addEventListener("activate", (e) => {
   );
 });
 
+// Rutas que NUNCA se cachean: son datos de la API (multi-sistema, deben verse al momento).
+// El SW no las intercepta → van siempre a la red.
+function esApi(url) {
+  return (
+    url.pathname.includes("/api/ords/") ||
+    url.pathname.includes("/ords/") ||
+    url.hostname.includes("oracleapex.com")
+  );
+}
+
 self.addEventListener("fetch", (e) => {
   if (e.request.method !== "GET") return;
+  const url = new URL(e.request.url);
+  // Peticiones a la API: dejar pasar a la red, sin caché.
+  if (esApi(url)) return;
+  // Resto (assets estáticos): cache-first.
   e.respondWith(
     caches.match(e.request).then((cached) =>
       cached ?? fetch(e.request).then((res) => {

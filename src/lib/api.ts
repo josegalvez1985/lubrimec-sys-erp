@@ -44,6 +44,7 @@ export async function login(
 ): Promise<Sesion> {
   const res = await fetch(url("auth/login"), {
     method: "POST",
+    cache: "no-store",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ usuario, password }),
   });
@@ -85,6 +86,7 @@ export async function getMenuPaginas(): Promise<PaginaMenu[]> {
   const url_final = `${url("menu/paginas")}?${q}`;
   console.log("[api] menu/paginas request:", url_final, "token:", s.token.slice(0, 16), "app_id:", s.app_id, "app_user:", s.app_user);
   const res = await fetch(url_final, {
+    cache: "no-store",
     headers: { Authorization: `Bearer ${s.token}` },
   });
 
@@ -121,6 +123,8 @@ async function authFetch(path: string, init: RequestInit = {}) {
   if (!s) throw new Error("No hay sesión activa");
   const res = await fetch(url(path), {
     ...init,
+    // Datos multi-sistema: nunca servir desde caché del navegador/HTTP.
+    cache: "no-store",
     headers: {
       ...(init.headers ?? {}),
       Authorization: `Bearer ${s.token}`,

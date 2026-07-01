@@ -208,7 +208,6 @@ function HomePage() {
   const paginasQuery = useQuery({
     queryKey: ["menu-paginas"],
     queryFn: getMenuPaginas,
-    staleTime: 5 * 60 * 1000,
     retry: false,
   });
   const paginas = paginasQuery.data ?? [];
