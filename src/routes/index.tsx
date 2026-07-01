@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
-import { useState, type FormEvent } from "react";
+import { useState, useEffect, type FormEvent } from "react";
 import { Download, Eye, EyeOff, Loader2, Lock, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -7,7 +7,6 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { login } from "@/lib/api";
-import { usePWAInstall } from "@/hooks/use-pwa-install";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -27,15 +26,29 @@ function LoginPage() {
   const [password, setPassword] = useState("");
   const [recordar, setRecordar] = useState(false);
   const [error, setError] = useState("");
-  const { canInstall, install } = usePWAInstall();
+  const [apkInstalada, setApkInstalada] = useState(false);
 
   // Mostrar "Descargar APK" solo en Android y fuera de la app ya instalada (WebView Capacitor).
-  const mostrarApk =
+  const enAndroid =
     typeof navigator !== "undefined" &&
     /android/i.test(navigator.userAgent) &&
     !/lubrimesys|capacitor/i.test(navigator.userAgent);
   const APK_URL =
     "https://github.com/josegalvez1985/lubrimec-sys-erp/releases/latest/download/lubrimesys.apk";
+
+  // Si la app nativa ya está instalada, ocultar el botón de descarga.
+  useEffect(() => {
+    const nav = navigator as Navigator & {
+      getInstalledRelatedApps?: () => Promise<{ id?: string }[]>;
+    };
+    if (!enAndroid || typeof nav.getInstalledRelatedApps !== "function") return;
+    nav
+      .getInstalledRelatedApps()
+      .then((apps) => setApkInstalada(apps.length > 0))
+      .catch(() => {});
+  }, [enAndroid]);
+
+  const mostrarApk = enAndroid && !apkInstalada;
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -59,32 +72,28 @@ function LoginPage() {
         <div className="absolute -bottom-32 -left-32 h-96 w-96 rounded-full bg-primary/20 blur-3xl" />
       </div>
 
-      <div className="absolute top-4 right-4 z-10 flex items-center gap-2">
+      <div className="absolute top-4 right-4 z-10 flex flex-col items-end gap-2">
+        <div className="flex items-center gap-2">
+          {mostrarApk && (
+            <Button
+              asChild
+              variant="outline"
+              size="sm"
+              className="gap-2 border-primary/30 bg-background/80 text-primary backdrop-blur hover:bg-primary hover:text-primary-foreground"
+            >
+              <a href={APK_URL} download>
+                <Download className="h-4 w-4" />
+                Descargar app
+              </a>
+            </Button>
+          )}
+          <ThemeToggle />
+        </div>
         {mostrarApk && (
-          <Button
-            asChild
-            variant="outline"
-            size="sm"
-            className="gap-2 border-primary/30 bg-background/80 text-primary backdrop-blur hover:bg-primary hover:text-primary-foreground"
-          >
-            <a href={APK_URL} download>
-              <Download className="h-4 w-4" />
-              Descargar app
-            </a>
-          </Button>
+          <p className="max-w-[200px] text-right text-[10px] leading-tight text-muted-foreground">
+            Android 6.0+. Activa "Instalar apps de fuentes desconocidas".
+          </p>
         )}
-        {canInstall && (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={install}
-            className="gap-2 border-primary/30 bg-background/80 text-primary backdrop-blur hover:bg-primary hover:text-primary-foreground"
-          >
-            <Download className="h-4 w-4" />
-            Instalar app
-          </Button>
-        )}
-        <ThemeToggle />
       </div>
 
       <div className="relative z-10 grid min-h-screen lg:grid-cols-2">

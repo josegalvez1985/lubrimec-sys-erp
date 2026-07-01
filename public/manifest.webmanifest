@@ -7,6 +7,14 @@
   "display": "standalone",
   "background_color": "#1a120b",
   "theme_color": "#f37316",
+  "prefer_related_applications": true,
+  "related_applications": [
+    {
+      "platform": "play",
+      "id": "com.lubrimec.sys",
+      "url": "https://play.google.com/store/apps/details?id=com.lubrimec.sys"
+    }
+  ],
   "icons": [
     {
       "src": "./icon-192.png",
