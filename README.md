@@ -74,12 +74,31 @@ accesos rápidos se arman dinámicamente desde el endpoint `menu/paginas`.
   filtros año/mes y KPI "Ventas hoy" real (variación vs. ayer). Endpoints:
   `db/ORDS_VENTAS_DASHBOARD.sql` (`ventas/anios`, `ventas/meses`, `ventas/por-dia`).
 - **Marcas** (page_id 6) — CRUD, referencia del patrón.
+- **Personas** (page_id 2) — CRUD de clientes/proveedores. Tabla con búsqueda (nombre/CI/RUC/
+  teléfono) y columna de acciones (ver/editar/borrar); formulario en modal para crear/editar
+  (selects tipo F/J, cliente-proveedor C/P/A, sexo, fecha). "Nombre de fantasía" se autocopia del
+  "Nombre" hasta que se edite a mano. Backend: `db/PKG_PERSONAS_LUBRIMEC.sql`, `db/ORDS_PERSONAS.sql`.
+- **Pedidos de Artículos** (page_id 63) — grilla de compras/ventas/existencia/costo por artículo.
+  Filtrado 100% en el front: búsqueda + facetas dependientes en sidebar (En Falta, Rubro, Proveedor)
+  y orden por columnas. Check + cantidad por fila y botón "Copiar pedido" al portapapeles. Backend:
+  `db/ORDS_PEDIDOS_ARTICULOS.sql` (query cruda, devuelve todo el dataset).
 - **Ventas Por Artículos** (page_id 54) — grilla con filtros (búsqueda, fecha, año/mes,
   vendedor), totales, export a Excel/PDF y vista de tarjetas en móvil. Por defecto carga el
   último día con ventas. Backend: `db/ORDS_VENTAS_ARTICULOS.sql`.
-- **Artículos Más Vendidos** (page_id 102) — ranking por cantidad de ventas con facetas
-  (proveedor, rubro, viscosidad, marca, unidad), export Excel/PDF. Backend:
-  `db/ORDS_ARTICULOS_MAS_VENDIDOS.sql`.
+- **Artículos Más Vendidos** (page_id 102) — ranking por cantidad de ventas. El backend
+  (`db/ORDS_ARTICULOS_MAS_VENDIDOS.sql`) devuelve **todo el dataset de una vez** y el filtrado se
+  hace **100% en el front** (sin round-trips por filtro):
+  - **Búsqueda** dinámica (al escribir, sobre descripción/OEM/proveedor/marca).
+  - **Facetas dependientes** multi-select (proveedor, rubro, viscosidad, marca, unidad) con
+    checklist desplegable: OR dentro de una faceta, AND entre facetas distintas; las opciones de
+    cada faceta se recalculan según lo ya filtrado (no se ofrecen valores incompatibles).
+  - **Armar pedido:** check + cantidad por artículo y botón "Copiar pedido" que copia al
+    portapapeles el listado (`N x descripción`) para enviarlo al proveedor por WhatsApp (copia con
+    fallback a `execCommand` para HTTP/WebView sin `navigator.clipboard`).
+  - Export a Excel/PDF.
+- **Cotización** (page_id 98) — no es una vista propia: abre el cotizador externo
+  (`https://www.lubrimec.shop/cotizador`) embebido en un modal (iframe). Se intercepta en
+  `handleNav` de `src/routes/home.tsx`.
 - **Mensajes a WhatsApp** (page_id 117) — envío masivo de texto/imagen vía wasenderapi:
   números desde la BD (`numeros_whatsapp`) o manuales, importar CSV de contactos, envío async con
   progreso, borrador persistente, guía de uso integrada. Backend: `db/PKG_WHATSAPP_LUBRIMEC.sql`,

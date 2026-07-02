@@ -3,6 +3,11 @@
 --
 -- Estructura PLANA (ver db/GUIA_ENDPOINTS.md). Solo lectura, sin paquete.
 --
+-- NOTA: la vista actual (src/components/articulos-mas-vendidos-view.tsx) trae TODO
+-- el dataset (sin params de filtro) y filtra/facetea 100% en el front. Los params
+-- de abajo siguen soportados por si se quiere volver a filtrar server-side, pero
+-- hoy el front no los usa.
+--
 --   GET /ords/josegalvez/lubrimec/articulos/mas-vendidos
 --       ?cod_empresa=24          (opcional, default 24)
 --       &search=<texto>          (opcional: descripcion/oem/proveedor/marca)

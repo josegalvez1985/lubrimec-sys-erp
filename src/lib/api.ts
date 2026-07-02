@@ -192,6 +192,93 @@ export async function eliminarMarca(idMarca: number, codEmpresa: number): Promis
   await authFetch(`marcas/${idMarca}?${q}`, { method: "DELETE" });
 }
 
+// ─── Empresas (página 12) ────────────────────────────────────────────────────
+// CRUD de EMPRESAS. activo: 'S'/'N'. nro_documento es único (backend 409 si dup).
+
+export type Empresa = {
+  cod_empresa: number;
+  nombre: string | null;
+  nro_documento: string | null;
+  activo: string | null; // 'S' | 'N'
+};
+
+export type EmpresaInput = Omit<Empresa, "cod_empresa">;
+
+export async function listarEmpresas(): Promise<Empresa[]> {
+  const data = await authFetch("empresas");
+  return (data.data ?? []) as Empresa[];
+}
+
+export async function crearEmpresa(input: EmpresaInput): Promise<number> {
+  const data = await authFetch("empresas", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  return data.cod_empresa as number;
+}
+
+export async function actualizarEmpresa(codEmpresa: number, input: EmpresaInput): Promise<void> {
+  await authFetch(`empresas/${codEmpresa}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+}
+
+export async function eliminarEmpresa(codEmpresa: number): Promise<void> {
+  await authFetch(`empresas/${codEmpresa}`, { method: "DELETE" });
+}
+
+// ─── Personas (página 2) ─────────────────────────────────────────────────────
+// CRUD de PERSONAS. tipo_persona: F=Física, J=Jurídica. ind_cliente_proveedor:
+// C=Cliente, P=Proveedor, A=Ambos. fec_nacimiento: 'YYYY-MM-DD' o null.
+
+export type Persona = {
+  cod_persona: number;
+  tipo_persona: string | null;
+  nombre: string | null;
+  nombre_fantasia: string | null;
+  sexo: string | null;
+  fec_nacimiento: string | null; // "YYYY-MM-DD"
+  nro_telefono: string | null;
+  direccion: string | null;
+  nro_ci: string | null;
+  nro_ruc: string | null;
+  ind_cliente_proveedor: string | null;
+  cod_empresa: number;
+};
+
+export type PersonaInput = Omit<Persona, "cod_persona">;
+
+export async function listarPersonas(codEmpresa: number): Promise<Persona[]> {
+  const q = new URLSearchParams({ cod_empresa: String(codEmpresa) });
+  const data = await authFetch(`personas?${q}`);
+  return (data.data ?? []) as Persona[];
+}
+
+export async function crearPersona(input: PersonaInput): Promise<number> {
+  const data = await authFetch("personas", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  return data.cod_persona as number;
+}
+
+export async function actualizarPersona(codPersona: number, input: PersonaInput): Promise<void> {
+  await authFetch(`personas/${codPersona}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+}
+
+export async function eliminarPersona(codPersona: number, codEmpresa: number): Promise<void> {
+  const q = new URLSearchParams({ cod_empresa: String(codEmpresa) });
+  await authFetch(`personas/${codPersona}?${q}`, { method: "DELETE" });
+}
+
 // ─── Mensajes a WhatsApp (página 117) ──────────────────────────────────────────
 
 // Número de la tabla numeros_whatsapp (pendientes de enviar).
@@ -408,6 +495,28 @@ export async function listarArticulosMasVendidos(
   }
   const data = await authFetch(`articulos/mas-vendidos?${qs(params)}`);
   return (data.data ?? []) as ArticuloMasVendido[];
+}
+
+// ─── Pedidos de Artículos (página 63) ────────────────────────────────────────
+// GET pedidos/articulos (db/ORDS_PEDIDOS_ARTICULOS.sql). Devuelve TODO el dataset;
+// búsqueda, facetas y orden se hacen en el front.
+
+export type PedidoArticulo = {
+  codigo_oem: string | null;
+  articulo: string | null;
+  existencia: number | null;
+  costo_ultimo: number | null;
+  proveedor: string | null;
+  rubro: string | null;
+  ventas: number;
+  compras: number;
+  rotacion: number | null;
+  faltantes: string; // 'En Falta' | 'Stock'
+};
+
+export async function listarPedidosArticulos(codEmpresa = 24): Promise<PedidoArticulo[]> {
+  const data = await authFetch(`pedidos/articulos?cod_empresa=${codEmpresa}`);
+  return (data.data ?? []) as PedidoArticulo[];
 }
 
 // Progreso del envío: filas de LOG_WHATSAPP desde una marca de tiempo (ISO).
