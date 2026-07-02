@@ -23,7 +23,8 @@ CREATE OR REPLACE PROCEDURE ENVIAR_MENSAJES_WHATSAPP (
     v_api_key           VARCHAR2(500)  := 'e83c588e35133bccc177db1df36ab10701640d02437dfb17438cc5aaa288350c';
     v_max_reintentos    NUMBER         := 3;
     v_pausa_entre_msgs  NUMBER         := 20;
-    v_max_registros     NUMBER         := 100;
+    v_max_registros     NUMBER         := 50;
+    v_numero_aviso      VARCHAR2(20)   := '0972111745';  -- avisar aqui al terminar
 
     v_request_body      CLOB;
     v_contador_enviados NUMBER         := 0;
@@ -80,6 +81,8 @@ CREATE OR REPLACE PROCEDURE ENVIAR_MENSAJES_WHATSAPP (
         v_enviado_local  BOOLEAN := FALSE;
         v_response_local CLOB;
         v_status_local   NUMBER;
+        v_api_ok         BOOLEAN;  -- success del JSON que devuelve wasenderapi
+        v_json_api       APEX_JSON.T_VALUES;
     BEGIN
         p_enviado := FALSE;
         WHILE v_intento_local < v_max_reintentos AND NOT v_enviado_local LOOP
@@ -99,11 +102,30 @@ CREATE OR REPLACE PROCEDURE ENVIAR_MENSAJES_WHATSAPP (
                 v_status_local := APEX_WEB_SERVICE.G_STATUS_CODE;
 
                 IF v_status_local IN (200, 201, 202) THEN
-                    IF p_id IS NOT NULL THEN
-                        UPDATE numeros_whatsapp SET mensajeado = 'S' WHERE id = p_id;
+                    -- wasenderapi puede responder 200 con {"success":false,...}. Parseamos
+                    -- el JSON para no marcar como ENVIADO un mensaje que la API rechazo.
+                    BEGIN
+                        APEX_JSON.PARSE(v_json_api, v_response_local);
+                        v_api_ok := UPPER(NVL(APEX_JSON.GET_VARCHAR2(
+                                        p_path => 'success', p_values => v_json_api), 'TRUE')) = 'TRUE';
+                    EXCEPTION WHEN OTHERS THEN
+                        v_api_ok := TRUE;  -- si no es JSON parseable, nos guiamos por el HTTP 2xx
+                    END;
+
+                    IF v_api_ok THEN
+                        IF p_id IS NOT NULL THEN
+                            UPDATE numeros_whatsapp SET mensajeado = 'S' WHERE id = p_id;
+                        END IF;
+                        REGISTRAR_LOG(p_numero_original, p_numero_limpio, 'ENVIADO', v_status_local, v_response_local, NULL);
+                        v_contador_enviados := v_contador_enviados + 1;
+                    ELSE
+                        IF p_id IS NOT NULL THEN
+                            UPDATE numeros_whatsapp SET mensajeado = 'E' WHERE id = p_id;
+                        END IF;
+                        REGISTRAR_LOG(p_numero_original, p_numero_limpio, 'ERROR', v_status_local, v_response_local,
+                                      'API respondio success=false');
+                        v_contador_errores := v_contador_errores + 1;
                     END IF;
-                    REGISTRAR_LOG(p_numero_original, p_numero_limpio, 'ENVIADO', v_status_local, v_response_local, NULL);
-                    v_contador_enviados := v_contador_enviados + 1;
                     v_enviado_local := TRUE; p_enviado := TRUE;
 
                 ELSIF v_status_local IN (429, 500, 502, 503, 504) THEN
@@ -243,6 +265,20 @@ BEGIN
                ' | Invalidos: ' || v_contador_invalidos ||
                ' | Tiempo: ' || ROUND(v_tiempo_total / 60, 2) || ' min';
     COMMIT;
+
+    -- Aviso de finalizacion al numero fijo (usa el resumen como texto, sin imagen).
+    BEGIN
+        v_img_json    := '';
+        v_mensaje_esc := ESCAPAR_JSON(
+            'Proceso de envio de mensajes de WhatsApp finalizado. ' || p_error);
+        v_numero_limpio := LIMPIAR_NUMERO(v_numero_aviso);
+        IF v_numero_limpio IS NOT NULL THEN
+            ENVIAR_CON_REINTENTOS(NULL, v_numero_aviso, v_numero_limpio, v_enviado);
+            COMMIT;
+        END IF;
+    EXCEPTION WHEN OTHERS THEN
+        apex_debug.message('Error al enviar aviso de finalizacion: ' || SQLERRM);
+    END;
 
 EXCEPTION WHEN OTHERS THEN
     ROLLBACK;
