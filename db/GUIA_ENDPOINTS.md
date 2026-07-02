@@ -42,7 +42,11 @@ como query param `?cod_empresa=:n`.
    - Cada uno: 1) valida token → 401 si NULL, 2) ejecuta, 3) responde con APEX_JSON.
    - Reusar el patrón de helpers `p_error(status, reason, message)` y
      `f_usuario(token)` de `PKG_MARCAS_LUBRIMEC`.
-   - Si la PK la asigna un trigger (renumerar), usar `RETURNING <pk> INTO` en el INSERT.
+   - Si la PK la asigna un trigger (renumerar), una secuencia o `GENERATED ... AS IDENTITY`,
+     **no** incluir la PK en el INSERT y usar `RETURNING <pk> INTO l_id` para devolverla (modelos:
+     `rubros_sql.sql` trigger, `monedas_sql.sql` secuencia, `condiciones_facturas_sql.sql` IDENTITY).
+   - Si la PK **la ingresa el usuario** (no autogenerada), validarla obligatoria y devolver 409 en
+     `DUP_VAL_ON_INDEX` (modelos: `iva_sql.sql`, `unidades_medidas_sql.sql`).
    - Estados: 201 Created, 400 Bad Request, 404 Not Found, 401 Unauthorized,
      500 Internal Server Error.
 
@@ -111,6 +115,45 @@ Gotcha de PL/SQL (paquete):
   da `PLS-00231: la función no se puede utilizar en SQL`. Calcularla en una variable local antes del
   SQL y usar la variable. Pasó con `f_fecha` en `PKG_PERSONAS_LUBRIMEC` (fix: `l_fecha := f_fecha(...)`
   y luego usar `l_fecha` en el INSERT/UPDATE).
+- **`APEX_JSON.WRITE('campo', NULL)` es ambiguo** (`PLS-00307: demasiadas declaraciones de WRITE`):
+  el compilador no sabe qué overload usar. No existe `WRITE_NULL` en todas las versiones
+  (`PLS-00302`). Fix: usar una **variable tipada** puesta a NULL (ej. `l_b64 CLOB := NULL;`
+  `APEX_JSON.WRITE('imagen_base64', l_b64);`). Pasó en `PKG_MONEDAS_LUBRIMEC`.
+
+## Convención de archivos SQL
+
+Desde 2026-07: **un solo archivo por página** con el paquete + los endpoints ORDS juntos, nombrado
+`db/<tabla>_sql.sql` (minúsculas). Ejecutar completo como JOSEGALVEZ: corre primero el paquete,
+luego el bloque `BEGIN ... ORDS.DEFINE_* ... END;`. Ejemplos: `personas_sql.sql`, `iva_sql.sql`,
+`monedas_sql.sql`, `rubros_sql.sql`. (Las páginas viejas — marcas, whatsapp, ventas — quedan como
+`PKG_*.sql` + `ORDS_*.sql` separados; no hace falta migrarlas.)
+
+## Formularios cabecera + detalle (maestro-detalle)
+
+Modelo: **Monedas** (`db/monedas_sql.sql` + `src/components/monedas-view.tsx`). Una tabla cabecera
+(`MONEDAS`) y una de detalle (`MONEDAS_DETALLE`, FK a la cabecera, PK compuesta).
+
+Backend (paquete + ORDS en el mismo archivo):
+- Un solo paquete con procedimientos de **cabecera** (`LISTAR/INSERTAR/ACTUALIZAR/ELIMINAR`) y de
+  **detalle** (`LISTAR_DETALLE`, `GUARDAR_DETALLE`, `ELIMINAR_DETALLE`).
+- Rutas anidadas: `/<tabla>` y `/<tabla>/:id` para la cabecera; `/<tabla>/:id/detalle` y
+  `/<tabla>/:id/detalle/:subid` para el detalle (el `:id` padre viaja en la URL).
+- **Detalle con upsert:** si la PK del detalle la ingresa el usuario, hacer `GUARDAR_DETALLE` que
+  inserta o actualiza según exista (evita distinguir POST/PUT).
+- **Borrado en cascada manual:** al eliminar la cabecera, borrar antes el detalle (o confiar en la
+  FK y devolver 409 si `SQLCODE = -2292`).
+- **Imágenes BLOB:** se intercambian como **base64 en el JSON**. Guardar:
+  `APEX_WEB_SERVICE.CLOBBASE642BLOB` (quitar antes el prefijo `data:...;base64,`). Leer:
+  `APEX_WEB_SERVICE.BLOB2CLOBBASE64` + quitar `CHR(13)/CHR(10)`. El front arma el `data:` URL con el
+  `mime_type`. Ver el gotcha de `WRITE(campo, NULL)` arriba.
+
+Front (React):
+- **Master-detail panel:** lista de cabeceras a la izquierda; al seleccionar una, panel derecho con
+  su detalle. Cada nivel tiene su `useQuery` (`["<tabla>"]` y `["<tabla>-detalle", id]`) y su modal.
+- Al mutar el detalle, invalidar **ambas** queries (el detalle y la cabecera, si esta muestra un
+  contador tipo `cant_detalle`).
+- Imagen: leer el archivo a base64 en el front (`btoa` por chunks para no reventar la pila) y mandar
+  `{ valor, imagen_base64, nombre_imagen, mime_type }`; `imagen_base64: null` = no tocar la imagen.
 
 ## Archivos de referencia (tabla `marcas`)
 

@@ -12,7 +12,9 @@ permissions:
 
 concurrency:
   group: pages
-  cancel-in-progress: true
+  # No cancelar un deploy en curso: cancelarlo a mitad puede dejar el entorno
+  # github-pages colgado y encolar los siguientes indefinidamente. Se encola.
+  cancel-in-progress: false
 
 jobs:
   build:

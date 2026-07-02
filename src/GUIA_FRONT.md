@@ -133,6 +133,43 @@ que hacer nada extra**, solo respetar el patrón:
   al abrir comparando una `key` (`mode:id`) contra la anterior.
 - Errores: `catch` → estado `error` mostrado en el modal / `isError` en la tabla.
 
+## DataTable reutilizable (`src/components/ui/data-table.tsx`)
+
+Grilla genérica estilo Interactive Report de APEX. **Usarla en toda grilla nueva** (modelos:
+`rubros-view`, `personas-view`, `empresas-view`, `iva-view`, `unidades-medidas-view`). Da, sin
+reimplementar: **ordenar por columna** (click en header, 3 estados: asc → desc → sin orden),
+**search global**, **filtro por columna** (ícono embudo, "contiene"), **mostrar/ocultar columnas**,
+**densidad compacta**, **export a Excel** (prop `exportName`) y un contador "N de M".
+
+Uso:
+```tsx
+const COLUMNAS: Column<Fila>[] = [
+  { key: "id", header: "ID", num: true, accessor: (r) => r.id,
+    render: (r) => <Badge>{r.id}</Badge>, className: "w-16" },
+  { key: "nombre", header: "Nombre", accessor: (r) => r.nombre, hideable: false },
+];
+<DataTable
+  columns={COLUMNAS}
+  rows={filas}                       // datos crudos; el filtrado/orden es interno
+  getRowId={(r) => r.id}
+  initialSort={{ key: "nombre", dir: "asc" }}
+  exportName="rubros"                          // muestra botón "Excel"; sin esta prop no aparece
+  actions={(r) => <BotonesAccion row={r} />}   // slot columna Acciones (ver/editar/borrar)
+/>
+```
+Notas de `Column<T>`:
+- `accessor` = valor crudo para ordenar/filtrar/search (texto o número). Sin `accessor` la columna
+  no ordena ni filtra (útil para columnas de solo-render).
+- `render` = celda a mostrar; si falta, usa el `accessor` (null/"" → "—").
+- `num: true` alinea a la derecha y ordena numéricamente.
+- `sortable`/`filterable`/`hideable` = `false` para desactivar por columna (la columna principal
+  suele ir `hideable: false`).
+- El componente **no** hace fetch ni pagina: recibe el array ya traído (regla "sin caché" intacta).
+- El search/filtro reemplaza al `<Input>` manual: quitar el estado `filtro` local de la vista.
+- **Export Excel** (`exportName`): exporta las columnas **visibles** con `accessor` y las filas
+  **ya filtradas/ordenadas** (lo que se ve en pantalla), reusando `exportarExcel` de
+  `src/lib/export.ts`. Sin `exportName` no se muestra el botón.
+
 ## Gotchas de UI
 
 - **Layout responsivo:** el `<main>` del shell (`home.tsx`) lleva `min-w-0` — es hijo flex, y
