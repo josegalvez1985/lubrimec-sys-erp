@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { Fingerprint, Loader2, Moon, Sun } from "lucide-react";
+import { useEffect, useState, type FormEvent } from "react";
+import { Fingerprint, Loader2, Lock, Moon, Sun } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -7,14 +7,17 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { getSesion } from "@/lib/api";
+import { getSesion, login } from "@/lib/api";
 import { useTheme } from "@/components/theme-provider";
 import {
   esNativo,
   biometriaDisponible,
   biometriaActivada,
+  activarBiometria,
   desactivarBiometria,
 } from "@/lib/biometric";
 
@@ -35,23 +38,27 @@ export function PerfilModal({
   const [bioOn, setBioOn] = useState(false);
   const [bioMsg, setBioMsg] = useState<string | null>(null);
   const [bioBusy, setBioBusy] = useState(false);
+  const [pidiendoPwd, setPidiendoPwd] = useState(false);
+  const [bioPwd, setBioPwd] = useState("");
 
   useEffect(() => {
     if (!open) return;
     setBioOn(biometriaActivada());
     setBioMsg(null);
+    setPidiendoPwd(false);
+    setBioPwd("");
     biometriaDisponible().then(setBioSoportada);
   }, [open]);
 
   async function onToggleBio(next: boolean) {
     setBioMsg(null);
     if (next) {
-      // Activar requiere la contraseña; se hace desde el login (donde se conoce).
-      setBioMsg(
-        "Para activar el acceso biométrico, marca la opción al iniciar sesión con tu usuario y contraseña.",
-      );
+      // Activar requiere la contraseña para guardarla en el almacén seguro.
+      setPidiendoPwd(true);
       return;
     }
+    setPidiendoPwd(false);
+    setBioPwd("");
     setBioBusy(true);
     try {
       await desactivarBiometria();
@@ -59,6 +66,33 @@ export function PerfilModal({
       setBioMsg("Acceso biométrico desactivado.");
     } catch {
       setBioMsg("No se pudo desactivar.");
+    } finally {
+      setBioBusy(false);
+    }
+  }
+
+  async function onActivarBio(e: FormEvent) {
+    e.preventDefault();
+    if (!sesion || !bioPwd) return;
+    setBioMsg(null);
+    setBioBusy(true);
+    try {
+      // Valida la contraseña contra el servidor antes de guardarla.
+      // Mantiene la sesión donde ya estaba (localStorage = "recordar").
+      const recordar = localStorage.getItem("sesion") !== null;
+      await login(sesion.usuario, bioPwd, recordar);
+      try {
+        await activarBiometria(sesion.usuario, bioPwd);
+      } catch {
+        setBioMsg("Verificación biométrica cancelada. Intenta de nuevo.");
+        return;
+      }
+      setBioOn(true);
+      setPidiendoPwd(false);
+      setBioPwd("");
+      setBioMsg("Acceso biométrico activado.");
+    } catch (err) {
+      setBioMsg(err instanceof Error ? err.message : "No se pudo activar.");
     } finally {
       setBioBusy(false);
     }
@@ -129,12 +163,38 @@ export function PerfilModal({
                 </div>
               </div>
               <Switch
-                checked={bioOn}
+                checked={bioOn || pidiendoPwd}
                 disabled={!esNativo() || !bioSoportada || bioBusy}
                 onCheckedChange={onToggleBio}
                 aria-label="Alternar acceso biométrico"
               />
             </div>
+            {pidiendoPwd && !bioOn && (
+              <form onSubmit={onActivarBio} className="mt-3 space-y-2">
+                <Label htmlFor="bio-pwd" className="text-xs text-muted-foreground">
+                  Confirma tu contraseña para activar
+                </Label>
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <Lock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      id="bio-pwd"
+                      type="password"
+                      required
+                      autoFocus
+                      placeholder="••••••••"
+                      value={bioPwd}
+                      onChange={(e) => setBioPwd(e.target.value)}
+                      className="h-9 pl-10"
+                      disabled={bioBusy}
+                    />
+                  </div>
+                  <Button type="submit" size="sm" className="h-9" disabled={bioBusy || !bioPwd}>
+                    Activar
+                  </Button>
+                </div>
+              </form>
+            )}
             {bioBusy && (
               <p className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
                 <Loader2 className="h-3 w-3 animate-spin" /> Procesando...

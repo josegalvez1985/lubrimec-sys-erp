@@ -5,13 +5,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
+import { ApkInstallGuide } from "@/components/apk-install-guide";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { login } from "@/lib/api";
 import {
   esNativo,
   biometriaDisponible,
   biometriaActivada,
-  activarBiometria,
   obtenerCredencialesBiometricas,
 } from "@/lib/biometric";
 
@@ -33,18 +33,16 @@ function LoginPage() {
   const [password, setPassword] = useState("");
   const [recordar, setRecordar] = useState(false);
   const [error, setError] = useState("");
-  const [bioSoportada, setBioSoportada] = useState(false);
   const [bioActiva, setBioActiva] = useState(false);
-  const [activarBio, setActivarBio] = useState(false);
+  const [guiaApk, setGuiaApk] = useState(false);
 
   // El APK se sirve desde GitHub Pages (public/lubrimesys.apk), mismo origen que la web.
   const APK_URL = `${import.meta.env.BASE_URL}lubrimesys.apk`;
 
-  // Estado de biometría (solo dentro del APK).
+  // Estado de biometría (solo dentro del APK). La activación se hace desde Perfil.
   useEffect(() => {
     if (!esNativo()) return;
     biometriaDisponible().then((disp) => {
-      setBioSoportada(disp);
       setBioActiva(disp && biometriaActivada());
     });
   }, []);
@@ -55,14 +53,6 @@ function LoginPage() {
     setLoading(true);
     try {
       await login(usuario, password, recordar);
-      // Si el usuario pidió activar biometría, guardar credenciales tras login OK.
-      if (activarBio && bioSoportada) {
-        try {
-          await activarBiometria(usuario, password);
-        } catch {
-          // canceló la verificación: continuar sin activar
-        }
-      }
       navigate({ to: "/home" });
     } catch (err) {
       setError(err instanceof Error ? err.message : "No se pudo iniciar sesión");
@@ -99,6 +89,7 @@ function LoginPage() {
         <div className="flex items-center gap-2">
           <a
             href={APK_URL}
+            onClick={() => setGuiaApk(true)}
             className="inline-flex h-9 items-center gap-2 rounded-md border border-primary/30 bg-background/80 px-3 text-sm font-medium text-primary backdrop-blur transition-colors hover:bg-primary hover:text-primary-foreground"
           >
             <Download className="h-4 w-4" />
@@ -215,19 +206,6 @@ function LoginPage() {
                 </Label>
               </div>
 
-              {bioSoportada && !bioActiva && (
-                <div className="flex items-center gap-2">
-                  <Checkbox
-                    id="activar-bio"
-                    checked={activarBio}
-                    onCheckedChange={(v) => setActivarBio(v === true)}
-                  />
-                  <Label htmlFor="activar-bio" className="text-sm font-normal text-muted-foreground">
-                    Activar acceso biométrico en este dispositivo
-                  </Label>
-                </div>
-              )}
-
               {error && (
                 <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
                   {error}
@@ -269,6 +247,8 @@ function LoginPage() {
           </div>
         </div>
       </div>
+
+      <ApkInstallGuide open={guiaApk} onOpenChange={setGuiaApk} />
     </div>
   );
 }

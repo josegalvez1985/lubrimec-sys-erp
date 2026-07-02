@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Download, X } from "lucide-react";
 import { useApkUpdate } from "@/hooks/use-apk-update";
+import { ApkInstallGuide } from "@/components/apk-install-guide";
 
 // Banner de "nueva versión disponible" dentro del APK. Aparece solo si el APK
 // instalado es anterior a la versión de public/apk-version.json. No autoactualiza:
@@ -8,6 +9,7 @@ import { useApkUpdate } from "@/hooks/use-apk-update";
 export function ApkUpdateBanner() {
   const update = useApkUpdate();
   const [oculto, setOculto] = useState(false);
+  const [guia, setGuia] = useState(false);
 
   if (!update || oculto) return null;
 
@@ -18,6 +20,7 @@ export function ApkUpdateBanner() {
       </span>
       <a
         href={update.url}
+        onClick={() => setGuia(true)}
         className="inline-flex items-center gap-1.5 rounded-md bg-primary-foreground px-3 py-1.5 text-sm font-semibold text-primary transition-opacity hover:opacity-90"
       >
         <Download className="h-4 w-4" />
@@ -30,6 +33,7 @@ export function ApkUpdateBanner() {
       >
         <X className="h-4 w-4" />
       </button>
+      <ApkInstallGuide open={guia} onOpenChange={setGuia} />
     </div>
   );
 }
