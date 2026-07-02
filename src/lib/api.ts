@@ -192,6 +192,245 @@ export async function eliminarMarca(idMarca: number, codEmpresa: number): Promis
   await authFetch(`marcas/${idMarca}?${q}`, { method: "DELETE" });
 }
 
+// ─── Condiciones de Facturas (página 42) ─────────────────────────────────────
+// CRUD de CONDICIONES_FACTURAS. id_condicion por IDENTITY. dias = plazo en días.
+
+export type CondicionFactura = {
+  id_condicion: number;
+  descripcion: string | null;
+  dias: number;
+};
+
+export type CondicionFacturaInput = {
+  descripcion: string | null;
+  dias: number;
+};
+
+export async function listarCondicionesFacturas(): Promise<CondicionFactura[]> {
+  const data = await authFetch("condiciones-facturas");
+  return (data.data ?? []) as CondicionFactura[];
+}
+
+export async function crearCondicionFactura(input: CondicionFacturaInput): Promise<number> {
+  const data = await authFetch("condiciones-facturas", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  return data.id_condicion as number;
+}
+
+export async function actualizarCondicionFactura(
+  idCondicion: number,
+  input: CondicionFacturaInput,
+): Promise<void> {
+  await authFetch(`condiciones-facturas/${idCondicion}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+}
+
+export async function eliminarCondicionFactura(idCondicion: number): Promise<void> {
+  await authFetch(`condiciones-facturas/${idCondicion}`, { method: "DELETE" });
+}
+
+// ─── Rubros (página 20) ──────────────────────────────────────────────────────
+
+export type Rubro = {
+  id_rubro: number;
+  descripcion: string | null;
+  cod_empresa: number;
+  porc_recargo: number | null;
+};
+
+export type RubroInput = {
+  descripcion: string | null;
+  cod_empresa: number;
+  porc_recargo: number | null;
+};
+
+export async function listarRubros(codEmpresa: number): Promise<Rubro[]> {
+  const q = new URLSearchParams({ cod_empresa: String(codEmpresa) });
+  const data = await authFetch(`rubros?${q}`);
+  return (data.data ?? []) as Rubro[];
+}
+
+export async function crearRubro(input: RubroInput): Promise<number> {
+  const data = await authFetch("rubros", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  return data.id_rubro as number;
+}
+
+export async function actualizarRubro(idRubro: number, input: RubroInput): Promise<void> {
+  await authFetch(`rubros/${idRubro}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+}
+
+export async function eliminarRubro(idRubro: number, codEmpresa: number): Promise<void> {
+  const q = new URLSearchParams({ cod_empresa: String(codEmpresa) });
+  await authFetch(`rubros/${idRubro}?${q}`, { method: "DELETE" });
+}
+
+// ─── Monedas (página 18) — maestro-detalle ───────────────────────────────────
+// Cabecera MONEDAS + detalle MONEDAS_DETALLE (denominaciones con imagen). La
+// imagen viaja como base64 en el JSON. El detalle usa upsert por (cod_moneda, valor).
+
+export type Moneda = {
+  cod_moneda: number;
+  descripcion: string | null;
+  siglas: string | null;
+  decimales: number | null;
+  cant_detalle: number;
+};
+
+export type MonedaInput = {
+  descripcion: string | null;
+  siglas: string | null;
+  decimales: number | null;
+};
+
+export type MonedaDetalle = {
+  valor: number;
+  cod_moneda: number;
+  nombre_imagen: string | null;
+  mime_type: string | null;
+  last_update: string | null;
+  imagen_base64: string | null; // base64 puro (sin prefijo data:)
+};
+
+export async function listarMonedas(): Promise<Moneda[]> {
+  const data = await authFetch("monedas");
+  return (data.data ?? []) as Moneda[];
+}
+
+export async function crearMoneda(input: MonedaInput): Promise<number> {
+  const data = await authFetch("monedas", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  return data.cod_moneda as number;
+}
+
+export async function actualizarMoneda(codMoneda: number, input: MonedaInput): Promise<void> {
+  await authFetch(`monedas/${codMoneda}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+}
+
+export async function eliminarMoneda(codMoneda: number): Promise<void> {
+  await authFetch(`monedas/${codMoneda}`, { method: "DELETE" });
+}
+
+export async function listarMonedaDetalle(codMoneda: number): Promise<MonedaDetalle[]> {
+  const data = await authFetch(`monedas/${codMoneda}/detalle`);
+  return (data.data ?? []) as MonedaDetalle[];
+}
+
+// Upsert de una denominación. imagen_base64/nombre/mime null = no cambia la imagen.
+export async function guardarMonedaDetalle(
+  codMoneda: number,
+  input: {
+    valor: number;
+    imagen_base64: string | null;
+    nombre_imagen: string | null;
+    mime_type: string | null;
+  },
+): Promise<void> {
+  await authFetch(`monedas/${codMoneda}/detalle`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+}
+
+export async function eliminarMonedaDetalle(codMoneda: number, valor: number): Promise<void> {
+  await authFetch(`monedas/${codMoneda}/detalle/${valor}`, { method: "DELETE" });
+}
+
+// ─── IVA (página 10) ─────────────────────────────────────────────────────────
+// CRUD de IVA. La PK cod_iva la ingresa el usuario. Al editar no cambia.
+
+export type Iva = {
+  cod_iva: number;
+  divisor_iva: number | null;
+  descripcion: string | null;
+  divisor_gravada: number | null;
+};
+
+export async function listarIva(): Promise<Iva[]> {
+  const data = await authFetch("iva");
+  return (data.data ?? []) as Iva[];
+}
+
+export async function crearIva(input: Iva): Promise<number> {
+  const data = await authFetch("iva", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  return data.cod_iva as number;
+}
+
+export async function actualizarIva(codIva: number, input: Omit<Iva, "cod_iva">): Promise<void> {
+  await authFetch(`iva/${codIva}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+}
+
+export async function eliminarIva(codIva: number): Promise<void> {
+  await authFetch(`iva/${codIva}`, { method: "DELETE" });
+}
+
+// ─── Unidades de Medidas (página 21) ─────────────────────────────────────────
+// CRUD de UNIDADES_MEDIDAS. La PK cod_unidad_medida la ingresa el usuario (max 5
+// chars, se guarda en mayúsculas). Al editar, el código no cambia.
+
+export type UnidadMedida = {
+  cod_unidad_medida: string;
+  descripcion: string | null;
+};
+
+export async function listarUnidadesMedidas(): Promise<UnidadMedida[]> {
+  const data = await authFetch("unidades-medidas");
+  return (data.data ?? []) as UnidadMedida[];
+}
+
+export async function crearUnidadMedida(input: UnidadMedida): Promise<string> {
+  const data = await authFetch("unidades-medidas", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  return data.cod_unidad_medida as string;
+}
+
+export async function actualizarUnidadMedida(
+  cod: string,
+  descripcion: string | null,
+): Promise<void> {
+  await authFetch(`unidades-medidas/${encodeURIComponent(cod)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ descripcion }),
+  });
+}
+
+export async function eliminarUnidadMedida(cod: string): Promise<void> {
+  await authFetch(`unidades-medidas/${encodeURIComponent(cod)}`, { method: "DELETE" });
+}
+
 // ─── Empresas (página 12) ────────────────────────────────────────────────────
 // CRUD de EMPRESAS. activo: 'S'/'N'. nro_documento es único (backend 409 si dup).
 

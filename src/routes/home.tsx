@@ -82,6 +82,11 @@ import { ArticulosMasVendidosView } from "@/components/articulos-mas-vendidos-vi
 import { PedidosArticulosView } from "@/components/pedidos-articulos-view";
 import { PersonasView } from "@/components/personas-view";
 import { EmpresasView } from "@/components/empresas-view";
+import { UnidadesMedidasView } from "@/components/unidades-medidas-view";
+import { IvaView } from "@/components/iva-view";
+import { MonedasView } from "@/components/monedas-view";
+import { RubrosView } from "@/components/rubros-view";
+import { CondicionesFacturasView } from "@/components/condiciones-facturas-view";
 import { WhatsappView } from "@/components/whatsapp-view";
 import { PerfilModal } from "@/components/perfil-modal";
 
@@ -204,7 +209,12 @@ type NavKey = "dashboard" | number;
 const VISTAS: Record<number, () => ReactElement> = {
   2: () => <PersonasView />, // Personas
   6: () => <MarcasView />, // Marcas
+  10: () => <IvaView />, // IVA
   12: () => <EmpresasView />, // Empresas
+  18: () => <MonedasView />, // Monedas
+  20: () => <RubrosView />, // Rubros
+  42: () => <CondicionesFacturasView />, // Condiciones de Facturas
+  21: () => <UnidadesMedidasView />, // Unidades de Medidas
   54: () => <VentasArticulosView />, // Ventas Por Artículos
   102: () => <ArticulosMasVendidosView />, // Artículos Más Vendidos
   63: () => <PedidosArticulosView />, // Pedidos de Artículos
