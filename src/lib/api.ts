@@ -147,12 +147,6 @@ export async function listarMarcas(codEmpresa: number): Promise<Marca[]> {
   return (data.data ?? []) as Marca[];
 }
 
-export async function obtenerMarca(idMarca: number, codEmpresa: number): Promise<Marca> {
-  const q = new URLSearchParams({ cod_empresa: String(codEmpresa) });
-  const data = await authFetch(`marcas/${idMarca}?${q}`);
-  return data.data as Marca;
-}
-
 export async function crearMarca(input: MarcaInput): Promise<number> {
   const data = await authFetch("marcas", {
     method: "POST",
