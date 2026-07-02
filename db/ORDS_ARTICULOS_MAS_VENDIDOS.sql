@@ -7,11 +7,16 @@
 --       ?cod_empresa=24          (opcional, default 24)
 --       &search=<texto>          (opcional: descripcion/oem/proveedor/marca)
 --       &descripcion=<texto>     (opcional: LIKE solo sobre la descripcion)
---       &proveedor=<nombre>      (opcional, igualdad)
---       &rubro=<nombre>          (opcional, igualdad)
---       &viscosidad=<nombre>     (opcional, igualdad)
---       &marca=<nombre>          (opcional, igualdad)
---       &unidad=<cod>            (opcional, igualdad cod_unidad_medida)
+--       &proveedor=a,b,c         (opcional: lista separada por coma)
+--       &rubro=a,b,c             (opcional: lista separada por coma)
+--       &viscosidad=a,b,c        (opcional: lista separada por coma)
+--       &marca=a,b,c             (opcional: lista separada por coma)
+--       &unidad=a,b,c            (opcional: lista de cod_unidad_medida)
+--
+--   Busqueda facetada con OR GLOBAL: si se eligen valores en varias facetas, se
+--   devuelven los articulos que cumplan CUALQUIERA de esos valores (union). El
+--   texto de busqueda (search/descripcion) SIEMPRE acota (AND) sobre ese resultado.
+--   Los valores de cada faceta se pasan como CSV; internamente se separan.
 --
 --   Orden fijo: cantidad_ventas DESC, descripcion ASC (los mas vendidos primero).
 --
@@ -40,11 +45,34 @@ DECLARE
     l_cod_empresa VARCHAR2(20);
     l_search      VARCHAR2(200);
     l_descripcion VARCHAR2(200);
-    l_proveedor   VARCHAR2(200);
-    l_rubro       VARCHAR2(200);
-    l_viscosidad  VARCHAR2(200);
-    l_marca       VARCHAR2(200);
-    l_unidad      VARCHAR2(50);
+    l_proveedor   VARCHAR2(4000);
+    l_rubro       VARCHAR2(4000);
+    l_viscosidad  VARCHAR2(4000);
+    l_marca       VARCHAR2(4000);
+    l_unidad      VARCHAR2(4000);
+
+    -- Listas de valores por faceta (CSV -> tabla). NULL/empty = faceta sin filtrar.
+    t_proveedor   APEX_T_VARCHAR2;
+    t_rubro       APEX_T_VARCHAR2;
+    t_viscosidad  APEX_T_VARCHAR2;
+    t_marca       APEX_T_VARCHAR2;
+    t_unidad      APEX_T_VARCHAR2;
+    l_hay_faceta  NUMBER;  -- 1 si hay al menos una faceta activa (flag SQL-friendly)
+
+    -- CSV -> APEX_T_VARCHAR2 (trim, descarta vacios). Vacio si no hay valores.
+    FUNCTION split_csv(p_csv IN VARCHAR2) RETURN APEX_T_VARCHAR2 IS
+        l_out APEX_T_VARCHAR2 := APEX_T_VARCHAR2();
+    BEGIN
+        IF p_csv IS NULL THEN RETURN l_out; END IF;
+        FOR r IN (
+            SELECT TRIM(COLUMN_VALUE) v
+              FROM TABLE(APEX_STRING.SPLIT(p_csv, ','))
+             WHERE TRIM(COLUMN_VALUE) IS NOT NULL
+        ) LOOP
+            l_out.EXTEND; l_out(l_out.COUNT) := r.v;
+        END LOOP;
+        RETURN l_out;
+    END;
 
     FUNCTION get_qs(p_qs IN VARCHAR2, p_key IN VARCHAR2) RETURN VARCHAR2 IS
         l_p PLS_INTEGER;
@@ -94,6 +122,17 @@ BEGIN
     l_marca       := get_qs(l_query, 'marca');
     l_unidad      := get_qs(l_query, 'unidad');
 
+    t_proveedor  := split_csv(l_proveedor);
+    t_rubro      := split_csv(l_rubro);
+    t_viscosidad := split_csv(l_viscosidad);
+    t_marca      := split_csv(l_marca);
+    t_unidad     := split_csv(l_unidad);
+    -- Hay al menos una faceta activa? (si no, no se filtra por facetas)
+    l_hay_faceta := CASE WHEN t_proveedor.COUNT > 0 OR t_rubro.COUNT > 0
+                           OR t_viscosidad.COUNT > 0 OR t_marca.COUNT > 0
+                           OR t_unidad.COUNT > 0
+                         THEN 1 ELSE 0 END;
+
     APEX_JSON.OPEN_OBJECT;
     APEX_JSON.WRITE('success', TRUE);
     APEX_JSON.OPEN_ARRAY('data');
@@ -114,11 +153,14 @@ BEGIN
                a.descripcion_viscosidad                        viscosidad
           FROM articulos_mas_vendidos a
          WHERE a.cod_empresa = TO_NUMBER(l_cod_empresa)
-           AND (l_proveedor   IS NULL OR a.nombre_proveedor = l_proveedor)
-           AND (l_rubro       IS NULL OR a.descripcion_rubro = l_rubro)
-           AND (l_viscosidad  IS NULL OR a.descripcion_viscosidad = l_viscosidad)
-           AND (l_marca       IS NULL OR a.descripcion_marca = l_marca)
-           AND (l_unidad      IS NULL OR a.cod_unidad_medida = l_unidad)
+           -- OR GLOBAL entre facetas: si no hay ninguna faceta activa pasan todos;
+           -- si hay, basta con coincidir en CUALQUIERA de las facetas elegidas.
+           AND (l_hay_faceta = 0
+                OR a.nombre_proveedor      IN (SELECT COLUMN_VALUE FROM TABLE(t_proveedor))
+                OR a.descripcion_rubro     IN (SELECT COLUMN_VALUE FROM TABLE(t_rubro))
+                OR a.descripcion_viscosidad IN (SELECT COLUMN_VALUE FROM TABLE(t_viscosidad))
+                OR a.descripcion_marca     IN (SELECT COLUMN_VALUE FROM TABLE(t_marca))
+                OR a.cod_unidad_medida     IN (SELECT COLUMN_VALUE FROM TABLE(t_unidad)))
            AND (l_descripcion IS NULL OR
                 UPPER(a.descripcion_articulo) LIKE '%' || UPPER(l_descripcion) || '%')
            AND (l_search      IS NULL OR

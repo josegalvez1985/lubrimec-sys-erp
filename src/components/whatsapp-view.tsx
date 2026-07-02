@@ -96,7 +96,13 @@ function parsearCSVContactos(csv: string): string[] {
 function mimeReal(bytes: Uint8Array): "image/jpeg" | "image/png" | null {
   if (bytes.length > 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff)
     return "image/jpeg";
-  if (bytes.length > 4 && bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47)
+  if (
+    bytes.length > 4 &&
+    bytes[0] === 0x89 &&
+    bytes[1] === 0x50 &&
+    bytes[2] === 0x4e &&
+    bytes[3] === 0x47
+  )
     return "image/png";
   return null; // webp/heic/gif/etc.: wasender solo acepta JPEG/PNG → recodificar
 }
@@ -135,6 +141,9 @@ async function recodificarJpeg(file: File): Promise<string> {
 // Persistencia del borrador (texto + imagen) para reenviar en tandas sin recargar.
 const LS_MENSAJE = "wsp_draft_mensaje";
 const LS_IMAGEN = "wsp_draft_imagen";
+// Tope de números por corrida al enviar "De la base" (debe coincidir con
+// v_max_registros en db/PROC_ENVIAR_MENSAJES_WHATSAPP.sql).
+const MAX_LOTE_BASE = 50;
 
 function leerBorradorMensaje(): string {
   if (typeof window === "undefined") return "";
@@ -249,7 +258,10 @@ export function WhatsappView() {
     },
     onMutate: () => {
       // Congela el total del envío en curso antes de que cambie la selección.
-      setTotalDestinoEnvio(tab === "manual" ? manuales.length : contactos.length);
+      // En "base" el backend procesa como máximo MAX_LOTE_BASE por corrida.
+      setTotalDestinoEnvio(
+        tab === "manual" ? manuales.length : Math.min(contactos.length, MAX_LOTE_BASE),
+      );
     },
     onSuccess: () => {
       // Empieza a leer logs desde ~5s antes para no perder la primera fila.
@@ -282,8 +294,10 @@ export function WhatsappView() {
     }
   }
 
-  // Total a procesar: en "base" son los pendientes de la tabla; en "manual" los escritos.
-  const totalDestino = tab === "manual" ? manuales.length : contactos.length;
+  // Total a procesar: en "base" son los pendientes (topados al lote del backend);
+  // en "manual" los escritos.
+  const totalDestino =
+    tab === "manual" ? manuales.length : Math.min(contactos.length, MAX_LOTE_BASE);
   const enCurso = envioDesde != null;
 
   const logs = logsQuery.data ?? [];
@@ -411,12 +425,25 @@ export function WhatsappView() {
             </div>
 
             {avisoCarga && (
-              <p className="rounded-md bg-primary/10 px-3 py-2 text-xs text-primary">{avisoCarga}</p>
+              <p className="rounded-md bg-primary/10 px-3 py-2 text-xs text-primary">
+                {avisoCarga}
+              </p>
             )}
 
             <p className="text-xs text-muted-foreground">
-              Se enviará a todos los números <span className="font-medium">pendientes</span> de la
-              base (los ya enviados se omiten). El CSV es el export de Google Contactos.
+              Se envía en lotes de <span className="font-medium">{MAX_LOTE_BASE}</span> por corrida.
+              {contactos.length > MAX_LOTE_BASE ? (
+                <>
+                  {" "}
+                  Ahora se enviará a los primeros{" "}
+                  <span className="font-medium">{MAX_LOTE_BASE}</span> de{" "}
+                  <span className="font-medium">{contactos.length}</span> pendientes; repetí el
+                  envío para los siguientes.
+                </>
+              ) : (
+                <> Se enviará a los {contactos.length} pendientes.</>
+              )}{" "}
+              Los ya enviados se omiten. El CSV es el export de Google Contactos.
             </p>
 
             {numerosQuery.isLoading ? (
@@ -541,7 +568,13 @@ export function WhatsappView() {
                   <span className="text-sm font-medium">Subir imagen</span>
                 </button>
               )}
-              <input ref={fileRef} type="file" accept="image/*" onChange={onImagen} className="hidden" />
+              <input
+                ref={fileRef}
+                type="file"
+                accept="image/*"
+                onChange={onImagen}
+                className="hidden"
+              />
             </div>
 
             <Button
@@ -653,9 +686,10 @@ export function WhatsappView() {
                 <li>
                   <b className="text-foreground">De la base:</b> se envía a todos los números{" "}
                   <b className="text-foreground">pendientes</b> (los que ya recibieron el mensaje se
-                  omiten solos). Podés importarlos con <b className="text-foreground">Importar CSV</b>{" "}
-                  usando el export de Google Contactos: toma los celulares paraguayos (+595) y
-                  descarta duplicados y códigos cortos.
+                  omiten solos). Podés importarlos con{" "}
+                  <b className="text-foreground">Importar CSV</b> usando el export de Google
+                  Contactos: toma los celulares paraguayos (+595) y descarta duplicados y códigos
+                  cortos.
                 </li>
                 <li>
                   <b className="text-foreground">Manual:</b> pegá los números (uno por línea o

@@ -46,11 +46,7 @@ function handleUnauthorized() {
   }
 }
 
-export async function login(
-  usuario: string,
-  password: string,
-  recordar = false,
-): Promise<Sesion> {
+export async function login(usuario: string, password: string, recordar = false): Promise<Sesion> {
   const res = await fetch(url("auth/login"), {
     method: "POST",
     cache: "no-store",
@@ -93,7 +89,16 @@ export async function getMenuPaginas(): Promise<PaginaMenu[]> {
   // minúsculas (según lo tipeado), por eso se normaliza aquí.
   const q = new URLSearchParams({ app_id: DEFAULT_APP_ID, app_user: s.app_user.toUpperCase() });
   const url_final = `${url("menu/paginas")}?${q}`;
-  console.log("[api] menu/paginas request:", url_final, "token:", s.token.slice(0, 16), "app_id:", s.app_id, "app_user:", s.app_user);
+  console.log(
+    "[api] menu/paginas request:",
+    url_final,
+    "token:",
+    s.token.slice(0, 16),
+    "app_id:",
+    s.app_id,
+    "app_user:",
+    s.app_user,
+  );
   const res = await fetch(url_final, {
     cache: "no-store",
     headers: { Authorization: `Bearer ${s.token}` },
@@ -105,7 +110,16 @@ export async function getMenuPaginas(): Promise<PaginaMenu[]> {
   }
 
   const data = await res.json().catch(() => ({}));
-  console.log("[api] menu/paginas response: status", res.status, "success:", data?.success, "message:", data?.message, "data count:", data?.data?.length);
+  console.log(
+    "[api] menu/paginas response: status",
+    res.status,
+    "success:",
+    data?.success,
+    "message:",
+    data?.message,
+    "data count:",
+    data?.data?.length,
+  );
   if (!res.ok || data?.success === false) {
     throw new Error(data?.message ?? "No se pudieron cargar las páginas");
   }
@@ -369,14 +383,15 @@ export type ArticuloMasVendido = {
   viscosidad: string | null;
 };
 
+// Facetas: arrays (multi-selección, se envían como CSV). search/descripcion: texto.
 export type FiltrosMasVendidos = {
   search?: string;
   descripcion?: string;
-  proveedor?: string;
-  rubro?: string;
-  viscosidad?: string;
-  marca?: string;
-  unidad?: string;
+  proveedor?: string[];
+  rubro?: string[];
+  viscosidad?: string[];
+  marca?: string[];
+  unidad?: string[];
 };
 
 export async function listarArticulosMasVendidos(
@@ -385,7 +400,11 @@ export async function listarArticulosMasVendidos(
 ): Promise<ArticuloMasVendido[]> {
   const params: Record<string, string> = { cod_empresa: String(codEmpresa) };
   for (const [k, v] of Object.entries(filtros)) {
-    if (v != null && v !== "") params[k] = v;
+    if (Array.isArray(v)) {
+      if (v.length > 0) params[k] = v.join(",");
+    } else if (v != null && v !== "") {
+      params[k] = v;
+    }
   }
   const data = await authFetch(`articulos/mas-vendidos?${qs(params)}`);
   return (data.data ?? []) as ArticuloMasVendido[];
