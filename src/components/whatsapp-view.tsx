@@ -89,6 +89,49 @@ function parsearCSVContactos(csv: string): string[] {
   return Array.from(nums);
 }
 
+// Detecta el tipo real de la imagen por sus magic bytes. El file.type del picker
+// puede mentir: en Android las galerías nombran .jpg archivos que son WEBP/HEIC
+// (fotos guardadas de WhatsApp), y wasender /api/upload valida el contenido contra
+// el tipo declarado ("file content does not match its declared type").
+function mimeReal(bytes: Uint8Array): "image/jpeg" | "image/png" | null {
+  if (bytes.length > 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff)
+    return "image/jpeg";
+  if (bytes.length > 4 && bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47)
+    return "image/png";
+  return null; // webp/heic/gif/etc.: wasender solo acepta JPEG/PNG → recodificar
+}
+
+function bytesABase64(bytes: Uint8Array): string {
+  let bin = "";
+  const chunk = 0x8000; // en bloques: String.fromCharCode(...todo) revienta la pila
+  for (let i = 0; i < bytes.length; i += chunk) {
+    bin += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  }
+  return btoa(bin);
+}
+
+// Recodifica a JPEG vía canvas los formatos que wasender no acepta.
+async function recodificarJpeg(file: File): Promise<string> {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const i = new Image();
+      i.onload = () => resolve(i);
+      i.onerror = () => reject(new Error("No se pudo leer la imagen (formato no soportado)"));
+      i.src = url;
+    });
+    const canvas = document.createElement("canvas");
+    canvas.width = img.naturalWidth;
+    canvas.height = img.naturalHeight;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("No se pudo procesar la imagen");
+    ctx.drawImage(img, 0, 0);
+    return canvas.toDataURL("image/jpeg", 0.9);
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
 // Persistencia del borrador (texto + imagen) para reenviar en tandas sin recargar.
 const LS_MENSAJE = "wsp_draft_mensaje";
 const LS_IMAGEN = "wsp_draft_imagen";
@@ -214,19 +257,29 @@ export function WhatsappView() {
     },
   });
 
-  function onImagen(e: ChangeEvent<HTMLInputElement>) {
+  async function onImagen(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
-    // Se sube la imagen original sin recomprimir. wasender /api/upload acepta hasta
-    // 5MB (JPEG/PNG); solo validamos ese límite.
-    if (file.size > 5 * 1024 * 1024) {
-      alert("La imagen supera 5MB. Usá una más liviana.");
+    try {
+      // El mime se saca del contenido real (magic bytes), nunca de file.type:
+      // wasender rechaza el upload si el tipo declarado no coincide con los bytes.
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      const mime = mimeReal(bytes);
+      const dataUrl = mime
+        ? `data:${mime};base64,${bytesABase64(bytes)}`
+        : await recodificarJpeg(file);
+      // Tamaño real de lo que se sube (wasender acepta hasta 5MB).
+      const size = Math.ceil(((dataUrl.length - dataUrl.indexOf(",") - 1) * 3) / 4);
+      if (size > 5 * 1024 * 1024) {
+        alert("La imagen supera 5MB. Usá una más liviana.");
+        e.target.value = "";
+        return;
+      }
+      setImagen({ dataUrl, nombre: file.name });
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "No se pudo procesar la imagen");
       e.target.value = "";
-      return;
     }
-    const reader = new FileReader();
-    reader.onload = () => setImagen({ dataUrl: String(reader.result), nombre: file.name });
-    reader.readAsDataURL(file);
   }
 
   // Total a procesar: en "base" son los pendientes de la tabla; en "manual" los escritos.
