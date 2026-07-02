@@ -56,6 +56,8 @@ import {
   TicketPercent,
   FileBarChart,
   ClipboardPen,
+  PanelLeftClose,
+  PanelLeftOpen,
   type LucideIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -71,8 +73,11 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { cn } from "@/lib/utils";
-import { getSesion, cerrarSesion, getMenuPaginas, type PaginaMenu } from "@/lib/api";
+import { getSesion, cerrarSesion, getMenuPaginas, ventasPorDia, type PaginaMenu } from "@/lib/api";
 import { MarcasView } from "@/components/marcas-view";
+import { VentasDashboardChart } from "@/components/ventas-dashboard-chart";
+import { VentasArticulosView } from "@/components/ventas-articulos-view";
+import { ArticulosMasVendidosView } from "@/components/articulos-mas-vendidos-view";
 import { WhatsappView } from "@/components/whatsapp-view";
 import { PerfilModal } from "@/components/perfil-modal";
 
@@ -194,6 +199,8 @@ type NavKey = "dashboard" | number;
 // Las páginas del menú sin entrada aquí muestran un Placeholder con su título.
 const VISTAS: Record<number, () => ReactElement> = {
   6: () => <MarcasView />, // Marcas
+  54: () => <VentasArticulosView />, // Ventas Por Artículos
+  102: () => <ArticulosMasVendidosView />, // Artículos Más Vendidos
   117: () => <WhatsappView />, // Mensajes a Whatsapp
 };
 
@@ -201,6 +208,16 @@ function HomePage() {
   const [active, setActive] = useState<NavKey>("dashboard");
   const [mobileOpen, setMobileOpen] = useState(false);
   const [perfilOpen, setPerfilOpen] = useState(false);
+  // Sidebar colapsable en escritorio; la preferencia se recuerda.
+  const [menuColapsado, setMenuColapsado] = useState(
+    () => typeof window !== "undefined" && localStorage.getItem("menu_colapsado") === "1",
+  );
+  function toggleMenu() {
+    setMenuColapsado((c) => {
+      localStorage.setItem("menu_colapsado", c ? "0" : "1");
+      return !c;
+    });
+  }
   const navigate = useNavigate();
 
   // Páginas del usuario (define el menú lateral y los accesos rápidos).
@@ -236,7 +253,12 @@ function HomePage() {
   return (
     <div className="flex min-h-screen bg-background">
       {/* Desktop sidebar */}
-      <aside className="hidden lg:flex w-64 shrink-0 flex-col bg-sidebar text-sidebar-foreground">
+      <aside
+        className={cn(
+          "hidden w-64 shrink-0 flex-col bg-sidebar text-sidebar-foreground",
+          !menuColapsado && "lg:flex",
+        )}
+      >
         <SidebarContent active={active} onNav={handleNav} paginas={paginas} loading={paginasQuery.isLoading} />
       </aside>
 
@@ -259,6 +281,21 @@ function HomePage() {
               </Button>
             </SheetTrigger>
           </Sheet>
+
+          {/* Colapsar/expandir el menú (solo escritorio) */}
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={toggleMenu}
+            className="hidden lg:inline-flex"
+            aria-label={menuColapsado ? "Mostrar menú" : "Ocultar menú"}
+          >
+            {menuColapsado ? (
+              <PanelLeftOpen className="h-5 w-5" />
+            ) : (
+              <PanelLeftClose className="h-5 w-5" />
+            )}
+          </Button>
 
           <div className="relative hidden flex-1 max-w-md sm:block">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -302,7 +339,7 @@ function HomePage() {
         </header>
 
         {/* Page content */}
-        <main className="flex-1 p-4 sm:p-6 lg:p-8">
+        <main className="min-w-0 flex-1 p-4 sm:p-6 lg:p-8">
           {active === "dashboard" ? (
             <DashboardView usuario={usuario} paginas={paginas} onNavigate={handleNav} />
           ) : VISTAS[active as number] ? (
@@ -436,8 +473,47 @@ function NavGrupo({
 }
 
 function DashboardView({ usuario, paginas, onNavigate }: { usuario: string; paginas: PaginaMenu[]; onNavigate: (k: NavKey) => void }) {
+  // Ventas de hoy (real, desde ventas/por-dia del mes actual). Comparte queryKey
+  // con el gráfico del dashboard, así react-query hace una sola consulta.
+  const hoy = new Date();
+  const anioHoy = String(hoy.getFullYear());
+  const mesHoy = String(hoy.getMonth() + 1).padStart(2, "0");
+  const ddmmHoy = `${String(hoy.getDate()).padStart(2, "0")}/${mesHoy}`;
+  const ventasMesQuery = useQuery({
+    queryKey: ["ventas-por-dia", 24, anioHoy, mesHoy],
+    queryFn: () => ventasPorDia(anioHoy, mesHoy, 24),
+    retry: false,
+  });
+  const montoHoy = ventasMesQuery.data?.find((d) => d.fecha === ddmmHoy)?.monto ?? 0;
+  // Variación vs. ayer. Si ayer cae en el mes anterior (día 1), se consulta ese mes.
+  const ayer = new Date(hoy);
+  ayer.setDate(hoy.getDate() - 1);
+  const anioAyer = String(ayer.getFullYear());
+  const mesAyer = String(ayer.getMonth() + 1).padStart(2, "0");
+  const ddmmAyer = `${String(ayer.getDate()).padStart(2, "0")}/${mesAyer}`;
+  const ayerEnOtroMes = mesAyer !== mesHoy || anioAyer !== anioHoy;
+  const ventasMesAyerQuery = useQuery({
+    queryKey: ["ventas-por-dia", 24, anioAyer, mesAyer],
+    queryFn: () => ventasPorDia(anioAyer, mesAyer, 24),
+    enabled: ayerEnOtroMes,
+    retry: false,
+  });
+  const datosAyer = ayerEnOtroMes ? ventasMesAyerQuery.data : ventasMesQuery.data;
+  const montoAyer = datosAyer ? (datosAyer.find((d) => d.fecha === ddmmAyer)?.monto ?? 0) : null;
+  const cambioHoy =
+    montoAyer != null && montoAyer > 0
+      ? `${montoHoy >= montoAyer ? "+" : ""}${(((montoHoy - montoAyer) / montoAyer) * 100).toLocaleString("es-PY", { maximumFractionDigits: 1 })}%`
+      : null;
+
   const stats = [
-    { label: "Ventas hoy", value: "$ 12.450", change: "+12,4%", icon: DollarSign },
+    {
+      label: "Ventas hoy",
+      value: ventasMesQuery.isLoading
+        ? "..."
+        : `₲ ${Math.round(montoHoy).toLocaleString("es-PY", { maximumFractionDigits: 0 })}`,
+      change: cambioHoy,
+      icon: DollarSign,
+    },
     { label: "Pedidos", value: "324", change: "+8,1%", icon: ShoppingCart },
     { label: "Clientes", value: "1.284", change: "+3,2%", icon: Users },
     { label: "Crecimiento", value: "24,8%", change: "+5,6%", icon: TrendingUp },
@@ -462,6 +538,9 @@ function DashboardView({ usuario, paginas, onNavigate }: { usuario: string; pagi
         </Button>
       </div>
 
+      {/* Gráfico de ventas por día */}
+      <VentasDashboardChart />
+
       {/* Stats */}
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {stats.map((s) => {
@@ -480,7 +559,9 @@ function DashboardView({ usuario, paginas, onNavigate }: { usuario: string; pagi
                   <Icon className="h-5 w-5" />
                 </div>
               </div>
-              <p className="mt-3 text-xs font-medium text-primary">{s.change} vs. ayer</p>
+              {s.change && (
+                <p className="mt-3 text-xs font-medium text-primary">{s.change} vs. ayer</p>
+              )}
             </div>
           );
         })}

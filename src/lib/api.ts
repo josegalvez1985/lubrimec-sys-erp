@@ -5,6 +5,15 @@ function url(path: string) {
   return `${BASE.replace(/\/$/, "")}/${path.replace(/^\//, "")}`;
 }
 
+// Query string con espacios como %20. NO usar URLSearchParams para valores con
+// texto libre: codifica el espacio como '+' (form-encoding) y UTL_URL.UNESCAPE
+// del backend no lo decodifica → los filtros con espacios no matchean.
+function qs(params: Record<string, string>): string {
+  return Object.entries(params)
+    .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
+    .join("&");
+}
+
 export type Sesion = {
   token: string;
   usuario: string;
@@ -252,6 +261,134 @@ export async function enviarWhatsapp(input: EnvioWhatsappInput): Promise<Respues
     }),
   });
   return { envio_id: data.envio_id as number, job: data.job as string };
+}
+
+// ─── Dashboard de ventas (VENTAS_ARTICULOS) ─────────────────────────────────
+// Endpoints de solo lectura para los gráficos del dashboard (db/ORDS_VENTAS_DASHBOARD.sql).
+// cod_empresa por defecto: 24.
+
+export type AnioVentas = { anio: string };
+export type MesVentas = { mes: string; mes_num: string }; // "Julio" / "07"
+export type VentaDia = { fecha: string; monto: number }; // "01/07" / total del día
+
+export async function listarAniosVentas(codEmpresa = 24): Promise<AnioVentas[]> {
+  const q = new URLSearchParams({ cod_empresa: String(codEmpresa) });
+  const data = await authFetch(`ventas/anios?${q}`);
+  return (data.data ?? []) as AnioVentas[];
+}
+
+export async function listarMesesVentas(anio: string, codEmpresa = 24): Promise<MesVentas[]> {
+  const q = new URLSearchParams({ cod_empresa: String(codEmpresa), anio });
+  const data = await authFetch(`ventas/meses?${q}`);
+  return (data.data ?? []) as MesVentas[];
+}
+
+export async function ventasPorDia(
+  anio: string,
+  mes: string,
+  codEmpresa = 24,
+): Promise<VentaDia[]> {
+  const q = new URLSearchParams({ cod_empresa: String(codEmpresa), anio, mes });
+  const data = await authFetch(`ventas/por-dia?${q}`);
+  return (data.data ?? []) as VentaDia[];
+}
+
+// ─── Ventas Por Artículos (página 54) ────────────────────────────────────────
+// GET ventas/articulos (db/ORDS_VENTAS_ARTICULOS.sql). Sin filtros de fecha el
+// backend carga por defecto el último día con ventas (fecha_default en la respuesta).
+
+export type VentaArticulo = {
+  descripcion: string | null;
+  total: number;
+  fec_comprobante: string; // "DD/MM/YYYY HH24:MI"
+  fec_comprobante_filtro: string; // "DD/MM/YYYY"
+  cod_empresa: number;
+  costo_ultimo: number | null;
+  rentabilidad: number | null;
+  rentabilidad_porc: number | null;
+  mes_anio: string | null;
+  cantidad: number;
+  precio: number;
+  total_costo: number | null;
+  anio: string;
+  mes: string;
+  semana: string;
+  vendedor: string | null;
+  precio_lista: number | null;
+  diferencia: number | null;
+  codigo_oem: string | null;
+  existencia: number | null;
+  por_descuento: number | null;
+  id_factura: number;
+  nro_telefono: string | null;
+  porc_comis_bancario: number | null;
+  modelo_vehiculo: string | null;
+};
+
+export type FiltrosVentasArticulos = {
+  search?: string;
+  fecha?: string; // DD/MM/YYYY
+  semana?: string; // WW
+  mes?: string; // MM
+  anio?: string; // YYYY
+  vendedor?: string;
+};
+
+export async function listarVentasArticulos(
+  filtros: FiltrosVentasArticulos = {},
+  codEmpresa = 24,
+): Promise<{ ventas: VentaArticulo[]; fechaDefault: string | null }> {
+  const params: Record<string, string> = { cod_empresa: String(codEmpresa) };
+  for (const [k, v] of Object.entries(filtros)) {
+    if (v != null && v !== "") params[k] = v;
+  }
+  const data = await authFetch(`ventas/articulos?${qs(params)}`);
+  return {
+    ventas: (data.data ?? []) as VentaArticulo[],
+    fechaDefault: (data.fecha_default as string | undefined) ?? null,
+  };
+}
+
+// ─── Artículos Más Vendidos (página 102) ─────────────────────────────────────
+// GET articulos/mas-vendidos (db/ORDS_ARTICULOS_MAS_VENDIDOS.sql). Orden fijo:
+// cantidad_ventas desc. Filtros = facetas de la página 102.
+
+export type ArticuloMasVendido = {
+  cantidad_ventas: number;
+  stock: number | null;
+  descripcion: string | null;
+  codigo_oem: string | null;
+  costo_ultimo: number | null;
+  fecha_ultimo_inventario: string | null; // "DD/MM/YYYY"
+  proveedor: string | null;
+  rubro: string | null;
+  id_articulo: string;
+  id_viscosidad: number | null;
+  cod_unidad_medida: string | null;
+  marca: string | null;
+  viscosidad: string | null;
+};
+
+export type FiltrosMasVendidos = {
+  search?: string;
+  descripcion?: string;
+  proveedor?: string;
+  rubro?: string;
+  viscosidad?: string;
+  marca?: string;
+  unidad?: string;
+};
+
+export async function listarArticulosMasVendidos(
+  filtros: FiltrosMasVendidos = {},
+  codEmpresa = 24,
+): Promise<ArticuloMasVendido[]> {
+  const params: Record<string, string> = { cod_empresa: String(codEmpresa) };
+  for (const [k, v] of Object.entries(filtros)) {
+    if (v != null && v !== "") params[k] = v;
+  }
+  const data = await authFetch(`articulos/mas-vendidos?${qs(params)}`);
+  return (data.data ?? []) as ArticuloMasVendido[];
 }
 
 // Progreso del envío: filas de LOG_WHATSAPP desde una marca de tiempo (ISO).

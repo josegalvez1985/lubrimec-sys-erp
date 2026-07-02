@@ -86,6 +86,12 @@ como query param `?cod_empresa=:n`.
 - `db/PKG_MARCAS_LUBRIMEC.sql` — paquete CRUD modelo.
 - `db/ORDS_MARCAS.sql` — script ORDS modelo (estructura plana + `DEFINE_PARAMETER` del header).
 - `db/ORDS_MENU_PAGINAS.sql` — endpoint de solo lectura (sin paquete), también modelo plano.
+- `db/ORDS_VENTAS_DASHBOARD.sql` — 3 GET de solo lectura para los gráficos del dashboard
+  (`ventas/anios|meses|por-dia`), `cod_empresa` opcional con default 24.
+- `db/ORDS_VENTAS_ARTICULOS.sql` — GET con múltiples filtros opcionales (patrón
+  `l_x IS NULL OR ...`) y **default calculado** (sin filtros de fecha carga el último día con
+  ventas y lo informa en `fecha_default`). Funciones costosas (`fn_precio_venta`,
+  `fn_existencia_oem`) en CTEs sobre las filas ya filtradas, una vez por artículo.
 - `src/lib/api.ts` (sección `Marcas`) — cliente frontend modelo.
 
 ## Notas / gotchas
