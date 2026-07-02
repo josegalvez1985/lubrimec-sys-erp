@@ -6,7 +6,7 @@ por WhatsApp. Frontend **TanStack Start** (React 19) sobre backend **Oracle APEX
 ## Stack
 
 - **Frontend:** TanStack Start (React 19 + Router + Query), shadcn/ui (Radix + Tailwind v4), Vite.
-- **Servidor:** Nitro (Node). Gestor de paquetes: **bun** (también funciona con npm).
+- **Servidor:** Nitro (Node). Gestor de paquetes: **npm**.
 - **Backend:** Oracle APEX/ORDS (esquema `JOSEGALVEZ`, módulo `lubrimec`). Auth con token Bearer.
 - **Móvil:** APK Android vía Capacitor (WebView que carga la app publicada).
 
