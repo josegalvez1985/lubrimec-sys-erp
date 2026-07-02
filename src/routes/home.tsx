@@ -87,6 +87,10 @@ import { IvaView } from "@/components/iva-view";
 import { MonedasView } from "@/components/monedas-view";
 import { RubrosView } from "@/components/rubros-view";
 import { CondicionesFacturasView } from "@/components/condiciones-facturas-view";
+import { TalonariosView } from "@/components/talonarios-view";
+import { FormasCobroPagoView } from "@/components/formas-cobro-pago-view";
+import { BancosView } from "@/components/bancos-view";
+import { ViscosidadView } from "@/components/viscosidad-view";
 import { WhatsappView } from "@/components/whatsapp-view";
 import { PerfilModal } from "@/components/perfil-modal";
 
@@ -214,6 +218,10 @@ const VISTAS: Record<number, () => ReactElement> = {
   18: () => <MonedasView />, // Monedas
   20: () => <RubrosView />, // Rubros
   42: () => <CondicionesFacturasView />, // Condiciones de Facturas
+  44: () => <TalonariosView />, // Talonarios
+  48: () => <FormasCobroPagoView />, // Formas de Cobro/Pago
+  50: () => <BancosView />, // Bancos
+  52: () => <ViscosidadView />, // Viscosidad de Lubricantes
   21: () => <UnidadesMedidasView />, // Unidades de Medidas
   54: () => <VentasArticulosView />, // Ventas Por Artículos
   102: () => <ArticulosMasVendidosView />, // Artículos Más Vendidos
@@ -594,6 +602,27 @@ function DashboardView({
       ? `${montoHoy >= montoAyer ? "+" : ""}${(((montoHoy - montoAyer) / montoAyer) * 100).toLocaleString("es-PY", { maximumFractionDigits: 1 })}%`
       : null;
 
+  // Crecimiento: acumulado del mes actual (hasta hoy) vs. mismo período del mes
+  // anterior (día 1 al día de hoy). Reusa el query del mes actual y agrega el previo.
+  const mesPrev = new Date(hoy.getFullYear(), hoy.getMonth() - 1, 1);
+  const anioPrev = String(mesPrev.getFullYear());
+  const mesPrevMM = String(mesPrev.getMonth() + 1).padStart(2, "0");
+  const ventasMesPrevQuery = useQuery({
+    queryKey: ["ventas-por-dia", 24, anioPrev, mesPrevMM],
+    queryFn: () => ventasPorDia(anioPrev, mesPrevMM, 24),
+    retry: false,
+  });
+  const diaHoy = hoy.getDate();
+  const acumHasta = (datos: { fecha: string; monto: number }[] | undefined) =>
+    (datos ?? []).reduce(
+      (t, d) => (Number(d.fecha.slice(0, 2)) <= diaHoy ? t + d.monto : t),
+      0,
+    );
+  const acumMes = acumHasta(ventasMesQuery.data);
+  const acumMesPrev = acumHasta(ventasMesPrevQuery.data);
+  const crecimiento =
+    acumMesPrev > 0 ? ((acumMes - acumMesPrev) / acumMesPrev) * 100 : null;
+
   const stats = [
     {
       label: "Ventas hoy",
@@ -603,9 +632,17 @@ function DashboardView({
       change: cambioHoy,
       icon: DollarSign,
     },
-    { label: "Pedidos", value: "324", change: "+8,1%", icon: ShoppingCart },
-    { label: "Clientes", value: "1.284", change: "+3,2%", icon: Users },
-    { label: "Crecimiento", value: "24,8%", change: "+5,6%", icon: TrendingUp },
+    {
+      label: "Crecimiento",
+      value:
+        ventasMesQuery.isLoading || ventasMesPrevQuery.isLoading
+          ? "..."
+          : crecimiento != null
+            ? `${crecimiento >= 0 ? "+" : ""}${crecimiento.toLocaleString("es-PY", { maximumFractionDigits: 1 })}%`
+            : "—",
+      change: null,
+      icon: TrendingUp,
+    },
   ];
 
   return (
