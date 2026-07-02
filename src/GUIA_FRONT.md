@@ -113,8 +113,11 @@ que hacer nada extra**, solo respetar el patrón:
    función nueva que use `authFetch` ya queda cubierta. Si hacés un `fetch` directo (raro), agregá
    `cache: "no-store"`.
 3. **Service Worker (`public/sw.js`):** NO cachea la API (rutas `/api/ords/`, `/ords/`,
-   `oracleapex.com` pasan directo a la red). Solo cachea assets estáticos. Si cambiás `sw.js`, subí
-   la constante `CACHE` (`lubrimesys-vN`) para forzar la reinstalación.
+   `oracleapex.com` pasan directo a la red) ni `apk-version.json` ni `.apk`. Estrategia:
+   **network-first para HTML/navegaciones** (imprescindible: si el HTML fuera cache-first, tras
+   un deploy los usuarios seguirían con el bundle viejo para siempre — pasó) y cache-first solo
+   para assets con hash. Si cambiás `sw.js`, subí la constante `CACHE` (`lubrimesys-vN`) para
+   forzar la purga en los clientes.
 
 ## El componente (`src/components/marcas-view.tsx` — modelo)
 
@@ -129,6 +132,29 @@ que hacer nada extra**, solo respetar el patrón:
 - Modal único con estados `create | edit | view | closed`; el form sincroniza sus inputs
   al abrir comparando una `key` (`mode:id`) contra la anterior.
 - Errores: `catch` → estado `error` mostrado en el modal / `isError` en la tabla.
+
+## Gotchas de UI
+
+- **Layout responsivo:** el `<main>` del shell (`home.tsx`) lleva `min-w-0` — es hijo flex, y
+  sin eso cualquier contenido ancho (tablas, gráficos) empuja la página entera más allá del
+  viewport en móvil en lugar de scrollear dentro de su contenedor.
+- **Tablas anchas en móvil:** no alcanzan `overflow-x-auto`; el patrón es doble render —
+  tarjetas en `md:hidden` con los campos clave y la grilla completa en `hidden md:block`
+  (modelo: `ventas-articulos-view.tsx`).
+- **Gráficos:** recharts con `ResponsiveContainer` (modelo: `ventas-dashboard-chart.tsx`).
+  Colores del tema vía `var(--primary)`, `var(--border)`, etc. (funcionan en claro/oscuro).
+- **Export Excel/PDF** (modelo: `ventas-articulos-view.tsx`): Excel = tabla HTML descargada
+  como `.xls` (sin librería); PDF = `jspdf` + `jspdf-autotable`, se abre en pestaña nueva con
+  `window.open(doc.output("bloburl"))`, no `doc.save()`. Definir las columnas una sola vez
+  (array `COLUMNAS` con `titulo` + `valor(fila)`) y reusarlas en grilla + ambos exports; los
+  totales igual (`filaTotales`). **Encabezado del PDF:** logo del proyecto + título + subtítulo
+  gris — el logo se carga de `public/logo.png` con fetch → data URL (`cargarLogo()`) y se
+  incrusta con `doc.addImage(...)`; si falla el fetch, el PDF sale sin logo (nunca abortar el
+  export por el logo). Todo reporte PDF nuevo debe seguir este formato de encabezado.
+- **Subir imágenes a wasender:** el MIME se detecta de los **magic bytes** del archivo, nunca
+  de `file.type` (en Android miente: fotos `.jpg` que son WEBP/HEIC). wasender `/api/upload`
+  valida contenido vs. tipo declarado y solo acepta JPEG/PNG; lo demás se recodifica a JPEG
+  con canvas. Ver `mimeReal`/`recodificarJpeg` en `whatsapp-view.tsx`.
 
 ## Checklist al tocar un endpoint
 
@@ -145,18 +171,19 @@ El proyecto tiene un APK que es una **WebView remota**: carga la app publicada e
 (`server.url` en `capacitor.config.ts`). El contenido web es dinámico → páginas nuevas y cambios se
 ven con solo `git push` (Pages), sin regenerar el APK. Guía de build completa: `GENERAR_APK.md`.
 
-- **Descargar APK:** botón en el login (`src/routes/index.tsx`), visible solo en Android (userAgent) y
-  fuera del APK. Apunta al asset `lubrimesys.apk` del último Release de GitHub. Se **oculta si la app
-  ya está instalada**: `navigator.getInstalledRelatedApps()` contra `related_applications` del
-  `public/manifest.webmanifest` (appId `com.lubrimec.sys`). Ese API solo detecta la app si el
-  navegador la conoce (Chrome/Android); en sideload puro puede no detectarla. Debajo del botón va la
-  nota de activar **"Instalar apps de fuentes desconocidas"** (Android bloquea instalar APKs fuera de
-  Play hasta habilitar ese permiso; no se puede automatizar desde la web). **No hay botón de instalar
-  PWA** (se eliminó el hook `use-pwa-install`).
+- **Descargar APK:** botón en el login (`src/routes/index.tsx`). Sirve `public/lubrimesys.apk`
+  directo desde GitHub Pages (mismo origen; ya no se usa GitHub Releases). Al tocarlo se abre
+  `src/components/apk-install-guide.tsx` con los pasos de instalación: Android **no abre el
+  instalador solo** tras una descarga web (no hay API para eso) — el usuario debe tocar la
+  notificación de descarga y permitir "Instalar apps de fuentes desconocidas".
 - **Aviso de actualización:** `src/components/apk-update-banner.tsx` + `src/hooks/use-apk-update.ts`.
   Dentro del APK compara su versión (`@capacitor/app`) contra `public/apk-version.json`; si hay una
-  mayor, muestra un banner con botón para descargar el APK nuevo. Al publicar una versión: subir
-  `versionName` en `android/app/build.gradle`, regenerar/subir el APK al Release, y actualizar la
-  versión en `public/apk-version.json`.
+  mayor, muestra un banner con botón que descarga el APK nuevo y abre la misma guía de instalación.
+  Al publicar una versión: subir `versionName` en `android/app/build.gradle`, regenerar el APK a
+  `public/lubrimesys.apk` y poner la misma versión en `public/apk-version.json` (ver GENERAR_APK.md).
+- **Biometría (`src/lib/biometric.ts`):** solo dentro del APK (`capacitor-native-biometric`).
+  Se **activa desde Perfil** (`perfil-modal.tsx`): pide la contraseña, la valida con `login()` y
+  recién ahí guarda las credenciales en el Keystore tras verificar huella/cara. El login solo
+  muestra "Ingresar con biometría" cuando ya está activa.
 - Solo hay que **regenerar el APK** si cambia ícono, nombre, `appId`, `server.url`, un plugin nativo,
   o la versión. Nunca por cambios de contenido web.

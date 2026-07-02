@@ -70,11 +70,20 @@ Detalles del consumo desde el front y gotchas del proxy: **[src/GUIA_FRONT.md](s
 Las páginas se mapean por `page_id` de APEX en `src/routes/home.tsx` (mapa `VISTAS`). El menú y los
 accesos rápidos se arman dinámicamente desde el endpoint `menu/paginas`.
 
+- **Dashboard** (vista fija) — gráfico de ventas por día (barras/línea/área, recharts) con
+  filtros año/mes y KPI "Ventas hoy" real (variación vs. ayer). Endpoints:
+  `db/ORDS_VENTAS_DASHBOARD.sql` (`ventas/anios`, `ventas/meses`, `ventas/por-dia`).
 - **Marcas** (page_id 6) — CRUD, referencia del patrón.
+- **Ventas Por Artículos** (page_id 54) — grilla con filtros (búsqueda, fecha, año/mes,
+  vendedor), totales, export a Excel/PDF y vista de tarjetas en móvil. Por defecto carga el
+  último día con ventas. Backend: `db/ORDS_VENTAS_ARTICULOS.sql`.
+- **Artículos Más Vendidos** (page_id 102) — ranking por cantidad de ventas con facetas
+  (proveedor, rubro, viscosidad, marca, unidad), export Excel/PDF. Backend:
+  `db/ORDS_ARTICULOS_MAS_VENDIDOS.sql`.
 - **Mensajes a WhatsApp** (page_id 117) — envío masivo de texto/imagen vía wasenderapi:
   números desde la BD (`numeros_whatsapp`) o manuales, importar CSV de contactos, envío async con
-  progreso, borrador persistente. Backend: `db/PKG_WHATSAPP_LUBRIMEC.sql`, `db/ORDS_WHATSAPP.sql`,
-  `db/PROC_ENVIAR_MENSAJES_WHATSAPP.sql`, `db/WHATSAPP_DDL.sql`.
+  progreso, borrador persistente, guía de uso integrada. Backend: `db/PKG_WHATSAPP_LUBRIMEC.sql`,
+  `db/ORDS_WHATSAPP.sql`, `db/PROC_ENVIAR_MENSAJES_WHATSAPP.sql`, `db/WHATSAPP_DDL.sql`.
 
 ## Deploy
 
@@ -90,14 +99,16 @@ El APK es una **WebView remota** que carga la app de GitHub Pages (`server.url` 
 `git push` (Pages), **sin regenerar el APK**.
 
 - Build y publicación: **[GENERAR_APK.md](GENERAR_APK.md)**.
-- Descarga: botón "Descargar app" en el login (solo Android), apunta al Release de GitHub. Se oculta
-  si la app nativa ya está instalada (`navigator.getInstalledRelatedApps()` + `related_applications`
-  en `public/manifest.webmanifest`). Incluye la nota de activar "Instalar apps de fuentes
-  desconocidas" (Android bloquea la instalación de APKs sideload hasta habilitar ese permiso). No hay
-  botón de "Instalar PWA".
+- Descarga: botón "Descargar apk" en el login, sirve `public/lubrimesys.apk` desde GitHub Pages.
+  Al tocarlo se abre una guía de instalación paso a paso (`apk-install-guide.tsx`): Android no
+  abre el instalador solo, hay que tocar el archivo descargado y permitir "Instalar apps
+  desconocidas".
 - Actualización: banner dentro del APK que compara su versión (`@capacitor/app`) contra
-  `public/apk-version.json` y avisa cuando hay una nueva. El usuario descarga e instala manualmente
-  (Android no autoactualiza APKs fuera de Play Store).
+  `public/apk-version.json` y avisa cuando hay una nueva, con la misma guía de instalación.
+  El usuario descarga e instala manualmente (Android no autoactualiza APKs fuera de Play Store).
+- Biometría: dentro del APK se activa desde **Perfil** (pide contraseña, la valida contra el
+  servidor y guarda en el Keystore); el login solo ofrece "Ingresar con biometría" si ya está
+  activa (`src/lib/biometric.ts`).
 - Regenerar el APK solo si cambia ícono, nombre, `appId`, `server.url`, un plugin nativo o la versión.
 
 ## Documentación
