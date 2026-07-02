@@ -14,6 +14,7 @@ import {
   CartesianGrid,
   Tooltip,
   Cell,
+  LabelList,
 } from "recharts";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { listarAniosVentas, listarMesesVentas, ventasPorDia } from "@/lib/api";
@@ -79,6 +80,8 @@ export function VentasDashboardChart() {
   const datos = diasQuery.data ?? [];
   const total = datos.reduce((acc, d) => acc + d.monto, 0);
   const fmt = (n: number) => Math.round(n).toLocaleString("es-PY", { maximumFractionDigits: 0 });
+  // Etiqueta con el monto real encima de cada valor.
+  const fmtLabel = (n: unknown) => fmt(Number(n));
 
   const selectCls =
     "h-9 rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring";
@@ -173,6 +176,14 @@ export function VentasDashboardChart() {
                   {datos.map((d, i) => (
                     <Cell key={d.fecha} fill={colorDia(i)} />
                   ))}
+                  <LabelList
+                    dataKey="monto"
+                    position="top"
+                    formatter={fmtLabel}
+                    angle={-90}
+                    offset={12}
+                    style={{ fontSize: 10, fill: "var(--muted-foreground)" }}
+                  />
                 </Bar>
               </BarChart>
             ) : tipo === "linea" ? (
@@ -192,7 +203,16 @@ export function VentasDashboardChart() {
                   dot={({ cx, cy, index }) => (
                     <circle key={index} cx={cx} cy={cy} r={4} fill={colorDia(index ?? 0)} />
                   )}
-                />
+                >
+                  <LabelList
+                    dataKey="monto"
+                    position="top"
+                    formatter={fmtLabel}
+                    angle={-90}
+                    offset={12}
+                    style={{ fontSize: 10, fill: "var(--muted-foreground)" }}
+                  />
+                </Line>
               </LineChart>
             ) : (
               <AreaChart data={datos}>
@@ -213,7 +233,16 @@ export function VentasDashboardChart() {
                   dot={({ cx, cy, index }) => (
                     <circle key={index} cx={cx} cy={cy} r={4} fill={colorDia(index ?? 0)} />
                   )}
-                />
+                >
+                  <LabelList
+                    dataKey="monto"
+                    position="top"
+                    formatter={fmtLabel}
+                    angle={-90}
+                    offset={12}
+                    style={{ fontSize: 10, fill: "var(--muted-foreground)" }}
+                  />
+                </Area>
               </AreaChart>
             )}
           </ResponsiveContainer>

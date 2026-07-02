@@ -235,6 +235,172 @@ export async function eliminarCondicionFactura(idCondicion: number): Promise<voi
   await authFetch(`condiciones-facturas/${idCondicion}`, { method: "DELETE" });
 }
 
+// ─── Talonarios (página 44) ──────────────────────────────────────────────────
+// CRUD de TALONARIOS (timbrados). id_talonario por IDENTITY. Multiempresa.
+// fecha_vigencia / fecha_vencimiento como texto 'YYYY-MM-DD'. ind_ncr/activo = 'S'/'N'.
+
+export type Talonario = {
+  id_talonario: number;
+  ser_timbrado: string;
+  nro_timbrado: number;
+  fecha_vigencia: string | null;
+  fecha_vencimiento: string | null;
+  nro_inicial: number;
+  nro_final: number;
+  ind_ncr: string;
+  cod_empresa: number;
+  activo: string;
+};
+
+export type TalonarioInput = Omit<Talonario, "id_talonario">;
+
+export async function listarTalonarios(codEmpresa: number): Promise<Talonario[]> {
+  const q = new URLSearchParams({ cod_empresa: String(codEmpresa) });
+  const data = await authFetch(`talonarios?${q}`);
+  return (data.data ?? []) as Talonario[];
+}
+
+export async function crearTalonario(input: TalonarioInput): Promise<number> {
+  const data = await authFetch("talonarios", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  return data.id_talonario as number;
+}
+
+export async function actualizarTalonario(
+  idTalonario: number,
+  input: TalonarioInput,
+): Promise<void> {
+  await authFetch(`talonarios/${idTalonario}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+}
+
+export async function eliminarTalonario(idTalonario: number): Promise<void> {
+  await authFetch(`talonarios/${idTalonario}`, { method: "DELETE" });
+}
+
+// ─── Formas de Cobro/Pago (página 48) ────────────────────────────────────────
+// CRUD de FORMA_COBRO_PAGO. id_forma por IDENTITY. estado = 'S'/'N'.
+
+export type FormaCobroPago = {
+  id_forma: number;
+  descripcion: string | null;
+  estado: string;
+};
+
+export type FormaCobroPagoInput = Omit<FormaCobroPago, "id_forma">;
+
+export async function listarFormasCobroPago(): Promise<FormaCobroPago[]> {
+  const data = await authFetch("formas-cobro-pago");
+  return (data.data ?? []) as FormaCobroPago[];
+}
+
+export async function crearFormaCobroPago(input: FormaCobroPagoInput): Promise<number> {
+  const data = await authFetch("formas-cobro-pago", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  return data.id_forma as number;
+}
+
+export async function actualizarFormaCobroPago(
+  idForma: number,
+  input: FormaCobroPagoInput,
+): Promise<void> {
+  await authFetch(`formas-cobro-pago/${idForma}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+}
+
+export async function eliminarFormaCobroPago(idForma: number): Promise<void> {
+  await authFetch(`formas-cobro-pago/${idForma}`, { method: "DELETE" });
+}
+
+// ─── Bancos (página 60) ──────────────────────────────────────────────────────
+// CRUD de BANCOS. id_banco por IDENTITY. activo = 'S'/'N'.
+
+export type Banco = {
+  id_banco: number;
+  nombre: string | null;
+  activo: string;
+};
+
+export type BancoInput = Omit<Banco, "id_banco">;
+
+export async function listarBancos(): Promise<Banco[]> {
+  const data = await authFetch("bancos");
+  return (data.data ?? []) as Banco[];
+}
+
+export async function crearBanco(input: BancoInput): Promise<number> {
+  const data = await authFetch("bancos", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  return data.id_banco as number;
+}
+
+export async function actualizarBanco(idBanco: number, input: BancoInput): Promise<void> {
+  await authFetch(`bancos/${idBanco}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+}
+
+export async function eliminarBanco(idBanco: number): Promise<void> {
+  await authFetch(`bancos/${idBanco}`, { method: "DELETE" });
+}
+
+// ─── Viscosidad de Lubricantes (página 52) ───────────────────────────────────
+// CRUD de VISCOSIDAD_LUBRICANTES. id_viscosidad por IDENTITY. motor_caja = 'M'/'C'.
+
+export type Viscosidad = {
+  id_viscosidad: number;
+  descripcion: string | null;
+  motor_caja: string;
+};
+
+export type ViscosidadInput = Omit<Viscosidad, "id_viscosidad">;
+
+export async function listarViscosidades(): Promise<Viscosidad[]> {
+  const data = await authFetch("viscosidad-lubricantes");
+  return (data.data ?? []) as Viscosidad[];
+}
+
+export async function crearViscosidad(input: ViscosidadInput): Promise<number> {
+  const data = await authFetch("viscosidad-lubricantes", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  return data.id_viscosidad as number;
+}
+
+export async function actualizarViscosidad(
+  idViscosidad: number,
+  input: ViscosidadInput,
+): Promise<void> {
+  await authFetch(`viscosidad-lubricantes/${idViscosidad}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+}
+
+export async function eliminarViscosidad(idViscosidad: number): Promise<void> {
+  await authFetch(`viscosidad-lubricantes/${idViscosidad}`, { method: "DELETE" });
+}
+
 // ─── Rubros (página 20) ──────────────────────────────────────────────────────
 
 export type Rubro = {
