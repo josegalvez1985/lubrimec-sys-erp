@@ -14,6 +14,7 @@ import {
   RefreshCw,
   Upload,
   Trash2,
+  HelpCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -43,6 +44,13 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
 
 // Deja solo dígitos y un "+" inicial opcional.
 function normalizarNumero(raw: string): string {
@@ -119,6 +127,7 @@ export function WhatsappView() {
   const csvRef = useRef<HTMLInputElement>(null);
   const [confirmBorrar, setConfirmBorrar] = useState(false);
   const [avisoCarga, setAvisoCarga] = useState<string | null>(null);
+  const [guiaAbierta, setGuiaAbierta] = useState(false);
 
   // Persiste el borrador de texto/imagen para no reescribir en cada tanda.
   useEffect(() => {
@@ -255,6 +264,20 @@ export function WhatsappView() {
 
   return (
     <div className="grid gap-4 sm:gap-6 lg:grid-cols-[1fr_380px] xl:grid-cols-[1fr_420px]">
+      {/* ── Guía de uso ───────────────────────────────────────────────────── */}
+      <div className="order-first flex justify-end lg:col-span-2">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => setGuiaAbierta(true)}
+          className="gap-2 text-muted-foreground"
+        >
+          <HelpCircle className="h-4 w-4" />
+          Guía de uso
+        </Button>
+      </div>
+
       {/* ── Destinatarios ─────────────────────────────────────────────────── */}
       <div className="order-2 rounded-2xl border border-border bg-card shadow-elegant lg:order-1">
         <div className="flex items-center gap-3 border-b border-border p-4 sm:p-5">
@@ -556,6 +579,78 @@ export function WhatsappView() {
           </div>
         )}
       </div>
+
+      {/* Guía de uso de la página */}
+      <Dialog open={guiaAbierta} onOpenChange={setGuiaAbierta}>
+        <DialogContent className="max-h-[85vh] max-w-lg overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="font-display flex items-center gap-2">
+              <MessageSquare className="h-5 w-5 text-primary" />
+              Cómo enviar mensajes a WhatsApp
+            </DialogTitle>
+            <DialogDescription>
+              Envío masivo de texto y/o imagen a una lista de números.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 text-sm">
+            <section>
+              <h4 className="mb-1 font-semibold">1. Elegí los destinatarios</h4>
+              <ul className="list-disc space-y-1 pl-5 text-muted-foreground">
+                <li>
+                  <b className="text-foreground">De la base:</b> se envía a todos los números{" "}
+                  <b className="text-foreground">pendientes</b> (los que ya recibieron el mensaje se
+                  omiten solos). Podés importarlos con <b className="text-foreground">Importar CSV</b>{" "}
+                  usando el export de Google Contactos: toma los celulares paraguayos (+595) y
+                  descarta duplicados y códigos cortos.
+                </li>
+                <li>
+                  <b className="text-foreground">Manual:</b> pegá los números (uno por línea o
+                  separados por coma). Se agregan a la base y se envía solo a esos.
+                </li>
+              </ul>
+            </section>
+
+            <section>
+              <h4 className="mb-1 font-semibold">2. Escribí el mensaje</h4>
+              <ul className="list-disc space-y-1 pl-5 text-muted-foreground">
+                <li>Texto, imagen (máx. 5MB) o ambos: la imagen va con el texto como pie.</li>
+                <li>
+                  El borrador se <b className="text-foreground">guarda solo</b>: podés salir de la
+                  página y seguir después, o reusar el mismo mensaje para otra tanda.
+                </li>
+              </ul>
+            </section>
+
+            <section>
+              <h4 className="mb-1 font-semibold">3. Enviá y seguí el progreso</h4>
+              <ul className="list-disc space-y-1 pl-5 text-muted-foreground">
+                <li>
+                  El envío corre <b className="text-foreground">en el servidor</b> (~20 segundos
+                  entre números para evitar bloqueos). Podés cerrar la página; el proceso continúa.
+                </li>
+                <li>
+                  El panel de progreso muestra enviados y fallidos en vivo, y avisa al terminar.
+                </li>
+                <li>
+                  Los fallidos quedan marcados <b className="text-foreground">Reintentar</b> en la
+                  lista: el próximo envío "De la base" los incluye de nuevo automáticamente.
+                </li>
+              </ul>
+            </section>
+
+            <section className="rounded-lg bg-primary/10 p-3 text-xs text-muted-foreground">
+              <b className="text-foreground">Consejo:</b> para listas grandes conviene enviar en
+              tandas. Como los enviados se omiten y el borrador se conserva, basta volver a tocar
+              "Enviar" para continuar donde quedó.
+            </section>
+          </div>
+
+          <Button onClick={() => setGuiaAbierta(false)} className="w-full">
+            Entendido
+          </Button>
+        </DialogContent>
+      </Dialog>
 
       {/* Confirmar borrado de todos los números */}
       <AlertDialog open={confirmBorrar} onOpenChange={setConfirmBorrar}>
