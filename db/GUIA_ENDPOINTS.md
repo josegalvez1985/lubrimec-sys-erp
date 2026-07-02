@@ -81,9 +81,41 @@ como query param `?cod_empresa=:n`.
 | columna nullable | `T \| null` |
 | `DATE` / `TIMESTAMP` | `string` (ISO) |
 
+## Vista con formulario CRUD (front)
+
+Patrón para una página tipo CRUD con tabla + formulario (modelo: `src/components/marcas-view.tsx`;
+CRUD completo con varios campos: `src/components/personas-view.tsx`).
+
+1. **Cliente en `api.ts`:** tipo `Tabla` (campos exactos) y `TablaInput = Omit<Tabla, "pk">`.
+   Funciones `listar/crear/actualizar/eliminar`. `crear*` devuelve la PK (`data.<pk>`), leída del
+   JSON de respuesta del INSERT (`RETURNING <pk>`).
+2. **Vista:** `useQuery` para listar (`queryKey: ["tabla", cod_empresa]`), `useMutation` +
+   `qc.invalidateQueries` para borrar/guardar. Tabla con búsqueda en memoria y columna de acciones
+   (ver/editar/borrar con `lucide` `Eye`/`Pencil`/`Trash2`). Formulario en `Dialog` con un
+   `ModalState` (`closed | create | edit | view`); confirmación de borrado con `AlertDialog`.
+3. **Sincronizar el form al abrir:** patrón `lastKey`/`key` (`${mode}:${pk ?? "new"}`) que
+   reinicializa el estado del form cuando cambia la fila seleccionada, sin `useEffect`.
+4. **Registrar** la vista en `VISTAS` de `src/routes/home.tsx` por su `page_id` (así el menú la
+   marca como implementada; ver `PAGINAS_IMPLEMENTADAS`).
+
+Gotchas de formularios:
+- **Campos "-" en la BD = vacío en el form.** Varias columnas guardan `'-'` como "sin dato";
+  normalizarlas a `""` al cargar y a `null` al guardar (helper `limpiar` en `personas-view`).
+- **Autocopia de campos** (ej. `nombre_fantasia` desde `nombre`): copiar mientras el destino no se
+  haya editado a mano; usar una bandera `tocada` que se activa en el `onChange` del destino.
+- **Fechas:** intercambiar como texto `YYYY-MM-DD` (input `type="date"`); en PL/SQL convertir con
+  `TO_DATE(p_txt, 'YYYY-MM-DD')`, tolerando NULL.
+
+Gotcha de PL/SQL (paquete):
+- **Una función local del paquete NO se puede llamar dentro de una sentencia SQL** (INSERT/UPDATE):
+  da `PLS-00231: la función no se puede utilizar en SQL`. Calcularla en una variable local antes del
+  SQL y usar la variable. Pasó con `f_fecha` en `PKG_PERSONAS_LUBRIMEC` (fix: `l_fecha := f_fecha(...)`
+  y luego usar `l_fecha` en el INSERT/UPDATE).
+
 ## Archivos de referencia (tabla `marcas`)
 
 - `db/PKG_MARCAS_LUBRIMEC.sql` — paquete CRUD modelo.
+- `db/PKG_PERSONAS_LUBRIMEC.sql` — CRUD con muchos campos (fecha, códigos de 1 char, helper JSON).
 - `db/ORDS_MARCAS.sql` — script ORDS modelo (estructura plana + `DEFINE_PARAMETER` del header).
 - `db/ORDS_MENU_PAGINAS.sql` — endpoint de solo lectura (sin paquete), también modelo plano.
 - `db/ORDS_VENTAS_DASHBOARD.sql` — 3 GET de solo lectura para los gráficos del dashboard

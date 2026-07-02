@@ -63,6 +63,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetTrigger, SheetTitle } from "@/components/ui/sheet";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -78,75 +79,78 @@ import { MarcasView } from "@/components/marcas-view";
 import { VentasDashboardChart } from "@/components/ventas-dashboard-chart";
 import { VentasArticulosView } from "@/components/ventas-articulos-view";
 import { ArticulosMasVendidosView } from "@/components/articulos-mas-vendidos-view";
+import { PedidosArticulosView } from "@/components/pedidos-articulos-view";
+import { PersonasView } from "@/components/personas-view";
+import { EmpresasView } from "@/components/empresas-view";
 import { WhatsappView } from "@/components/whatsapp-view";
 import { PerfilModal } from "@/components/perfil-modal";
 
 // Icono por page_id (APEX). Tiene prioridad sobre el match por palabra clave.
 const ICONO_PAGINA: Record<number, LucideIcon> = {
-  54: ShoppingCart,      // Ventas Por Artículos
-  98: FileSignature,     // Cotización
-  28: ShoppingBag,       // Consulta de Compras
-  4: Package,            // Artículos
-  102: TrendingUp,       // Articulos Mas Vendidos
-  85: Banknote,          // Conteo de Efectivo
-  63: ClipboardList,     // Pedidos de Artículos
-  34: DollarSign,        // Precios de Ventas
-  39: Store,             // Punto de venta
-  62: CalendarCheck,     // Cierre del Día
-  87: ArrowDownUp,       // Ajustar Inventarios
-  73: Wallet,            // Rendición de Caja
-  94: Car,               // Repuestos de Vehiculos
-  112: ClipboardPen,     // Planilla para inventarios
-  58: Boxes,             // Inventario
-  55: ShoppingBag,       // Compras por Artículos
-  80: PackageSearch,     // Consulta de Inventarios
-  75: BarChart3,         // Compras Vs Ventas
-  79: HandCoins,         // Saldos de Proveedores
-  101: HandCoins,        // Pago de Comisiones
-  82: BadgePercent,      // Precios Mayoristas
-  56: FileBarChart,      // Ficha de Artículos
-  81: PackageX,          // Articulos no Inventariados
-  6: Tag,                // Marcas
-  37: ShieldCheck,       // Roles de Paginas
-  77: Receipt,           // Pagos de Facturas
-  20: BookOpen,          // Rubros
-  2: Users,              // Personas
-  24: ScanBarcode,       // Códigos de Barras
-  8: Truck,              // Importaciones
-  70: PackageCheck,      // Existencia de Artículos
-  27: Truck,             // Artículos Proveedores
-  100: TrendingUp,       // Suba de Precios
-  92: CircleDollarSign,  // Costo de Inventarios
-  30: UserCog,           // Vendedores
-  65: Wallet,            // Formas de Cobros
-  83: Coins,             // Denominaciones de Monedas
-  61: DollarSign,        // Consulta de Precios
-  106: TicketPercent,    // Descuentos Escalonados
-  57: PackageX,          // Artículos sin Código de Barra
-  33: FileBarChart,      // Consulta de ventas
-  52: Gauge,             // Viscosidad de Lubricantes
-  114: Banknote,         // Comisiones al Banco
-  105: MessageSquare,    // Post Venta
+  54: ShoppingCart, // Ventas Por Artículos
+  98: FileSignature, // Cotización
+  28: ShoppingBag, // Consulta de Compras
+  4: Package, // Artículos
+  102: TrendingUp, // Articulos Mas Vendidos
+  85: Banknote, // Conteo de Efectivo
+  63: ClipboardList, // Pedidos de Artículos
+  34: DollarSign, // Precios de Ventas
+  39: Store, // Punto de venta
+  62: CalendarCheck, // Cierre del Día
+  87: ArrowDownUp, // Ajustar Inventarios
+  73: Wallet, // Rendición de Caja
+  94: Car, // Repuestos de Vehiculos
+  112: ClipboardPen, // Planilla para inventarios
+  58: Boxes, // Inventario
+  55: ShoppingBag, // Compras por Artículos
+  80: PackageSearch, // Consulta de Inventarios
+  75: BarChart3, // Compras Vs Ventas
+  79: HandCoins, // Saldos de Proveedores
+  101: HandCoins, // Pago de Comisiones
+  82: BadgePercent, // Precios Mayoristas
+  56: FileBarChart, // Ficha de Artículos
+  81: PackageX, // Articulos no Inventariados
+  6: Tag, // Marcas
+  37: ShieldCheck, // Roles de Paginas
+  77: Receipt, // Pagos de Facturas
+  20: BookOpen, // Rubros
+  2: Users, // Personas
+  24: ScanBarcode, // Códigos de Barras
+  8: Truck, // Importaciones
+  70: PackageCheck, // Existencia de Artículos
+  27: Truck, // Artículos Proveedores
+  100: TrendingUp, // Suba de Precios
+  92: CircleDollarSign, // Costo de Inventarios
+  30: UserCog, // Vendedores
+  65: Wallet, // Formas de Cobros
+  83: Coins, // Denominaciones de Monedas
+  61: DollarSign, // Consulta de Precios
+  106: TicketPercent, // Descuentos Escalonados
+  57: PackageX, // Artículos sin Código de Barra
+  33: FileBarChart, // Consulta de ventas
+  52: Gauge, // Viscosidad de Lubricantes
+  114: Banknote, // Comisiones al Banco
+  105: MessageSquare, // Post Venta
   89: SlidersHorizontal, // Parametros
-  93: ListChecks,        // Marcas Vs Descripción de Articulos
-  67: Percent,           // Descuentos
-  12: Building2,         // Empresas
-  103: HandCoins,        // Pagos a proveedores por ventas
-  44: FileText,          // Talonarios
-  104: Gift,             // Aguinaldos
-  42: FileSignature,     // Condiciones de Facturas
-  18: Coins,             // Monedas
-  76: PackageSearch,     // Artículos para Inventario
-  48: Wallet,            // Formas de Cobras, pagos
-  60: ShoppingCart,      // Ventas
-  21: Ruler,             // Unidades de Medidas
-  14: Percent,           // Retenciones
-  71: Receipt,           // Números de Vouchers
-  10: Percent,           // IVA
-  108: Trophy,           // Sortear
-  120: ScrollText,       // Logs de Mensajes
-  117: MessageSquare,    // Mensajes a Whatsapp
-  50: Building2,         // Bancos
+  93: ListChecks, // Marcas Vs Descripción de Articulos
+  67: Percent, // Descuentos
+  12: Building2, // Empresas
+  103: HandCoins, // Pagos a proveedores por ventas
+  44: FileText, // Talonarios
+  104: Gift, // Aguinaldos
+  42: FileSignature, // Condiciones de Facturas
+  18: Coins, // Monedas
+  76: PackageSearch, // Artículos para Inventario
+  48: Wallet, // Formas de Cobras, pagos
+  60: ShoppingCart, // Ventas
+  21: Ruler, // Unidades de Medidas
+  14: Percent, // Retenciones
+  71: Receipt, // Números de Vouchers
+  10: Percent, // IVA
+  108: Trophy, // Sortear
+  120: ScrollText, // Logs de Mensajes
+  117: MessageSquare, // Mensajes a Whatsapp
+  50: Building2, // Bancos
 };
 
 // Match por palabra clave del título (fallback cuando el page_id no está en el mapa).
@@ -198,16 +202,24 @@ type NavKey = "dashboard" | number;
 // Al implementar una página nueva: anotar su page_id aquí con su componente.
 // Las páginas del menú sin entrada aquí muestran un Placeholder con su título.
 const VISTAS: Record<number, () => ReactElement> = {
+  2: () => <PersonasView />, // Personas
   6: () => <MarcasView />, // Marcas
+  12: () => <EmpresasView />, // Empresas
   54: () => <VentasArticulosView />, // Ventas Por Artículos
   102: () => <ArticulosMasVendidosView />, // Artículos Más Vendidos
+  63: () => <PedidosArticulosView />, // Pedidos de Artículos
   117: () => <WhatsappView />, // Mensajes a Whatsapp
 };
+
+// page_id que ya tienen algo implementado (vista propia o acción especial como el
+// cotizador 98). Se usa en el menú para diferenciar páginas listas vs. pendientes.
+const PAGINAS_IMPLEMENTADAS = new Set<number>([...Object.keys(VISTAS).map(Number), 98]);
 
 function HomePage() {
   const [active, setActive] = useState<NavKey>("dashboard");
   const [mobileOpen, setMobileOpen] = useState(false);
   const [perfilOpen, setPerfilOpen] = useState(false);
+  const [cotizadorOpen, setCotizadorOpen] = useState(false);
   // Sidebar colapsable en escritorio; la preferencia se recuerda.
   const [menuColapsado, setMenuColapsado] = useState(
     () => typeof window !== "undefined" && localStorage.getItem("menu_colapsado") === "1",
@@ -244,11 +256,18 @@ function HomePage() {
   }
 
   function handleNav(key: NavKey) {
+    // Cotización (page_id 98): abre el cotizador externo en un modal (iframe).
+    if (key === 98) {
+      setCotizadorOpen(true);
+      setMobileOpen(false);
+      return;
+    }
     setActive(key);
     setMobileOpen(false);
   }
 
-  const paginaActiva = typeof active === "number" ? paginas.find((p) => p.page_id === active) : null;
+  const paginaActiva =
+    typeof active === "number" ? paginas.find((p) => p.page_id === active) : null;
 
   return (
     <div className="flex min-h-screen bg-background">
@@ -259,14 +278,24 @@ function HomePage() {
           !menuColapsado && "lg:flex",
         )}
       >
-        <SidebarContent active={active} onNav={handleNav} paginas={paginas} loading={paginasQuery.isLoading} />
+        <SidebarContent
+          active={active}
+          onNav={handleNav}
+          paginas={paginas}
+          loading={paginasQuery.isLoading}
+        />
       </aside>
 
       {/* Mobile sidebar */}
       <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
         <SheetContent side="left" className="w-72 border-0 bg-sidebar p-0 text-sidebar-foreground">
           <SheetTitle className="sr-only">Menú de navegación</SheetTitle>
-          <SidebarContent active={active} onNav={handleNav} paginas={paginas} loading={paginasQuery.isLoading} />
+          <SidebarContent
+            active={active}
+            onNav={handleNav}
+            paginas={paginas}
+            loading={paginasQuery.isLoading}
+          />
         </SheetContent>
       </Sheet>
 
@@ -329,7 +358,10 @@ function HomePage() {
                   <Settings className="mr-2 h-4 w-4" />
                   Perfil
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={logout} className="text-destructive focus:text-destructive">
+                <DropdownMenuItem
+                  onClick={logout}
+                  className="text-destructive focus:text-destructive"
+                >
                   <LogOut className="mr-2 h-4 w-4" />
                   Cerrar sesión
                 </DropdownMenuItem>
@@ -351,6 +383,20 @@ function HomePage() {
       </div>
 
       <PerfilModal open={perfilOpen} onOpenChange={setPerfilOpen} />
+
+      {/* Cotizador externo (page_id 98) embebido en un modal */}
+      <Dialog open={cotizadorOpen} onOpenChange={setCotizadorOpen}>
+        <DialogContent className="grid h-[90vh] max-w-5xl grid-rows-[auto_1fr] gap-0 p-0 sm:max-w-5xl">
+          <DialogTitle className="border-b border-border px-4 py-3 text-base">
+            Cotizador
+          </DialogTitle>
+          <iframe
+            src="https://www.lubrimec.shop/cotizador"
+            title="Cotizador"
+            className="h-full min-h-0 w-full rounded-b-lg border-0"
+          />
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -383,7 +429,11 @@ function SidebarContent({
     <div className="flex h-full flex-col">
       {/* Brand */}
       <div className="flex h-16 items-center gap-3 border-b border-sidebar-border px-5">
-        <img src={`${import.meta.env.BASE_URL}logo.png`} alt="Lubrimec" className="h-12 w-12 shrink-0 rounded-xl bg-white object-contain p-1 shadow-glow" />
+        <img
+          src={`${import.meta.env.BASE_URL}logo.png`}
+          alt="Lubrimec"
+          className="h-12 w-12 shrink-0 rounded-xl bg-white object-contain p-1 shadow-glow"
+        />
         <div className="min-w-0">
           <div className="font-display text-lg font-bold leading-none">Lubrimesys</div>
           <div className="mt-1 text-[10px] uppercase tracking-widest text-sidebar-foreground/50">
@@ -416,7 +466,13 @@ function SidebarContent({
 
         {/* Grupos del endpoint */}
         {grupos.map((g) => (
-          <NavGrupo key={g.titulo} titulo={g.titulo} paginas={g.paginas} active={active} onNav={onNav} />
+          <NavGrupo
+            key={g.titulo}
+            titulo={g.titulo}
+            paginas={g.paginas}
+            active={active}
+            onNav={onNav}
+          />
         ))}
       </nav>
     </div>
@@ -446,33 +502,56 @@ function NavGrupo({
       >
         <CatIcon className="h-4 w-4 shrink-0" />
         <span className="flex-1 truncate text-left">{titulo}</span>
-        <ChevronDown className={cn("h-4 w-4 shrink-0 transition-transform", open ? "" : "-rotate-90")} />
+        <ChevronDown
+          className={cn("h-4 w-4 shrink-0 transition-transform", open ? "" : "-rotate-90")}
+        />
       </button>
-      {open &&
-        paginas.map((p) => {
-          const Icon = iconoParaPagina(p);
-          const isActive = p.page_id === active;
-          return (
-            <button
-              key={`${p.application_id}-${p.page_id}`}
-              onClick={() => onNav(p.page_id)}
-              className={cn(
-                "group flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all",
-                isActive
-                  ? "bg-gradient-primary text-primary-foreground shadow-glow"
-                  : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground",
-              )}
-            >
-              <Icon className="h-[18px] w-[18px] shrink-0" />
-              <span className="truncate">{p.entry_text ?? p.page_title}</span>
-            </button>
-          );
-        })}
+      {open && (
+        <div className="ml-4 space-y-0.5 border-l border-sidebar-border pl-2">
+          {paginas.map((p) => {
+            const Icon = iconoParaPagina(p);
+            const isActive = p.page_id === active;
+            const lista = PAGINAS_IMPLEMENTADAS.has(p.page_id);
+            return (
+              <button
+                key={`${p.application_id}-${p.page_id}`}
+                onClick={() => onNav(p.page_id)}
+                title={lista ? undefined : "Página aún no implementada"}
+                className={cn(
+                  "group flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all",
+                  isActive
+                    ? "bg-gradient-primary text-primary-foreground shadow-glow"
+                    : lista
+                      ? "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+                      : "text-sidebar-foreground/35 hover:bg-sidebar-accent hover:text-sidebar-foreground/60",
+                )}
+              >
+                <Icon className="h-[18px] w-[18px] shrink-0" />
+                <span className="flex-1 truncate text-left">{p.entry_text ?? p.page_title}</span>
+                {!isActive && !lista && (
+                  <span
+                    className="h-1.5 w-1.5 shrink-0 rounded-full bg-sidebar-foreground/30"
+                    aria-hidden
+                  />
+                )}
+              </button>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
 
-function DashboardView({ usuario, paginas, onNavigate }: { usuario: string; paginas: PaginaMenu[]; onNavigate: (k: NavKey) => void }) {
+function DashboardView({
+  usuario,
+  paginas,
+  onNavigate,
+}: {
+  usuario: string;
+  paginas: PaginaMenu[];
+  onNavigate: (k: NavKey) => void;
+}) {
   // Ventas de hoy (real, desde ventas/por-dia del mes actual). Comparte queryKey
   // con el gráfico del dashboard, así react-query hace una sola consulta.
   const hoy = new Date();
@@ -552,7 +631,9 @@ function DashboardView({ usuario, paginas, onNavigate }: { usuario: string; pagi
             >
               <div className="flex items-start justify-between">
                 <div>
-                  <p className="text-xs uppercase tracking-wider text-muted-foreground">{s.label}</p>
+                  <p className="text-xs uppercase tracking-wider text-muted-foreground">
+                    {s.label}
+                  </p>
                   <p className="mt-2 font-display text-2xl font-bold">{s.value}</p>
                 </div>
                 <div className="grid h-10 w-10 place-items-center rounded-xl bg-primary/10 text-primary">
@@ -576,7 +657,13 @@ function DashboardView({ usuario, paginas, onNavigate }: { usuario: string; pagi
   );
 }
 
-function QuickActions({ paginas, onNavigate }: { paginas: PaginaMenu[]; onNavigate: (k: NavKey) => void }) {
+function QuickActions({
+  paginas,
+  onNavigate,
+}: {
+  paginas: PaginaMenu[];
+  onNavigate: (k: NavKey) => void;
+}) {
   const [filtro, setFiltro] = useState("");
 
   if (paginas.length === 0) {
@@ -586,9 +673,7 @@ function QuickActions({ paginas, onNavigate }: { paginas: PaginaMenu[]; onNaviga
   // Accesos rápidos: más usados primero (el menú lateral va por jerarquía).
   const ordenadas = [...paginas].sort((a, b) => b.estadistica_user - a.estadistica_user);
   const q = filtro.trim().toLowerCase();
-  const filtradas = q
-    ? ordenadas.filter((p) => p.page_title.toLowerCase().includes(q))
-    : ordenadas;
+  const filtradas = q ? ordenadas.filter((p) => p.page_title.toLowerCase().includes(q)) : ordenadas;
 
   return (
     <>
