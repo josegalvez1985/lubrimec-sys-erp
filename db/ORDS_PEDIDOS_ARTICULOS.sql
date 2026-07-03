@@ -241,6 +241,7 @@ BEGIN
         )
         SELECT
             ag.ag_cod_empresa                                           AS cod_empresa,
+            MAX(ag.ag_id_articulo)                                      AS id_articulo,
             SUM(ag.ag_compras)                                          AS compras,
             SUM(ag.ag_ventas)                                           AS ventas,
             ROUND(SUM(ag.ag_ventas) / NULLIF(SUM(ag.ag_compras), 0) * 100, 2) AS rotacion,
@@ -262,6 +263,7 @@ BEGIN
             ag.ag_rubro, ag.ag_nombre, ex.ex_existencia, co.co_costo_ultimo
     ) LOOP
         APEX_JSON.OPEN_OBJECT;
+        APEX_JSON.WRITE('id_articulo', r.id_articulo);
         APEX_JSON.WRITE('codigo_oem', r.codigo_oem);
         APEX_JSON.WRITE('articulo', r.articulo);
         APEX_JSON.WRITE('existencia', r.existencia);

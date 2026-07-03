@@ -1,4 +1,4 @@
-const CACHE = "lubrimesys-v4";
+const CACHE = "lubrimesys-v5";
 
 self.addEventListener("install", (e) => {
   self.skipWaiting();
@@ -17,6 +17,7 @@ self.addEventListener("activate", (e) => {
 function esApi(url) {
   return (
     url.pathname.includes("/api/ords/") ||
+    url.pathname.includes("/api/img/") ||
     url.pathname.includes("/ords/") ||
     url.hostname.includes("oracleapex.com")
   );
