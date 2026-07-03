@@ -46,6 +46,17 @@ function handleUnauthorized() {
   }
 }
 
+// Detecta el rechazo de token del backend aun cuando el status HTTP no llegó como
+// 401 (algunos handlers ORDS ya abrieron la respuesta y el STATUS_LINE queda en 200).
+function esTokenInvalido(res: Response, data: { success?: boolean; message?: string }) {
+  return (
+    res.status === 401 ||
+    (data?.success === false &&
+      typeof data?.message === "string" &&
+      /token\s+invalido|token\s+inválido/i.test(data.message))
+  );
+}
+
 export async function login(usuario: string, password: string, recordar = false): Promise<Sesion> {
   const res = await fetch(url("auth/login"), {
     method: "POST",
@@ -104,12 +115,11 @@ export async function getMenuPaginas(): Promise<PaginaMenu[]> {
     headers: { Authorization: `Bearer ${s.token}` },
   });
 
-  if (res.status === 401) {
+  const data = await res.json().catch(() => ({}));
+  if (esTokenInvalido(res, data)) {
     handleUnauthorized();
     throw new Error("Sesión expirada");
   }
-
-  const data = await res.json().catch(() => ({}));
   console.log(
     "[api] menu/paginas response: status",
     res.status,
@@ -153,11 +163,11 @@ async function authFetch(path: string, init: RequestInit = {}) {
       Authorization: `Bearer ${s.token}`,
     },
   });
-  if (res.status === 401) {
+  const data = await res.json().catch(() => ({}));
+  if (esTokenInvalido(res, data)) {
     handleUnauthorized();
     throw new Error("Sesión expirada");
   }
-  const data = await res.json().catch(() => ({}));
   if (!res.ok || data?.success === false) {
     throw new Error(data?.message ?? "Operación fallida");
   }

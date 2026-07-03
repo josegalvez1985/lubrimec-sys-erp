@@ -1,34 +1,8 @@
 import { useState } from "react";
 import { Download, Loader2, X } from "lucide-react";
-import { Directory, Filesystem } from "@capacitor/filesystem";
-import { FileOpener } from "@capacitor-community/file-opener";
 import { useApkUpdate } from "@/hooks/use-apk-update";
 import { ApkInstallGuide } from "@/components/apk-install-guide";
-
-// Descarga el APK dentro de la app y lanza el instalador de Android directamente
-// (sin pasar por el navegador ni la carpeta Descargas). Requiere el permiso
-// REQUEST_INSTALL_PACKAGES en el manifest; Android igual pide confirmar la instalación.
-async function descargarEInstalar(url: string): Promise<void> {
-  const res = await fetch(url, { cache: "no-store" });
-  if (!res.ok) throw new Error(`Descarga falló: HTTP ${res.status}`);
-  const blob = await res.blob();
-  // Filesystem.writeFile necesita el binario como base64.
-  const base64 = await new Promise<string>((resolve, reject) => {
-    const r = new FileReader();
-    r.onload = () => resolve((r.result as string).split(",")[1]);
-    r.onerror = () => reject(new Error("No se pudo leer el APK descargado"));
-    r.readAsDataURL(blob);
-  });
-  const escrito = await Filesystem.writeFile({
-    path: "lubrimesys.apk",
-    data: base64,
-    directory: Directory.Cache, // cubierto por cache-path en file_paths.xml (FileProvider)
-  });
-  await FileOpener.open({
-    filePath: escrito.uri,
-    contentType: "application/vnd.android.package-archive",
-  });
-}
+import { descargarEInstalarApk } from "@/lib/apk-install";
 
 // Banner de "nueva versión disponible" dentro del APK. Aparece solo si el APK
 // instalado es anterior a la versión de public/apk-version.json. No autoactualiza:
@@ -45,7 +19,7 @@ export function ApkUpdateBanner() {
     if (descargando) return;
     setDescargando(true);
     try {
-      await descargarEInstalar(update!.url);
+      await descargarEInstalarApk(update!.url);
     } catch {
       // Fallback: flujo viejo (descarga vía navegador + guía de instalación).
       window.open(update!.url, "_blank");
