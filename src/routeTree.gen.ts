@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as HomeRouteImport } from './routes/home'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ApiOrdsSplatRouteImport } from './routes/api/ords.$'
+import { Route as ApiImgSplatRouteImport } from './routes/api/img.$'
 
 const HomeRoute = HomeRouteImport.update({
   id: '/home',
@@ -28,34 +29,43 @@ const ApiOrdsSplatRoute = ApiOrdsSplatRouteImport.update({
   path: '/api/ords/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiImgSplatRoute = ApiImgSplatRouteImport.update({
+  id: '/api/img/$',
+  path: '/api/img/$',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/home': typeof HomeRoute
+  '/api/img/$': typeof ApiImgSplatRoute
   '/api/ords/$': typeof ApiOrdsSplatRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/home': typeof HomeRoute
+  '/api/img/$': typeof ApiImgSplatRoute
   '/api/ords/$': typeof ApiOrdsSplatRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/home': typeof HomeRoute
+  '/api/img/$': typeof ApiImgSplatRoute
   '/api/ords/$': typeof ApiOrdsSplatRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/home' | '/api/ords/$'
+  fullPaths: '/' | '/home' | '/api/img/$' | '/api/ords/$'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/home' | '/api/ords/$'
-  id: '__root__' | '/' | '/home' | '/api/ords/$'
+  to: '/' | '/home' | '/api/img/$' | '/api/ords/$'
+  id: '__root__' | '/' | '/home' | '/api/img/$' | '/api/ords/$'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   HomeRoute: typeof HomeRoute
+  ApiImgSplatRoute: typeof ApiImgSplatRoute
   ApiOrdsSplatRoute: typeof ApiOrdsSplatRoute
 }
 
@@ -82,12 +92,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiOrdsSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/img/$': {
+      id: '/api/img/$'
+      path: '/api/img/$'
+      fullPath: '/api/img/$'
+      preLoaderRoute: typeof ApiImgSplatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   HomeRoute: HomeRoute,
+  ApiImgSplatRoute: ApiImgSplatRoute,
   ApiOrdsSplatRoute: ApiOrdsSplatRoute,
 }
 export const routeTree = rootRouteImport

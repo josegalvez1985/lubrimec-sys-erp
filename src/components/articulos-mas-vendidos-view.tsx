@@ -7,6 +7,7 @@ import {
   Copy,
   FileDown,
   FileSpreadsheet,
+  ImageIcon,
   Loader2,
   Search,
   TrendingUp,
@@ -29,6 +30,7 @@ import {
   type ArticuloMasVendido,
 } from "@/lib/api";
 import { exportarExcel, exportarPdf } from "@/lib/export";
+import { ArticuloImgModal } from "@/components/articulo-img-modal";
 
 const COD_EMPRESA = 24;
 
@@ -187,6 +189,9 @@ export function ArticulosMasVendidosView() {
       return { ...prev, [clave]: next };
     });
   }
+
+  // Artículo cuya imagen se muestra en el modal (null = cerrado).
+  const [imgArticulo, setImgArticulo] = useState<ArticuloMasVendido | null>(null);
 
   // Pedido al proveedor: artículos tildados con su cantidad (id_articulo -> cantidad).
   const [pedido, setPedido] = useState<Record<string, number>>({});
@@ -359,6 +364,14 @@ export function ArticulosMasVendidosView() {
                     />
                     <p className="min-w-0 flex-1 text-sm font-semibold">{a.descripcion}</p>
                     <div className="flex shrink-0 items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setImgArticulo(a)}
+                        aria-label="Ver imagen"
+                        className="text-muted-foreground hover:text-primary"
+                      >
+                        <ImageIcon className="h-4 w-4" />
+                      </button>
                       {pedido[a.id_articulo] != null && (
                         <Input
                           type="number"
@@ -424,7 +437,21 @@ export function ArticulosMasVendidosView() {
                           key={c.titulo}
                           className={c.num ? "text-right tabular-nums" : ""}
                         >
-                          {c.valor(a)}
+                          {c.titulo === "Descripción" ? (
+                            <span className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => setImgArticulo(a)}
+                                aria-label="Ver imagen"
+                                className="shrink-0 text-muted-foreground hover:text-primary"
+                              >
+                                <ImageIcon className="h-4 w-4" />
+                              </button>
+                              {c.valor(a)}
+                            </span>
+                          ) : (
+                            c.valor(a)
+                          )}
                         </TableCell>
                       ))}
                     </TableRow>
@@ -474,6 +501,13 @@ export function ArticulosMasVendidosView() {
           </p>
         )}
       </div>
+
+      <ArticuloImgModal
+        open={imgArticulo != null}
+        id={imgArticulo?.id_articulo ?? null}
+        titulo={imgArticulo?.descripcion}
+        onClose={() => setImgArticulo(null)}
+      />
     </div>
   );
 }

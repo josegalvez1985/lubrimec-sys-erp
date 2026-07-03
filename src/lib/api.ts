@@ -907,6 +907,7 @@ export async function listarArticulosMasVendidos(
 // búsqueda, facetas y orden se hacen en el front.
 
 export type PedidoArticulo = {
+  id_articulo: string | null;
   codigo_oem: string | null;
   articulo: string | null;
   existencia: number | null;

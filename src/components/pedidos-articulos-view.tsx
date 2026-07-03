@@ -7,6 +7,7 @@ import {
   ArrowUpDown,
   ClipboardList,
   Copy,
+  ImageIcon,
   Loader2,
   Search,
 } from "lucide-react";
@@ -23,6 +24,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { listarPedidosArticulos, type PedidoArticulo } from "@/lib/api";
+import { ArticuloImgModal } from "@/components/articulo-img-modal";
 
 const COD_EMPRESA = 24;
 
@@ -210,6 +212,9 @@ export function PedidosArticulosView() {
     );
   }
 
+  // Artículo cuya imagen se muestra en el modal (null = cerrado).
+  const [imgArticulo, setImgArticulo] = useState<PedidoArticulo | null>(null);
+
   // Pedido: filas tildadas con su cantidad (filaKey -> cantidad).
   const [pedido, setPedido] = useState<Record<string, number>>({});
 
@@ -395,7 +400,21 @@ export function PedidosArticulosView() {
                     </TableCell>
                     {COLUMNAS.map((c) => (
                       <TableCell key={c.key} className={c.num ? "text-right tabular-nums" : ""}>
-                        {c.valor(a)}
+                        {c.key === "articulo" ? (
+                          <span className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setImgArticulo(a)}
+                              aria-label="Ver imagen"
+                              className="shrink-0 text-muted-foreground hover:text-primary"
+                            >
+                              <ImageIcon className="h-4 w-4" />
+                            </button>
+                            {c.valor(a)}
+                          </span>
+                        ) : (
+                          c.valor(a)
+                        )}
                       </TableCell>
                     ))}
                   </TableRow>
@@ -410,6 +429,13 @@ export function PedidosArticulosView() {
           </p>
         )}
       </div>
+
+      <ArticuloImgModal
+        open={imgArticulo != null}
+        id={imgArticulo?.id_articulo ?? null}
+        titulo={imgArticulo?.articulo}
+        onClose={() => setImgArticulo(null)}
+      />
     </div>
   );
 }
