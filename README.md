@@ -123,8 +123,12 @@ El APK es una **WebView remota** que carga la app de GitHub Pages (`server.url` 
   abre el instalador solo, hay que tocar el archivo descargado y permitir "Instalar apps
   desconocidas".
 - Actualización: banner dentro del APK que compara su versión (`@capacitor/app`) contra
-  `public/apk-version.json` y avisa cuando hay una nueva, con la misma guía de instalación.
-  El usuario descarga e instala manualmente (Android no autoactualiza APKs fuera de Play Store).
+  `public/apk-version.json`. Al tocar "Actualizar" descarga el APK dentro de la app
+  (`@capacitor/filesystem`) y lanza el instalador de Android directo
+  (`@capacitor-community/file-opener`); si falla, cae al flujo viejo (navegador + guía).
+  Android siempre pide confirmar la instalación (no autoactualiza fuera de Play Store).
+- Versiones: el login muestra `Sistema vX.Y.Z` (tomada de `public/apk-version.json`, embebida
+  en el build) y, dentro del APK, también `APK vX.Y.Z` (el `versionName` instalado).
 - Biometría: dentro del APK se activa desde **Perfil** (pide contraseña, la valida contra el
   servidor y guarda en el Keystore); el login solo ofrece "Ingresar con biometría" si ya está
   activa (`src/lib/biometric.ts`).

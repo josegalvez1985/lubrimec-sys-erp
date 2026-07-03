@@ -92,11 +92,24 @@ El APK es una **WebView remota**: carga la app desde Pages. Por eso el contenido
 
 ## Avisar al usuario de una versión nueva del APK
 
-Como Android no autoactualiza APKs fuera de Play Store, el usuario debe descargar e instalar el
-nuevo APK. El front lo **avisa con un banner** (`src/components/apk-update-banner.tsx` +
+Como Android no autoactualiza APKs fuera de Play Store, el usuario debe confirmar la instalación.
+El front lo **avisa con un banner** (`src/components/apk-update-banner.tsx` +
 `src/hooks/use-apk-update.ts`): dentro del APK, compara su `versionName` (leído con
 `@capacitor/app`) contra **`public/apk-version.json`**. Si el JSON tiene una versión mayor, muestra
-"Nueva versión disponible" con botón que abre el APK nuevo.
+"Nueva versión disponible".
+
+Al tocar "Actualizar", el APK se **descarga dentro de la app** (fetch → `@capacitor/filesystem`
+en `Directory.Cache`) y se **lanza el instalador directo** con `@capacitor-community/file-opener`
+(mime `application/vnd.android.package-archive`). Requiere:
+
+- Permiso `REQUEST_INSTALL_PACKAGES` en `android/app/src/main/AndroidManifest.xml`.
+- El `cache-path` en `android/app/src/main/res/xml/file_paths.xml` (FileProvider), ya presente.
+
+Si la descarga o el instalador fallan, cae al flujo viejo: abre la URL del APK en el navegador y
+muestra la guía de instalación (`apk-install-guide.tsx`).
+
+El login además muestra la versión: `Sistema vX.Y.Z` (de `apk-version.json`, embebida en el
+build web) y `APK vX.Y.Z` (solo dentro del APK, el `versionName` instalado).
 
 **Flujo para publicar una actualización del APK:**
 1. Subir `versionName` (y `versionCode`) en `android/app/build.gradle` (ej. `1.1.0`).

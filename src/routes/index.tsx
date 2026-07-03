@@ -5,9 +5,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
+import { App } from "@capacitor/app";
 import { ApkInstallGuide } from "@/components/apk-install-guide";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { login } from "@/lib/api";
+// Versión publicada del proyecto (misma fuente que el banner de actualización del APK).
+import versionInfo from "../../public/apk-version.json";
 import {
   esNativo,
   biometriaDisponible,
@@ -35,6 +38,8 @@ function LoginPage() {
   const [error, setError] = useState("");
   const [bioActiva, setBioActiva] = useState(false);
   const [guiaApk, setGuiaApk] = useState(false);
+  // Versión del APK instalado (solo dentro de la app nativa; en navegador queda null).
+  const [apkVer, setApkVer] = useState<string | null>(null);
 
   // El APK se sirve desde GitHub Pages (public/lubrimesys.apk), mismo origen que la web.
   const APK_URL = `${import.meta.env.BASE_URL}lubrimesys.apk`;
@@ -45,6 +50,9 @@ function LoginPage() {
     biometriaDisponible().then((disp) => {
       setBioActiva(disp && biometriaActivada());
     });
+    App.getInfo()
+      .then((i) => setApkVer(i.version))
+      .catch(() => {});
   }, []);
 
   async function onSubmit(e: FormEvent) {
@@ -242,6 +250,11 @@ function LoginPage() {
 
               <p className="text-center text-xs text-muted-foreground">
                 ¿Problemas para acceder? Contacta al administrador del sistema.
+              </p>
+
+              <p className="text-center text-[10px] text-muted-foreground/70">
+                Sistema v{versionInfo.version}
+                {apkVer ? ` · APK v${apkVer}` : ""}
               </p>
             </form>
           </div>
