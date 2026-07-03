@@ -152,7 +152,18 @@ function leerBorradorMensaje(): string {
 function leerBorradorImagen(): { dataUrl: string; nombre: string } | null {
   if (typeof window === "undefined") return null;
   const raw = localStorage.getItem(LS_IMAGEN);
-  return raw ? (JSON.parse(raw) as { dataUrl: string; nombre: string }) : null;
+  if (!raw) return null;
+  const img = JSON.parse(raw) as { dataUrl: string; nombre: string };
+  // Descarta borradores guardados antes del fix de magic bytes: su mime declarado
+  // puede no coincidir con el contenido real y wasender rechaza el upload (HTTP 400
+  // "file content does not match its declared type").
+  const m = /^data:([^;]+);base64,(.{24})/.exec(img.dataUrl);
+  const bytes = m ? Uint8Array.from(atob(m[2]), (c) => c.charCodeAt(0)) : null;
+  if (!m || !bytes || mimeReal(bytes) !== m[1]) {
+    localStorage.removeItem(LS_IMAGEN);
+    return null;
+  }
+  return img;
 }
 
 export function WhatsappView() {
