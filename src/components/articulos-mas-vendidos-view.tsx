@@ -1,25 +1,19 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
-  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Copy,
   FileDown,
   FileSpreadsheet,
   Loader2,
   Search,
   TrendingUp,
-  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
-import {
-  DropdownMenu,
-  DropdownMenuCheckboxItem,
-  DropdownMenuContent,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import {
   Table,
   TableBody,
@@ -107,10 +101,15 @@ function tablaExport(articulos: ArticuloMasVendido[]) {
 
 // Vista de la página 102 (Artículos Más Vendidos): ranking por cantidad de
 // ventas con facetas y export a Excel/PDF.
+const POR_PAGINA = 10;
+const LIMITE_FACETA = 8;
+
 export function ArticulosMasVendidosView() {
   // Facetas seleccionadas (multi-select). El texto vive en searchInput.
   const [facetas, setFacetas] = useState<Record<string, string[]>>({});
   const [searchInput, setSearchInput] = useState("");
+  const [expandida, setExpandida] = useState<Record<string, boolean>>({});
+  const [pagina, setPagina] = useState(1);
 
   // Se trae TODO el dataset una sola vez (sin filtros server-side). Los filtros
   // y facetas se aplican en el front sobre estos datos crudos.
@@ -144,14 +143,19 @@ export function ArticulosMasVendidosView() {
   // opciones de una faceta se calculan aplicando TODAS las demás (menos ella misma)
   // más el texto, así solo se ofrecen valores compatibles con lo ya filtrado.
   const opciones = useMemo(() => {
-    const out: Partial<Record<keyof FiltrosMasVendidos, string[]>> = {};
+    const out: Partial<Record<keyof FiltrosMasVendidos, { valor: string; count: number }[]>> = {};
     for (const f of FACETAS) {
       const compatibles = todos.filter(
         (a) => pasaTexto(a) && FACETAS.every((otra) => otra === f || pasaFaceta(a, otra)),
       );
-      out[f.clave] = Array.from(
-        new Set(compatibles.map(f.valor).filter((v): v is string => !!v)),
-      ).sort((a, b) => a.localeCompare(b));
+      const conteo = new Map<string, number>();
+      for (const a of compatibles) {
+        const v = f.valor(a);
+        if (v) conteo.set(v, (conteo.get(v) ?? 0) + 1);
+      }
+      out[f.clave] = Array.from(conteo.entries())
+        .map(([valor, count]) => ({ valor, count }))
+        .sort((x, y) => x.valor.localeCompare(y.valor));
     }
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -164,7 +168,14 @@ export function ArticulosMasVendidosView() {
     [todos, facetas, pasaTexto],
   );
 
-  const hayFiltros = !!searchInput || Object.values(facetas).some((v) => v.length > 0);
+  // Paginación (10 por página). Al cambiar filtros/resultados, volver a la 1.
+  const totalPaginas = Math.max(1, Math.ceil(articulos.length / POR_PAGINA));
+  useEffect(() => {
+    setPagina(1);
+  }, [searchInput, facetas]);
+  const paginaActual = Math.min(pagina, totalPaginas);
+  const pagina0 = (paginaActual - 1) * POR_PAGINA;
+  const articulosPagina = articulos.slice(pagina0, pagina0 + POR_PAGINA);
 
   // Activa/desactiva un valor dentro de una faceta (multi-selección).
   function toggleFaceta(clave: keyof FiltrosMasVendidos, valor: string) {
@@ -175,11 +186,6 @@ export function ArticulosMasVendidosView() {
         : [...actuales, valor];
       return { ...prev, [clave]: next };
     });
-  }
-
-  function limpiar() {
-    setFacetas({});
-    setSearchInput("");
   }
 
   // Pedido al proveedor: artículos tildados con su cantidad (id_articulo -> cantidad).
@@ -202,8 +208,13 @@ export function ArticulosMasVendidosView() {
   const seleccionados = Object.keys(pedido).length;
 
   async function copiarPedido() {
+    const vistos = new Set<string>();
     const lineas = todos
-      .filter((a) => pedido[a.id_articulo] != null)
+      .filter((a) => {
+        if (pedido[a.id_articulo] == null || vistos.has(a.id_articulo)) return false;
+        vistos.add(a.id_articulo);
+        return true;
+      })
       .map((a) => `${pedido[a.id_articulo]} x ${a.descripcion ?? ""}`.trim());
     if (lineas.length === 0) return;
     const texto = `Pedido:\n${lineas.join("\n")}`;
@@ -215,55 +226,10 @@ export function ArticulosMasVendidosView() {
   }
 
   return (
-    <div className="rounded-2xl border border-border bg-card shadow-elegant">
-      <div className="flex flex-wrap items-center gap-3 border-b border-border p-4 sm:p-5">
-        <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary">
-          <TrendingUp className="h-5 w-5" />
-        </div>
-        <div className="min-w-0 flex-1">
-          <h2 className="font-display text-xl font-bold">Artículos Más Vendidos</h2>
-          <p className="text-sm text-muted-foreground">
-            {query.isSuccess
-              ? `${articulos.length} artículo${articulos.length === 1 ? "" : "s"}`
-              : "Cargando..."}
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <Button
-            type="button"
-            onClick={copiarPedido}
-            disabled={seleccionados === 0}
-            className="gap-2"
-          >
-            <Copy className="h-4 w-4" />
-            Copiar pedido{seleccionados > 0 ? ` (${seleccionados})` : ""}
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => exportarExcel(tablaExport(articulos))}
-            disabled={articulos.length === 0}
-            className="gap-2"
-          >
-            <FileSpreadsheet className="h-4 w-4" />
-            Excel
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => exportarPdf(tablaExport(articulos))}
-            disabled={articulos.length === 0}
-            className="gap-2"
-          >
-            <FileDown className="h-4 w-4" />
-            PDF
-          </Button>
-        </div>
-      </div>
-
-      {/* Filtros (facetas de la página 102) */}
-      <div className="flex flex-wrap items-center gap-2 border-b border-border p-4 sm:p-5">
-        <div className="relative min-w-[180px] flex-1">
+    <div className="flex flex-col gap-4 lg:flex-row">
+      {/* Sidebar de facetas */}
+      <aside className="w-full shrink-0 space-y-5 lg:w-64">
+        <div className="relative">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             placeholder="Buscar..."
@@ -272,64 +238,96 @@ export function ArticulosMasVendidosView() {
             className="h-10 pl-10"
           />
         </div>
+
         {FACETAS.map((f) => {
           const sel = facetas[f.clave] ?? [];
           const opts = opciones[f.clave] ?? [];
+          const abierta = expandida[f.clave];
+          const visibles = abierta ? opts : opts.slice(0, LIMITE_FACETA);
           return (
-            <DropdownMenu key={f.clave}>
-              <DropdownMenuTrigger asChild>
-                <Button
+            <div key={f.clave} className="space-y-1.5">
+              <p className="text-sm font-semibold">{f.etiqueta}</p>
+              {visibles.length === 0 ? (
+                <p className="text-xs text-muted-foreground">Sin opciones</p>
+              ) : (
+                visibles.map((o) => (
+                  <label
+                    key={o.valor}
+                    className="flex cursor-pointer items-center gap-2 text-sm text-muted-foreground hover:text-foreground"
+                  >
+                    <Checkbox
+                      checked={sel.includes(o.valor)}
+                      onCheckedChange={() => toggleFaceta(f.clave, o.valor)}
+                    />
+                    <span className="min-w-0 flex-1 truncate">{o.valor}</span>
+                    <span className="shrink-0 text-xs">({o.count})</span>
+                  </label>
+                ))
+              )}
+              {opts.length > LIMITE_FACETA && (
+                <button
                   type="button"
-                  variant="outline"
-                  className="h-10 justify-between gap-2 font-normal"
+                  onClick={() => setExpandida((e) => ({ ...e, [f.clave]: !abierta }))}
+                  className="text-xs font-medium text-primary hover:underline"
                 >
-                  {f.etiqueta}
-                  {sel.length > 0 && (
-                    <span className="rounded bg-primary/10 px-1.5 text-xs font-medium text-primary">
-                      {sel.length}
-                    </span>
-                  )}
-                  <ChevronDown className="h-4 w-4 opacity-60" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="max-h-72 w-56 overflow-y-auto">
-                {opts.length === 0 ? (
-                  <p className="px-2 py-1.5 text-sm text-muted-foreground">Sin opciones</p>
-                ) : (
-                  opts.map((o) => (
-                    <DropdownMenuCheckboxItem
-                      key={o}
-                      checked={sel.includes(o)}
-                      onCheckedChange={() => toggleFaceta(f.clave, o)}
-                      onSelect={(e) => e.preventDefault()}
-                    >
-                      {o}
-                    </DropdownMenuCheckboxItem>
-                  ))
-                )}
-              </DropdownMenuContent>
-            </DropdownMenu>
+                  {abierta ? "Mostrar menos" : "Mostrar todo"}
+                </button>
+              )}
+            </div>
           );
         })}
-        {(hayFiltros || searchInput) && (
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={limpiar}
-            className="gap-1 text-muted-foreground"
-          >
-            <X className="h-4 w-4" />
-            Limpiar
-          </Button>
-        )}
-      </div>
+      </aside>
 
       {/* Grilla */}
-      <div className="overflow-x-auto p-2 sm:p-4">
+      <div className="min-w-0 flex-1 overflow-x-auto rounded-2xl border border-border bg-card shadow-elegant">
+        <div className="flex flex-wrap items-center gap-3 border-b border-border p-4">
+          <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary">
+            <TrendingUp className="h-5 w-5" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <h2 className="font-display text-xl font-bold">Artículos Más Vendidos</h2>
+            <p className="text-sm text-muted-foreground">
+              {query.isSuccess
+                ? `${articulos.length} artículo${articulos.length === 1 ? "" : "s"}`
+                : "Cargando..."}
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              onClick={copiarPedido}
+              disabled={seleccionados === 0}
+              className="gap-2"
+            >
+              <Copy className="h-4 w-4" />
+              Copiar pedido{seleccionados > 0 ? ` (${seleccionados})` : ""}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => exportarExcel(tablaExport(articulos))}
+              disabled={articulos.length === 0}
+              className="gap-2"
+            >
+              <FileSpreadsheet className="h-4 w-4" />
+              Excel
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => exportarPdf(tablaExport(articulos))}
+              disabled={articulos.length === 0}
+              className="gap-2"
+            >
+              <FileDown className="h-4 w-4" />
+              PDF
+            </Button>
+          </div>
+        </div>
+
         {query.isLoading ? (
-          <div className="space-y-2 p-2">
-            {Array.from({ length: 8 }).map((_, i) => (
+          <div className="space-y-2 p-4">
+            {Array.from({ length: 10 }).map((_, i) => (
               <Skeleton key={i} className="h-10 w-full" />
             ))}
           </div>
@@ -346,8 +344,8 @@ export function ArticulosMasVendidosView() {
         ) : (
           <>
             {/* Móvil: tarjetas */}
-            <div className="space-y-2 md:hidden">
-              {articulos.map((a, i) => (
+            <div className="space-y-2 p-2 md:hidden">
+              {articulosPagina.map((a, i) => (
                 <div
                   key={`${a.id_articulo}-${i}`}
                   className="rounded-xl border border-border bg-background p-3"
@@ -400,7 +398,7 @@ export function ArticulosMasVendidosView() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {articulos.map((a, i) => (
+                  {articulosPagina.map((a, i) => (
                     <TableRow key={`${a.id_articulo}-${i}`}>
                       <TableCell>
                         <Checkbox
@@ -433,6 +431,40 @@ export function ArticulosMasVendidosView() {
                   ))}
                 </TableBody>
               </Table>
+            </div>
+
+            {/* Paginación (10 por página) */}
+            <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border p-3">
+              <p className="text-xs text-muted-foreground">
+                {pagina0 + 1}–{Math.min(pagina0 + POR_PAGINA, articulos.length)} de {articulos.length}
+              </p>
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPagina((p) => Math.max(1, p - 1))}
+                  disabled={paginaActual <= 1}
+                  className="gap-1"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                  Anterior
+                </Button>
+                <span className="text-xs text-muted-foreground">
+                  {paginaActual} / {totalPaginas}
+                </span>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPagina((p) => Math.min(totalPaginas, p + 1))}
+                  disabled={paginaActual >= totalPaginas}
+                  className="gap-1"
+                >
+                  Siguiente
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
             </div>
           </>
         )}
