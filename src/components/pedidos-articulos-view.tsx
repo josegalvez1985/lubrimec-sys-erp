@@ -231,8 +231,14 @@ export function PedidosArticulosView() {
   const seleccionados = Object.keys(pedido).length;
 
   async function copiarPedido() {
+    const vistos = new Set<string>();
     const lineas = todos
-      .filter((a) => pedido[filaKey(a)] != null)
+      .filter((a) => {
+        const k = filaKey(a);
+        if (pedido[k] == null || vistos.has(k)) return false;
+        vistos.add(k);
+        return true;
+      })
       .map((a) => `${pedido[filaKey(a)]} x ${a.articulo ?? ""}`.trim());
     if (lineas.length === 0) return;
     const texto = `Pedido:\n${lineas.join("\n")}`;

@@ -1,6 +1,8 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useState, type ReactElement } from "react";
+import { useEffect, useRef, useState, type ReactElement } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { App } from "@capacitor/app";
+import { Capacitor } from "@capacitor/core";
 import {
   LayoutDashboard,
   Package,
@@ -234,7 +236,9 @@ const VISTAS: Record<number, () => ReactElement> = {
 const PAGINAS_IMPLEMENTADAS = new Set<number>([...Object.keys(VISTAS).map(Number), 98]);
 
 function HomePage() {
-  const [active, setActive] = useState<NavKey>("dashboard");
+  // Pila de vistas visitadas para el botón atrás (nunca vacía: la base es dashboard).
+  const [historial, setHistorial] = useState<NavKey[]>(["dashboard"]);
+  const active = historial[historial.length - 1];
   const [mobileOpen, setMobileOpen] = useState(false);
   const [perfilOpen, setPerfilOpen] = useState(false);
   const [cotizadorOpen, setCotizadorOpen] = useState(false);
@@ -280,9 +284,64 @@ function HomePage() {
       setMobileOpen(false);
       return;
     }
-    setActive(key);
     setMobileOpen(false);
+    setHistorial((h) => (h[h.length - 1] === key ? h : [...h, key]));
   }
+
+  // Botón atrás (navegador web y APK): retrocede una vista en lugar de salir/cerrar
+  // sesión. Se mantiene una ref con el historial vivo para leerlo en los listeners.
+  const historialRef = useRef(historial);
+  historialRef.current = historial;
+
+  useEffect(() => {
+    // Si hay algún modal abierto, el botón atrás lo cierra primero.
+    function retroceder(): boolean {
+      if (cotizadorOpen) {
+        setCotizadorOpen(false);
+        return true;
+      }
+      if (perfilOpen) {
+        setPerfilOpen(false);
+        return true;
+      }
+      if (mobileOpen) {
+        setMobileOpen(false);
+        return true;
+      }
+      if (historialRef.current.length > 1) {
+        setHistorial((h) => h.slice(0, -1));
+        return true;
+      }
+      return false; // ya en el dashboard base
+    }
+
+    // --- Web: interceptar el botón atrás del navegador via history/popstate ---
+    window.history.pushState(null, "");
+    function onPopState() {
+      const consumido = retroceder();
+      // Reponer siempre un entry para seguir capturando el próximo "atrás".
+      if (consumido || historialRef.current.length >= 1) {
+        window.history.pushState(null, "");
+      }
+    }
+    window.addEventListener("popstate", onPopState);
+
+    // --- APK: botón físico de Android via Capacitor ---
+    let quitarNativo: (() => void) | undefined;
+    if (Capacitor.isNativePlatform()) {
+      App.addListener("backButton", () => {
+        if (!retroceder()) App.exitApp(); // en dashboard sí cierra la app
+      }).then((h) => {
+        quitarNativo = () => h.remove();
+      });
+    }
+
+    return () => {
+      window.removeEventListener("popstate", onPopState);
+      quitarNativo?.();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cotizadorOpen, perfilOpen, mobileOpen]);
 
   const paginaActiva =
     typeof active === "number" ? paginas.find((p) => p.page_id === active) : null;
