@@ -94,7 +94,7 @@ CREATE OR REPLACE PACKAGE BODY PKG_WHATSAPP_LUBRIMEC AS
         FOR r IN (
             SELECT id, numero, NVL(mensajeado, 'N') AS mensajeado
             FROM   numeros_whatsapp
-            WHERE  (p_solo_pendientes = 'N' OR NVL(mensajeado, 'N') <> 'S')
+            WHERE  (p_solo_pendientes = 'N' OR NVL(mensajeado, 'N') = 'N')
             ORDER  BY id
         ) LOOP
             APEX_JSON.OPEN_OBJECT;

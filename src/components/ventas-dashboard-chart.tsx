@@ -164,10 +164,10 @@ export function VentasDashboardChart() {
         ) : (
           <ResponsiveContainer width="100%" height="100%">
             {tipo === "barras" ? (
-              <BarChart data={datos}>
+              <BarChart data={datos} margin={{ top: 24, right: 12, left: 0, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                 <XAxis dataKey="fecha" tick={{ fontSize: 11 }} stroke="var(--muted-foreground)" />
-                <YAxis tick={{ fontSize: 11 }} stroke="var(--muted-foreground)" tickFormatter={fmt} width={70} />
+                <YAxis tick={{ fontSize: 11 }} stroke="var(--muted-foreground)" tickFormatter={fmt} width={70} domain={[0, (max: number) => max * 1.1]} />
                 <Tooltip
                   formatter={(v) => [`₲ ${fmt(Number(v))}`, "Monto"]}
                   contentStyle={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 8 }}
@@ -180,14 +180,13 @@ export function VentasDashboardChart() {
                     dataKey="monto"
                     position="top"
                     formatter={fmtLabel}
-                    angle={-90}
-                    offset={12}
+                    offset={8}
                     style={{ fontSize: 10, fill: "var(--muted-foreground)" }}
                   />
                 </Bar>
               </BarChart>
             ) : tipo === "linea" ? (
-              <LineChart data={datos}>
+              <LineChart data={datos} margin={{ top: 24, right: 12, left: 0, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                 <XAxis dataKey="fecha" tick={{ fontSize: 11 }} stroke="var(--muted-foreground)" />
                 <YAxis tick={{ fontSize: 11 }} stroke="var(--muted-foreground)" tickFormatter={fmt} width={70} />
@@ -208,14 +207,13 @@ export function VentasDashboardChart() {
                     dataKey="monto"
                     position="top"
                     formatter={fmtLabel}
-                    angle={-90}
-                    offset={12}
+                    offset={8}
                     style={{ fontSize: 10, fill: "var(--muted-foreground)" }}
                   />
                 </Line>
               </LineChart>
             ) : (
-              <AreaChart data={datos}>
+              <AreaChart data={datos} margin={{ top: 24, right: 12, left: 0, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                 <XAxis dataKey="fecha" tick={{ fontSize: 11 }} stroke="var(--muted-foreground)" />
                 <YAxis tick={{ fontSize: 11 }} stroke="var(--muted-foreground)" tickFormatter={fmt} width={70} />
@@ -238,8 +236,7 @@ export function VentasDashboardChart() {
                     dataKey="monto"
                     position="top"
                     formatter={fmtLabel}
-                    angle={-90}
-                    offset={12}
+                    offset={8}
                     style={{ fontSize: 10, fill: "var(--muted-foreground)" }}
                   />
                 </Area>

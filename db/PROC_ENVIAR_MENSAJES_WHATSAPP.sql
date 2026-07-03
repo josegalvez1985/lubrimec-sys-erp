@@ -200,7 +200,7 @@ BEGIN
         BEGIN
             SELECT * BULK COLLECT INTO v_numeros_tabla
             FROM numeros_whatsapp
-            WHERE NVL(mensajeado, 'N') NOT IN ('S')
+            WHERE NVL(mensajeado, 'N') = 'N'
             FETCH FIRST v_max_registros ROWS ONLY;
 
             v_contador_total := v_numeros_tabla.COUNT;
