@@ -9,6 +9,7 @@ import { App } from "@capacitor/app";
 import { ApkInstallGuide } from "@/components/apk-install-guide";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { login } from "@/lib/api";
+import { descargarEInstalarApk } from "@/lib/apk-install";
 // Versión publicada del proyecto (misma fuente que el banner de actualización del APK).
 import versionInfo from "../../public/apk-version.json";
 import {
@@ -38,6 +39,7 @@ function LoginPage() {
   const [error, setError] = useState("");
   const [bioActiva, setBioActiva] = useState(false);
   const [guiaApk, setGuiaApk] = useState(false);
+  const [descargandoApk, setDescargandoApk] = useState(false);
   // Versión del APK instalado (solo dentro de la app nativa; en navegador queda null).
   const [apkVer, setApkVer] = useState<string | null>(null);
 
@@ -93,21 +95,39 @@ function LoginPage() {
         <div className="absolute -bottom-32 -left-32 h-96 w-96 rounded-full bg-primary/20 blur-3xl" />
       </div>
 
-      <div className="absolute top-4 right-4 z-20 flex flex-col items-end gap-2">
+      <div className="absolute top-4 right-4 z-20">
         <div className="flex items-center gap-2">
           <a
             href={APK_URL}
-            onClick={() => setGuiaApk(true)}
+            onClick={async (e) => {
+              // Dentro del APK el WebView no maneja descargas (un <a href> a un .apk
+              // no hace nada): se descarga in-app y se lanza el instalador directo.
+              if (esNativo()) {
+                e.preventDefault();
+                if (descargandoApk) return;
+                setDescargandoApk(true);
+                try {
+                  await descargarEInstalarApk(APK_URL);
+                } catch {
+                  setGuiaApk(true);
+                } finally {
+                  setDescargandoApk(false);
+                }
+                return;
+              }
+              setGuiaApk(true); // navegador: descarga normal + guía de instalación
+            }}
             className="inline-flex h-9 items-center gap-2 rounded-md border border-primary/30 bg-background/80 px-3 text-sm font-medium text-primary backdrop-blur transition-colors hover:bg-primary hover:text-primary-foreground"
           >
-            <Download className="h-4 w-4" />
-            Descargar apk
+            {descargandoApk ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Download className="h-4 w-4" />
+            )}
+            {descargandoApk ? "Descargando…" : "Descargar apk"}
           </a>
           <ThemeToggle />
         </div>
-        <p className="max-w-[200px] text-right text-[10px] leading-tight text-muted-foreground">
-          Android: activa "Instalar apps de fuentes desconocidas".
-        </p>
       </div>
 
       <div className="relative z-10 grid min-h-screen lg:grid-cols-2">
