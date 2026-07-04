@@ -814,6 +814,7 @@ export async function ventasPorDia(
 // backend carga por defecto el último día con ventas (fecha_default en la respuesta).
 
 export type VentaArticulo = {
+  id_articulo: string | null;
   descripcion: string | null;
   total: number;
   fec_comprobante: string; // "DD/MM/YYYY HH24:MI"

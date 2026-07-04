@@ -1,6 +1,14 @@
 import { useMemo, useState, type KeyboardEvent } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { FileDown, FileSpreadsheet, Loader2, Search, ShoppingCart, X } from "lucide-react";
+import {
+  FileDown,
+  FileSpreadsheet,
+  Image as ImageIcon,
+  Loader2,
+  Search,
+  ShoppingCart,
+  X,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -21,6 +29,7 @@ import {
   type VentaArticulo,
 } from "@/lib/api";
 import { exportarExcel, exportarPdf } from "@/lib/export";
+import { ArticuloImgModal } from "@/components/articulo-img-modal";
 
 const COD_EMPRESA = 24;
 
@@ -93,6 +102,8 @@ export function VentasArticulosView() {
   const [filtros, setFiltros] = useState<FiltrosVentasArticulos>({});
   const [searchInput, setSearchInput] = useState("");
   const [vendedorInput, setVendedorInput] = useState("");
+  // Venta cuya imagen se muestra en el modal (null = cerrado).
+  const [imgVenta, setImgVenta] = useState<VentaArticulo | null>(null);
 
   const ventasQuery = useQuery({
     queryKey: ["ventas-articulos", COD_EMPRESA, filtros],
@@ -280,7 +291,17 @@ export function VentasArticulosView() {
             {ventas.map((v, i) => (
               <div key={`${v.id_factura}-${i}`} className="rounded-xl border border-border bg-background p-3">
                 <div className="flex items-start justify-between gap-2">
-                  <p className="min-w-0 flex-1 text-sm font-semibold">{v.descripcion}</p>
+                  <p className="flex min-w-0 flex-1 items-start gap-2 text-sm font-semibold">
+                    <button
+                      type="button"
+                      onClick={() => setImgVenta(v)}
+                      aria-label="Ver imagen"
+                      className="mt-0.5 shrink-0 text-muted-foreground hover:text-primary"
+                    >
+                      <ImageIcon className="h-4 w-4" />
+                    </button>
+                    <span className="min-w-0">{v.descripcion}</span>
+                  </p>
                   <span className="shrink-0 rounded-md bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
                     Stock {fmtN(v.existencia)}
                   </span>
@@ -341,7 +362,21 @@ export function VentasArticulosView() {
                       key={c.titulo}
                       className={c.num ? "text-right tabular-nums" : "whitespace-nowrap"}
                     >
-                      {c.valor(v)}
+                      {c.titulo === "Descripción" ? (
+                        <span className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setImgVenta(v)}
+                            aria-label="Ver imagen"
+                            className="shrink-0 text-muted-foreground hover:text-primary"
+                          >
+                            <ImageIcon className="h-4 w-4" />
+                          </button>
+                          {c.valor(v)}
+                        </span>
+                      ) : (
+                        c.valor(v)
+                      )}
                     </TableCell>
                   ))}
                 </TableRow>
@@ -366,6 +401,13 @@ export function VentasArticulosView() {
           </p>
         )}
       </div>
+
+      <ArticuloImgModal
+        open={imgVenta != null}
+        id={imgVenta?.id_articulo ?? null}
+        titulo={imgVenta?.descripcion}
+        onClose={() => setImgVenta(null)}
+      />
     </div>
   );
 }

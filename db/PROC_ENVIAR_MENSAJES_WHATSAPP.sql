@@ -4,7 +4,14 @@
 -- Cambios respecto a la version original (la del boton APEX):
 --   * Nuevo parametro p_imagen_url.
 --   * Si hay imagen, el JSON incluye "imageUrl"; el texto va como caption ("text").
---   * El resto (reintentos, pausa 20s, logs, mensajeado) se mantiene igual.
+--   * El resto (reintentos, logs, mensajeado) se mantiene igual.
+--   * Anti-bloqueo: pausa ALEATORIA 45-90s entre numeros y lote reducido a 20.
+--     La pausa fija de 20s + lotes de 50 generaba un patron robotico que
+--     WhatsApp detecta y bloquea. Dejar pasar 20-30 min entre corridas.
+--   * Variantes de texto: si el mensaje trae lineas separadoras "---", cada una
+--     de las partes es una VARIANTE del mismo mensaje. Para cada numero se elige
+--     una variante AL AZAR, de modo que no todos reciban el texto identico
+--     (texto exacto masivo = principal senal de spam). Sin "---" = una variante.
 --
 -- wasenderapi (POST /api/send-message) envia imagen con el MISMO endpoint del texto:
 --   { "to": "...", "text": "<caption>", "imageUrl": "<URL publica JPEG/PNG, max 5MB>" }
@@ -22,8 +29,9 @@ CREATE OR REPLACE PROCEDURE ENVIAR_MENSAJES_WHATSAPP (
     v_api_url           VARCHAR2(500)  := 'https://wasenderapi.com/api/send-message';
     v_api_key           VARCHAR2(500)  := 'e83c588e35133bccc177db1df36ab10701640d02437dfb17438cc5aaa288350c';
     v_max_reintentos    NUMBER         := 3;
-    v_pausa_entre_msgs  NUMBER         := 20;
-    v_max_registros     NUMBER         := 50;
+    v_pausa_min_segs    NUMBER         := 45;  -- pausa aleatoria entre numeros: min
+    v_pausa_max_segs    NUMBER         := 90;  -- pausa aleatoria entre numeros: max
+    v_max_registros     NUMBER         := 20;
     v_numero_aviso      VARCHAR2(20)   := '0972111745';  -- avisar aqui al terminar
 
     v_request_body      CLOB;
@@ -35,6 +43,11 @@ CREATE OR REPLACE PROCEDURE ENVIAR_MENSAJES_WHATSAPP (
     v_numero_limpio     VARCHAR2(100);
     v_mensaje_esc       VARCHAR2(4000);
     v_img_json          VARCHAR2(200);   -- fragmento JSON del campo imagen (o vacio)
+
+    -- Variantes del mensaje (partido por lineas "---"). Ver nota de cabecera.
+    TYPE t_variantes IS TABLE OF VARCHAR2(4000);
+    v_variantes         t_variantes := t_variantes();
+    v_idx_variante      PLS_INTEGER;
     v_enviado           BOOLEAN;
     v_inicio_tiempo     TIMESTAMP;
     v_tiempo_total      NUMBER;
@@ -53,6 +66,47 @@ CREATE OR REPLACE PROCEDURE ENVIAR_MENSAJES_WHATSAPP (
         l_texto := REPLACE(l_texto, CHR(9),  '\t');
         RETURN l_texto;
     END ESCAPAR_JSON;
+
+    -- Parte el mensaje en variantes usando lineas cuyo contenido (sin espacios) es
+    -- exactamente "---". Descarta variantes vacias. Si no hay separador, devuelve
+    -- una unica variante con el texto completo. Nunca deja la coleccion vacia.
+    PROCEDURE PARSEAR_VARIANTES(p_texto IN VARCHAR2) IS
+        l_resto   VARCHAR2(32767);
+        l_linea   VARCHAR2(4000);
+        l_acum    VARCHAR2(4000);
+        l_nl      PLS_INTEGER;
+
+        PROCEDURE CERRAR_VARIANTE IS
+        BEGIN
+            IF TRIM(l_acum) IS NOT NULL THEN
+                v_variantes.EXTEND;
+                v_variantes(v_variantes.COUNT) := l_acum;
+            END IF;
+            l_acum := NULL;
+        END CERRAR_VARIANTE;
+    BEGIN
+        v_variantes := t_variantes();
+        -- CR fuera; CHR(10) final asegura que se procese la ultima linea.
+        l_resto := REPLACE(NVL(p_texto, ''), CHR(13), '') || CHR(10);
+        WHILE l_resto IS NOT NULL AND LENGTH(l_resto) > 0 LOOP
+            l_nl    := INSTR(l_resto, CHR(10));
+            l_linea := SUBSTR(l_resto, 1, l_nl - 1);
+            l_resto := SUBSTR(l_resto, l_nl + 1);
+            IF TRIM(l_linea) = '---' THEN
+                CERRAR_VARIANTE;
+            ELSIF l_acum IS NULL THEN
+                l_acum := l_linea;
+            ELSE
+                l_acum := l_acum || CHR(10) || l_linea;
+            END IF;
+        END LOOP;
+        CERRAR_VARIANTE;
+
+        IF v_variantes.COUNT = 0 THEN
+            v_variantes.EXTEND;
+            v_variantes(1) := '';
+        END IF;
+    END PARSEAR_VARIANTES;
 
     PROCEDURE REGISTRAR_LOG(
         p_numero_original VARCHAR2, p_numero_limpio VARCHAR2, p_estado VARCHAR2,
@@ -174,7 +228,8 @@ BEGIN
         RETURN;
     END IF;
 
-    v_mensaje_esc := ESCAPAR_JSON(NVL(p_mensaje, ''));
+    -- Variantes del texto (una sola si no hay lineas "---").
+    PARSEAR_VARIANTES(NVL(p_mensaje, ''));
 
     -- Fragmento JSON de imagen (vacio si no hay). Ver nota de cabecera.
     IF p_imagen_url IS NOT NULL THEN
@@ -243,6 +298,11 @@ BEGIN
                               'Numero invalido o sin suficientes digitos');
                 v_contador_invalidos := v_contador_invalidos + 1;
             ELSE
+                -- Variante de texto al azar para este numero (ENVIAR_CON_REINTENTOS
+                -- arma el body con v_mensaje_esc). Con una sola variante siempre es esa.
+                v_idx_variante := TRUNC(DBMS_RANDOM.VALUE(1, v_variantes.COUNT + 1));
+                v_mensaje_esc  := ESCAPAR_JSON(v_variantes(v_idx_variante));
+
                 -- p_id NULL en manual: no se actualiza numeros_whatsapp.
                 IF p_numeros_manual IS NOT NULL AND DBMS_LOB.GETLENGTH(p_numeros_manual) > 0 THEN
                     ENVIAR_CON_REINTENTOS(NULL, v_numero_original, v_numero_limpio, v_enviado);
@@ -251,7 +311,8 @@ BEGIN
                 END IF;
             END IF;
 
-            DBMS_SESSION.SLEEP(v_pausa_entre_msgs);
+            -- Pausa aleatoria: un intervalo fijo (patron robotico) provoca bloqueos.
+            DBMS_SESSION.SLEEP(TRUNC(DBMS_RANDOM.VALUE(v_pausa_min_segs, v_pausa_max_segs + 1)));
         EXCEPTION WHEN OTHERS THEN
             v_contador_errores := v_contador_errores + 1;
         END;

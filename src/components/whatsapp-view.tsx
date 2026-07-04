@@ -143,7 +143,7 @@ const LS_MENSAJE = "wsp_draft_mensaje";
 const LS_IMAGEN = "wsp_draft_imagen";
 // Tope de números por corrida al enviar "De la base" (debe coincidir con
 // v_max_registros en db/PROC_ENVIAR_MENSAJES_WHATSAPP.sql).
-const MAX_LOTE_BASE = 50;
+const MAX_LOTE_BASE = 20;
 
 function leerBorradorMensaje(): string {
   if (typeof window === "undefined") return "";
@@ -535,10 +535,22 @@ export function WhatsappView() {
                 id="mensaje"
                 value={mensaje}
                 onChange={(e) => setMensaje(e.target.value)}
-                placeholder="Escribe el mensaje o el pie de la imagen..."
-                rows={5}
+                placeholder={
+                  "Escribe el mensaje o el pie de la imagen.\n\n" +
+                  "Podés escribir varias versiones separadas por una línea con ---\n" +
+                  "y a cada número le toca una al azar (evita bloqueos):\n\n" +
+                  "¡Hola! Esta semana hay promo en lubricantes 🛢️\n" +
+                  "---\n" +
+                  "¡Buen día! Promoción en lubricantes esta semana 🛢️"
+                }
+                rows={7}
                 disabled={enCurso && !terminado}
               />
+              <p className="text-xs text-muted-foreground">
+                Separá variantes del mensaje con una línea <code className="font-mono">---</code>: a
+                cada número se le envía una al azar. Sin <code className="font-mono">---</code> se
+                usa el texto tal cual.
+              </p>
             </div>
 
             <div className="space-y-2">
@@ -649,8 +661,8 @@ export function WhatsappView() {
             </div>
 
             <p className="mt-2 text-xs text-muted-foreground">
-              El envío corre en segundo plano (~20s entre números). Puedes cerrar esta vista; el
-              proceso continúa en el servidor.
+              El envío corre en segundo plano (pausa aleatoria de 45–90s entre números para evitar
+              bloqueos). Puedes cerrar esta vista; el proceso continúa en el servidor.
             </p>
 
             {logs.length > 0 && (
@@ -714,6 +726,15 @@ export function WhatsappView() {
               <ul className="list-disc space-y-1 pl-5 text-muted-foreground">
                 <li>Texto, imagen (máx. 5MB) o ambos: la imagen va con el texto como pie.</li>
                 <li>
+                  <b className="text-foreground">Variantes para evitar bloqueos:</b> podés escribir
+                  el mensaje en 2–4 versiones distintas separadas por una línea con{" "}
+                  <code className="font-mono">---</code>. A cada número se le manda{" "}
+                  <b className="text-foreground">una al azar</b>. Enviar el texto exacto a cientos de
+                  números es la principal causa de bloqueo; redactá cada versión de forma natural
+                  (no basta con cambiar un carácter). Sin <code className="font-mono">---</code> se
+                  envía el texto tal cual.
+                </li>
+                <li>
                   El borrador se <b className="text-foreground">guarda solo</b>: podés salir de la
                   página y seguir después, o reusar el mismo mensaje para otra tanda.
                 </li>
@@ -724,8 +745,14 @@ export function WhatsappView() {
               <h4 className="mb-1 font-semibold">3. Enviá y seguí el progreso</h4>
               <ul className="list-disc space-y-1 pl-5 text-muted-foreground">
                 <li>
-                  El envío corre <b className="text-foreground">en el servidor</b> (~20 segundos
-                  entre números para evitar bloqueos). Podés cerrar la página; el proceso continúa.
+                  El envío corre <b className="text-foreground">en el servidor</b> (pausa aleatoria
+                  de 45–90 segundos entre números para evitar bloqueos). Podés cerrar la página; el
+                  proceso continúa.
+                </li>
+                <li>
+                  Entre un lote y el siguiente conviene esperar{" "}
+                  <b className="text-foreground">al menos 20–30 minutos</b>: los envíos seguidos son
+                  la causa más común de bloqueo.
                 </li>
                 <li>
                   El panel de progreso muestra enviados y fallidos en vivo, y avisa al terminar.
