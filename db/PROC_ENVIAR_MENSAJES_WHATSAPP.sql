@@ -5,9 +5,8 @@
 --   * Nuevo parametro p_imagen_url.
 --   * Si hay imagen, el JSON incluye "imageUrl"; el texto va como caption ("text").
 --   * El resto (reintentos, logs, mensajeado) se mantiene igual.
---   * Anti-bloqueo: pausa ALEATORIA 45-90s entre numeros y lote reducido a 20.
---     La pausa fija de 20s + lotes de 50 generaba un patron robotico que
---     WhatsApp detecta y bloquea. Dejar pasar 20-30 min entre corridas.
+--   * Anti-bloqueo: lote de 60 numeros, pausa de 20s entre numeros y cada
+--     20 numeros una pausa larga de 90s (simula descansos entre tandas).
 --   * Variantes de texto: si el mensaje trae lineas separadoras "---", cada una
 --     de las partes es una VARIANTE del mismo mensaje. Para cada numero se elige
 --     una variante AL AZAR, de modo que no todos reciban el texto identico
@@ -29,9 +28,10 @@ CREATE OR REPLACE PROCEDURE ENVIAR_MENSAJES_WHATSAPP (
     v_api_url           VARCHAR2(500)  := 'https://wasenderapi.com/api/send-message';
     v_api_key           VARCHAR2(500)  := 'e83c588e35133bccc177db1df36ab10701640d02437dfb17438cc5aaa288350c';
     v_max_reintentos    NUMBER         := 3;
-    v_pausa_min_segs    NUMBER         := 45;  -- pausa aleatoria entre numeros: min
-    v_pausa_max_segs    NUMBER         := 90;  -- pausa aleatoria entre numeros: max
-    v_max_registros     NUMBER         := 20;
+    v_pausa_segs        NUMBER         := 20;  -- pausa entre numeros
+    v_tanda_numeros     NUMBER         := 20;  -- cada tantos numeros, pausa larga
+    v_pausa_tanda_segs  NUMBER         := 90;  -- duracion de la pausa larga
+    v_max_registros     NUMBER         := 60;
     v_numero_aviso      VARCHAR2(20)   := '0972111745';  -- avisar aqui al terminar
 
     v_request_body      CLOB;
@@ -311,8 +311,15 @@ BEGIN
                 END IF;
             END IF;
 
-            -- Pausa aleatoria: un intervalo fijo (patron robotico) provoca bloqueos.
-            DBMS_SESSION.SLEEP(TRUNC(DBMS_RANDOM.VALUE(v_pausa_min_segs, v_pausa_max_segs + 1)));
+            -- Pausa entre numeros; al completar una tanda, descanso largo.
+            -- Tras el ultimo numero no se duerme (no queda nada por enviar).
+            IF i < v_contador_total THEN
+                IF MOD(i, v_tanda_numeros) = 0 THEN
+                    DBMS_SESSION.SLEEP(v_pausa_tanda_segs);
+                ELSE
+                    DBMS_SESSION.SLEEP(v_pausa_segs);
+                END IF;
+            END IF;
         EXCEPTION WHEN OTHERS THEN
             v_contador_errores := v_contador_errores + 1;
         END;

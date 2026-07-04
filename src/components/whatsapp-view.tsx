@@ -143,7 +143,7 @@ const LS_MENSAJE = "wsp_draft_mensaje";
 const LS_IMAGEN = "wsp_draft_imagen";
 // Tope de números por corrida al enviar "De la base" (debe coincidir con
 // v_max_registros en db/PROC_ENVIAR_MENSAJES_WHATSAPP.sql).
-const MAX_LOTE_BASE = 20;
+const MAX_LOTE_BASE = 60;
 
 function leerBorradorMensaje(): string {
   if (typeof window === "undefined") return "";
@@ -661,8 +661,9 @@ export function WhatsappView() {
             </div>
 
             <p className="mt-2 text-xs text-muted-foreground">
-              El envío corre en segundo plano (pausa aleatoria de 45–90s entre números para evitar
-              bloqueos). Puedes cerrar esta vista; el proceso continúa en el servidor.
+              El envío corre en segundo plano (20s entre números y una pausa de 90s cada 20
+              números para evitar bloqueos). Puedes cerrar esta vista; el proceso continúa en el
+              servidor.
             </p>
 
             {logs.length > 0 && (
@@ -745,9 +746,9 @@ export function WhatsappView() {
               <h4 className="mb-1 font-semibold">3. Enviá y seguí el progreso</h4>
               <ul className="list-disc space-y-1 pl-5 text-muted-foreground">
                 <li>
-                  El envío corre <b className="text-foreground">en el servidor</b> (pausa aleatoria
-                  de 45–90 segundos entre números para evitar bloqueos). Podés cerrar la página; el
-                  proceso continúa.
+                  El envío corre <b className="text-foreground">en el servidor</b> (20 segundos
+                  entre números y una pausa de 90 segundos cada 20 números para evitar bloqueos).
+                  Podés cerrar la página; el proceso continúa.
                 </li>
                 <li>
                   Entre un lote y el siguiente conviene esperar{" "}
