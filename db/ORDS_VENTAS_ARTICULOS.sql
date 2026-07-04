@@ -140,7 +140,8 @@ BEGIN
                    pkg_stock.fn_existencia_oem(NVL(f.codigo_oem, f.id_articulo), f.cod_empresa) existencia
               FROM (SELECT DISTINCT id_articulo, cod_empresa, codigo_oem FROM filtradas) f
         )
-        SELECT va.descripcion,
+        SELECT va.id_articulo,
+               va.descripcion,
                va.total,
                TO_CHAR(va.fec_comprobante, 'DD/MM/YYYY HH24:MI')                     fec_comprobante,
                TO_CHAR(va.fec_comprobante, 'DD/MM/YYYY')                             fec_comprobante_filtro,
@@ -177,6 +178,7 @@ BEGIN
          ORDER BY va.fec_comprobante DESC
     ) LOOP
         APEX_JSON.OPEN_OBJECT;
+        APEX_JSON.WRITE('id_articulo', r.id_articulo);
         APEX_JSON.WRITE('descripcion', r.descripcion);
         APEX_JSON.WRITE('total', r.total);
         APEX_JSON.WRITE('fec_comprobante', r.fec_comprobante);

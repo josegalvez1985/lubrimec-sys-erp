@@ -6,7 +6,7 @@
 --   LOGS(token, desde)                      -> filas de LOG_WHATSAPP para el polling
 --
 -- El envio real corre en background (DBMS_SCHEDULER) porque cada numero tiene una
--- pausa de ~20s: un request HTTP no puede quedarse esperando ~30 min. El job invoca
+-- pausa aleatoria de 45-90s: un request HTTP no puede quedarse esperando ~25 min. El job invoca
 -- ENVIAR_MENSAJES_WHATSAPP (procedimiento existente, ya extendido para imagen).
 --
 -- Ejecutar como el esquema JOSEGALVEZ. Requiere PKG_AUTH_LUBRIMEC y las tablas
