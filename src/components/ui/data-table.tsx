@@ -17,6 +17,7 @@ import {
   Table,
   TableBody,
   TableCell,
+  TableFooter,
   TableHead,
   TableHeader,
   TableRow,
@@ -44,6 +45,9 @@ export type Column<T> = {
   filterable?: boolean; // default true
   hideable?: boolean; // default true; false para columnas que no se pueden ocultar
   className?: string;
+  // Celda de la fila de totales al pie (recibe las filas visibles ya filtradas).
+  // Si ninguna columna define footer, no se muestra la fila de totales.
+  footer?: (rows: T[]) => ReactNode;
 };
 
 type Orden = { key: string; dir: "asc" | "desc" } | null;
@@ -363,6 +367,21 @@ export function DataTable<T>({
               ))
             )}
           </TableBody>
+          {visibles.some((c) => c.footer) && procesadas.length > 0 && (
+            <TableFooter>
+              <TableRow>
+                {visibles.map((c) => (
+                  <TableCell
+                    key={c.key}
+                    className={cn(c.num && "text-right tabular-nums", "font-semibold", c.className)}
+                  >
+                    {c.footer ? c.footer(procesadas) : null}
+                  </TableCell>
+                ))}
+                {actions && <TableCell />}
+              </TableRow>
+            </TableFooter>
+          )}
         </Table>
       </div>
 

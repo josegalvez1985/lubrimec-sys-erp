@@ -98,6 +98,12 @@ import { CodigosBarrasView } from "@/components/codigos-barras-view";
 import { ArticulosProveedoresView } from "@/components/articulos-proveedores-view";
 import { MonedasDetalleView } from "@/components/monedas-detalle-view";
 import { VehiculosRepuestosView } from "@/components/vehiculos-repuestos-view";
+import { ComprasPagosView } from "@/components/compras-pagos-view";
+import { VendedoresView } from "@/components/vendedores-view";
+import { DescuentosEscalonadosView } from "@/components/descuentos-escalonados-view";
+import { PostVentaView } from "@/components/post-venta-view";
+import { SubaPreciosView } from "@/components/suba-precios-view";
+import { ConteoEfectivoView } from "@/components/conteo-efectivo-view";
 import { ArticulosView } from "@/components/articulos-view";
 import { LogsWhatsappView } from "@/components/logs-whatsapp-view";
 import { PerfilModal } from "@/components/perfil-modal";
@@ -241,6 +247,12 @@ const VISTAS: Record<number, () => ReactElement> = {
   83: () => <MonedasDetalleView />, // Detalle de Monedas
   94: () => <VehiculosRepuestosView />, // Vehículos-Repuestos
   120: () => <LogsWhatsappView />, // Logs de WhatsApp
+  77: () => <ComprasPagosView />, // Pagos de Compras
+  30: () => <VendedoresView />, // Vendedores
+  106: () => <DescuentosEscalonadosView />, // Descuentos Escalonados
+  105: () => <PostVentaView />, // Post Venta
+  100: () => <SubaPreciosView />, // Suba de Precios
+  85: () => <ConteoEfectivoView />, // Conteo de Efectivo
 };
 
 // page_id que ya tienen algo implementado (vista propia o acción especial como el

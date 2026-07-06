@@ -1279,3 +1279,334 @@ export async function listarLogsWhatsapp(
   const data = await authFetch(`logs-whatsapp${qs ? `?${qs}` : ""}`);
   return (data.data ?? []) as LogWhatsappRegistro[];
 }
+
+// ─── Compras-Pagos (página 77) ───────────────────────────────────────────────
+// CRUD de COMPRAS_PAGOS. PK id_pago (IDENTITY). nro_recibo lo ingresa el usuario.
+// La factura (id_factura) se elige con buscarCompras; la forma de pago (id_forma)
+// con listarFormasCobroPago (select). descripcion_forma / nro_comprobante /
+// ser_timbrado / tip_comprobante / nombre_proveedor vienen del JOIN (solo lectura).
+
+export type CompraPago = {
+  id_pago: number;
+  fecha: string; // YYYY-MM-DD
+  id_factura: number;
+  id_forma: number;
+  monto: number;
+  observacion: string | null;
+  cod_empresa: number;
+  nro_recibo: number;
+  descripcion_forma: string | null;
+  nro_comprobante: number | null;
+  ser_timbrado: string | null;
+  tip_comprobante: string | null;
+  nombre_proveedor: string | null;
+};
+
+export type CompraPagoInput = {
+  fecha: string;
+  id_factura: number;
+  id_forma: number;
+  monto: number;
+  observacion: string | null;
+  nro_recibo: number;
+  cod_empresa: number;
+};
+
+export type CompraBusqueda = {
+  id_factura: number;
+  nro_comprobante: number | null;
+  ser_timbrado: string | null;
+  tip_comprobante: string | null;
+  fec_comprobante: string | null;
+  nombre_proveedor: string | null;
+};
+
+export async function listarComprasPagos(codEmpresa: number): Promise<CompraPago[]> {
+  const q = new URLSearchParams({ cod_empresa: String(codEmpresa) });
+  const data = await authFetch(`compras-pagos?${q}`);
+  return (data.data ?? []) as CompraPago[];
+}
+
+export async function crearCompraPago(input: CompraPagoInput): Promise<number> {
+  const data = await authFetch("compras-pagos", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  return data.id_pago as number;
+}
+
+export async function actualizarCompraPago(id: number, input: CompraPagoInput): Promise<void> {
+  await authFetch(`compras-pagos/${id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+}
+
+export async function eliminarCompraPago(id: number, codEmpresa: number): Promise<void> {
+  const q = new URLSearchParams({ cod_empresa: String(codEmpresa) });
+  await authFetch(`compras-pagos/${id}?${q}`, { method: "DELETE" });
+}
+
+export async function buscarCompras(codEmpresa: number, q: string): Promise<CompraBusqueda[]> {
+  const params = new URLSearchParams({ cod_empresa: String(codEmpresa), q });
+  const data = await authFetch(`compras/buscar?${params}`);
+  return (data.data ?? []) as CompraBusqueda[];
+}
+
+// ─── Vendedores (página 30) ──────────────────────────────────────────────────
+// CRUD de VENDEDORES. PK cod_vendedor (secuencia vía trigger). Multiempresa.
+// estado 'S'/'N'. porc_comision numérico. cod_usuario texto libre.
+
+export type Vendedor = {
+  cod_vendedor: number;
+  nombre: string | null;
+  porc_comision: number | null;
+  estado: string;
+  cod_usuario: string | null;
+  cod_empresa: number;
+};
+
+export type VendedorInput = {
+  nombre: string;
+  porc_comision: number | null;
+  estado: string;
+  cod_usuario: string | null;
+  cod_empresa: number;
+};
+
+export async function listarVendedores(codEmpresa: number): Promise<Vendedor[]> {
+  const q = new URLSearchParams({ cod_empresa: String(codEmpresa) });
+  const data = await authFetch(`vendedores?${q}`);
+  return (data.data ?? []) as Vendedor[];
+}
+
+export async function crearVendedor(input: VendedorInput): Promise<number> {
+  const data = await authFetch("vendedores", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  return data.cod_vendedor as number;
+}
+
+export async function actualizarVendedor(id: number, input: VendedorInput): Promise<void> {
+  await authFetch(`vendedores/${id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+}
+
+export async function eliminarVendedor(id: number, codEmpresa: number): Promise<void> {
+  const q = new URLSearchParams({ cod_empresa: String(codEmpresa) });
+  await authFetch(`vendedores/${id}?${q}`, { method: "DELETE" });
+}
+
+// ─── Descuentos Escalonados (página 106) ─────────────────────────────────────
+// CRUD de TABLA_DESCUENTOS. PK id_tabla (IDENTITY). SIN cod_empresa (global).
+// venta_x = 1 - porcentaje/100 (autocalculado). rentabilidad_70 = 70 - porcentaje
+// (solo lectura, lo calcula el backend).
+
+export type DescuentoEscalonado = {
+  id_tabla: number;
+  monto_desde: number;
+  monto_hasta: number;
+  porcentaje: number;
+  venta_x: number;
+  fecha_desde: string; // YYYY-MM-DD
+  rentabilidad_70: number;
+};
+
+export type DescuentoEscalonadoInput = {
+  monto_desde: number;
+  monto_hasta: number;
+  porcentaje: number;
+  venta_x: number;
+  fecha_desde: string;
+};
+
+export async function listarDescuentosEscalonados(): Promise<DescuentoEscalonado[]> {
+  const data = await authFetch("descuentos-escalonados");
+  return (data.data ?? []) as DescuentoEscalonado[];
+}
+
+export async function crearDescuentoEscalonado(input: DescuentoEscalonadoInput): Promise<number> {
+  const data = await authFetch("descuentos-escalonados", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  return data.id_tabla as number;
+}
+
+export async function actualizarDescuentoEscalonado(
+  id: number,
+  input: DescuentoEscalonadoInput,
+): Promise<void> {
+  await authFetch(`descuentos-escalonados/${id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+}
+
+export async function eliminarDescuentoEscalonado(id: number): Promise<void> {
+  await authFetch(`descuentos-escalonados/${id}`, { method: "DELETE" });
+}
+
+// ─── Post Venta (página 105) ─────────────────────────────────────────────────
+// Solo lectura: teléfonos únicos de ventas_cabecera (normalizados a +5959########)
+// con la fecha del último comprobante. Filtro opcional por texto (q).
+
+export type PostVenta = {
+  nro_telefono: string;
+  fecha: string; // YYYY-MM-DD
+};
+
+export async function listarPostVenta(codEmpresa: number, q = ""): Promise<PostVenta[]> {
+  const params = new URLSearchParams({ cod_empresa: String(codEmpresa) });
+  if (q) params.set("q", q);
+  const data = await authFetch(`post-venta?${params}`);
+  return (data.data ?? []) as PostVenta[];
+}
+
+// ─── Suba de Precios (página 100) ────────────────────────────────────────────
+// Solo lectura: último precio (MAX id_precio) de cada artículo activo, con margen,
+// precio anterior y stock. Facetas en el front por marca y rubro.
+
+export type SubaPrecio = {
+  id_precio: number;
+  id_articulo: number;
+  articulo: string | null;
+  codigo_oem: string | null;
+  marca: string | null;
+  rubro: string | null;
+  fecha: string; // YYYY-MM-DD
+  precio_compra: number | null;
+  precio_venta: number | null;
+  precio_venta_anterior: number | null;
+  porc_recargo: number | null;
+  margen: number | null;
+  stock: number | null;
+};
+
+export type SubaPrecioInput = {
+  id_articulo: number;
+  precio_compra: number | null;
+  porc_recargo: number | null;
+  precio_venta: number;
+  cod_empresa: number;
+};
+
+export async function listarSubaPrecios(codEmpresa: number): Promise<SubaPrecio[]> {
+  const q = new URLSearchParams({ cod_empresa: String(codEmpresa) });
+  const data = await authFetch(`suba-precios?${q}`);
+  return (data.data ?? []) as SubaPrecio[];
+}
+
+// Inserta un precio nuevo (queda como el último precio del artículo). El histórico
+// se mantiene; los triggers actualizan articulos.precio_venta/costo_ultima_compra.
+export async function crearSubaPrecio(input: SubaPrecioInput): Promise<number> {
+  const data = await authFetch("suba-precios", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  return data.id_precio as number;
+}
+
+// ─── Conteo de Efectivo (página 85, modal 86) ────────────────────────────────
+// CRUD de CONTEO_EFECTIVO. PK id_conteo (IDENTITY). total = valor·cantidad.
+// Permisos: JOSEG ve todo/filtra por fecha; resto solo hoy (lo resuelve el backend
+// con app_user). El select de moneda usa listarMonedas; el de valores (con imagen
+// del billete) usa listarMonedasDetalle.
+
+export type ConteoEfectivo = {
+  id_conteo: number;
+  fecha: string; // YYYY-MM-DD
+  valor: number;
+  cantidad: number;
+  cod_moneda: number;
+  moneda: string | null;
+  total: number;
+  cod_empresa: number;
+};
+
+export type ConteoEfectivoInput = {
+  fecha: string;
+  valor: number;
+  cantidad: number;
+  cod_moneda: number;
+  cod_empresa: number;
+};
+
+// Valores del billete de una moneda (con imagen), para el select del modal.
+export async function listarMonedasDetalle(codMoneda: number): Promise<MonedaDetalle[]> {
+  const data = await authFetch(`monedas/${codMoneda}/detalle`);
+  return (data.data ?? []) as MonedaDetalle[];
+}
+
+export async function listarConteoEfectivo(
+  codEmpresa: number,
+  appUser: string,
+  fecha?: string,
+): Promise<ConteoEfectivo[]> {
+  const q = new URLSearchParams({ cod_empresa: String(codEmpresa), app_user: appUser });
+  if (fecha) q.set("fecha", fecha);
+  const data = await authFetch(`conteo-efectivo?${q}`);
+  return (data.data ?? []) as ConteoEfectivo[];
+}
+
+export async function crearConteoEfectivo(input: ConteoEfectivoInput): Promise<number> {
+  const data = await authFetch("conteo-efectivo", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  return data.id_conteo as number;
+}
+
+export async function actualizarConteoEfectivo(
+  id: number,
+  input: ConteoEfectivoInput,
+): Promise<void> {
+  await authFetch(`conteo-efectivo/${id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+}
+
+export async function eliminarConteoEfectivo(id: number, codEmpresa: number): Promise<void> {
+  const q = new URLSearchParams({ cod_empresa: String(codEmpresa) });
+  await authFetch(`conteo-efectivo/${id}?${q}`, { method: "DELETE" });
+}
+
+// Panel de 7 totales de control de la fecha (solo JOSEG; visible=false si no).
+export type ConteoResumen = {
+  visible: boolean;
+  total_efectivo?: number;
+  no_efectivo?: number;
+  conteo_anterior?: number;
+  total_conteo?: number;
+  pagos?: number;
+  retiro_efectivo?: number;
+  total_caja?: number;
+  diferencia?: number;
+};
+
+export async function obtenerResumenConteo(
+  codEmpresa: number,
+  appUser: string,
+  fecha: string,
+): Promise<ConteoResumen> {
+  const q = new URLSearchParams({
+    cod_empresa: String(codEmpresa),
+    app_user: appUser,
+    fecha,
+  });
+  const data = await authFetch(`conteo-efectivo/resumen?${q}`);
+  return (data.data ?? { visible: false }) as ConteoResumen;
+}
