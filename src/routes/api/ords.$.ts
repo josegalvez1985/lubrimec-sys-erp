@@ -27,11 +27,14 @@ async function forward(request: Request, splat: string): Promise<Response> {
   }
 
   const res = await fetch(target, init);
-  const body = await res.text();
-  return new Response(body, {
-    status: res.status,
-    headers: { "content-type": res.headers.get("content-type") ?? "application/json" },
-  });
+  const contentType = res.headers.get("content-type") ?? "application/json";
+  // Binarios (imágenes, etc.): reenviar los bytes crudos. Usar res.text() los corrompe
+  // (decodifica como UTF-8). El JSON de la API sí es texto, pero ArrayBuffer sirve para ambos.
+  const body = await res.arrayBuffer();
+  const outHeaders: Record<string, string> = { "content-type": contentType };
+  const cacheControl = res.headers.get("cache-control");
+  if (cacheControl) outHeaders["cache-control"] = cacheControl;
+  return new Response(body, { status: res.status, headers: outHeaders });
 }
 
 export const Route = createFileRoute("/api/ords/$")({

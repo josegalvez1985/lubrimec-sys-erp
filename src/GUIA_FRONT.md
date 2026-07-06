@@ -89,7 +89,7 @@ sus permisos. Cada usuario ve un menú distinto.
 
 1. Implementar el componente (ej. `src/components/<tabla>-view.tsx`).
 2. Conocer el `page_id` de esa página en APEX (app 86972).
-3. Agregar una línea al mapa `VISTAS` en `home.tsx`:
+3. Agregar el import y una línea al mapa `VISTAS` en `home.tsx`:
    ```tsx
    const VISTAS: Record<number, () => ReactElement> = {
      6: () => <MarcasView />, // Marcas
@@ -98,6 +98,20 @@ sus permisos. Cada usuario ve un menú distinto.
    ```
    Con eso la entrada del menú y su acceso rápido abren el componente automáticamente.
    No hay que tocar el sidebar ni el endpoint: el menú se arma solo desde la respuesta.
+   Páginas ya con vista propia (referencia de `page_id`): 24 Códigos de Barras, 27
+   Artículos-Proveedores, 2 Personas, 6 Marcas, 117 WhatsApp, etc. (ver el mapa completo).
+
+### CRUD con FK: selector con buscador (modelos: `codigos-barras-view`, `articulos-proveedores-view`)
+
+Cuando un campo es una FK (elegir un artículo, un proveedor…), **no** cargar toda la tabla en un
+`<select>`: usar un buscador con debounce contra un endpoint `*/buscar` (devuelve ≤30 filas).
+
+- El backend expone `articulos/buscar?cod_empresa=&q=` y `proveedores/buscar?...` (ver
+  `db/GUIA_ENDPOINTS.md`, sección "Selector de FK"). Cliente: `buscarArticulos` / `buscarProveedores`.
+- En el front, un componente `BuscadorSelect` genérico (en `articulos-proveedores-view.tsx`): input
+  con `useState` + debounce de 300ms → `useQuery({ enabled: abierto })` → dropdown de resultados;
+  al elegir guarda el id (para el input) y un label legible (para mostrar). La grilla usa `DataTable`
+  y muestra las columnas de solo lectura del JOIN (descripción del artículo, nombre del proveedor).
 
 ## Sin caché: todo dato se consulta en el momento
 

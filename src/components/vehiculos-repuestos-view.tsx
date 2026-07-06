@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, Eye, Pencil, Trash2, Loader2, Link2 } from "lucide-react";
+import { Plus, Eye, Pencil, Trash2, Loader2, Car } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -26,14 +26,13 @@ import {
 import { DataTable, type Column } from "@/components/ui/data-table";
 import { BuscadorSelect } from "@/components/ui/buscador-select";
 import {
-  listarArticulosProveedores,
-  crearArticuloProveedor,
-  actualizarArticuloProveedor,
-  eliminarArticuloProveedor,
+  listarVehiculosRepuestos,
+  crearVehiculoRepuesto,
+  actualizarVehiculoRepuesto,
+  eliminarVehiculoRepuesto,
   buscarArticulos,
-  buscarProveedores,
-  type ArticuloProveedor,
-  type ArticuloProveedorInput,
+  type VehiculoRepuesto,
+  type VehiculoRepuestoInput,
 } from "@/lib/api";
 
 // TODO: cod_empresa fijo; reemplazar cuando venga de la sesión.
@@ -42,67 +41,55 @@ const COD_EMPRESA = 24;
 type ModalState =
   | { mode: "closed" }
   | { mode: "create" }
-  | { mode: "edit"; item: ArticuloProveedor }
-  | { mode: "view"; item: ArticuloProveedor };
+  | { mode: "edit"; item: VehiculoRepuesto }
+  | { mode: "view"; item: VehiculoRepuesto };
 
-export function ArticulosProveedoresView() {
+export function VehiculosRepuestosView() {
   const qc = useQueryClient();
   const [modal, setModal] = useState<ModalState>({ mode: "closed" });
-  const [aEliminar, setAEliminar] = useState<ArticuloProveedor | null>(null);
+  const [aEliminar, setAEliminar] = useState<VehiculoRepuesto | null>(null);
 
   const { data, isLoading, isError, error } = useQuery({
-    queryKey: ["articulos-proveedores", COD_EMPRESA],
-    queryFn: () => listarArticulosProveedores(COD_EMPRESA),
+    queryKey: ["vehiculos-repuestos", COD_EMPRESA],
+    queryFn: () => listarVehiculosRepuestos(COD_EMPRESA),
     retry: false,
   });
 
   const eliminarMut = useMutation({
-    mutationFn: (id: number) => eliminarArticuloProveedor(id, COD_EMPRESA),
+    mutationFn: (id: number) => eliminarVehiculoRepuesto(id, COD_EMPRESA),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["articulos-proveedores"] });
+      qc.invalidateQueries({ queryKey: ["vehiculos-repuestos"] });
       setAEliminar(null);
     },
   });
 
-  const filas = (data ?? [])
-    .slice()
-    .sort((a, b) => b.id_articulo_proveedor - a.id_articulo_proveedor);
+  const filas = (data ?? []).slice().sort((a, b) => b.id_vehiculo - a.id_vehiculo);
 
-  const COLUMNAS: Column<ArticuloProveedor>[] = [
+  const COLUMNAS: Column<VehiculoRepuesto>[] = [
     {
-      key: "id_articulo_proveedor",
+      key: "id_vehiculo",
       header: "ID",
       num: true,
-      accessor: (r) => r.id_articulo_proveedor,
+      accessor: (r) => r.id_vehiculo,
       render: (r) => (
         <Badge variant="outline" className="font-mono">
-          {r.id_articulo_proveedor}
+          {r.id_vehiculo}
         </Badge>
       ),
       className: "w-16",
     },
     {
-      key: "descripcion_articulo",
-      header: "Artículo",
-      accessor: (r) => r.descripcion_articulo ?? "",
+      key: "modelo",
+      header: "Modelo",
+      accessor: (r) => r.modelo,
+      render: (r) => <span className="font-medium">{r.modelo}</span>,
       hideable: false,
     },
     {
       key: "codigo_oem",
       header: "Código OEM",
-      accessor: (r) => r.codigo_oem ?? "",
-      render: (r) => (r.codigo_oem ? <span className="font-mono">{r.codigo_oem}</span> : "—"),
-    },
-    {
-      key: "nombre_proveedor",
-      header: "Proveedor",
-      accessor: (r) => r.nombre_proveedor ?? "",
-    },
-    {
-      key: "id_cod_proveedor",
-      header: "Cód. proveedor",
-      accessor: (r) => r.id_cod_proveedor ?? "",
-      render: (r) => <span className="font-mono">{r.id_cod_proveedor}</span>,
+      accessor: (r) => r.codigo_oem,
+      render: (r) => <span className="font-mono">{r.codigo_oem}</span>,
     },
   ];
 
@@ -110,9 +97,9 @@ export function ArticulosProveedoresView() {
     <div className="rounded-2xl border border-border bg-card shadow-elegant">
       <div className="flex flex-col gap-3 border-b border-border p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
         <div>
-          <h2 className="font-display text-xl font-bold">Artículos por proveedor</h2>
+          <h2 className="font-display text-xl font-bold">Vehículos y repuestos</h2>
           <p className="text-sm text-muted-foreground">
-            {filas.length} {filas.length === 1 ? "relación" : "relaciones"} registradas
+            {filas.length} {filas.length === 1 ? "registro" : "registros"}
           </p>
         </div>
         <Button
@@ -120,23 +107,23 @@ export function ArticulosProveedoresView() {
           className="shrink-0 bg-gradient-primary font-semibold text-primary-foreground shadow-glow hover:opacity-95"
         >
           <Plus className="mr-2 h-4 w-4" />
-          <span className="hidden sm:inline">Nueva relación</span>
-          <span className="sm:hidden">Nueva</span>
+          <span className="hidden sm:inline">Nuevo vehículo</span>
+          <span className="sm:hidden">Nuevo</span>
         </Button>
       </div>
 
       {isError ? (
         <p className="p-8 text-center text-sm text-destructive">
-          {error instanceof Error ? error.message : "No se pudieron cargar las relaciones"}
+          {error instanceof Error ? error.message : "No se pudieron cargar los registros"}
         </p>
       ) : filas.length === 0 && !isLoading ? (
         <div className="grid place-items-center py-16 text-center">
           <div className="grid h-14 w-14 place-items-center rounded-2xl bg-primary/10 text-primary">
-            <Link2 className="h-6 w-6" />
+            <Car className="h-6 w-6" />
           </div>
-          <p className="mt-4 font-medium">Aún no hay relaciones artículo-proveedor</p>
+          <p className="mt-4 font-medium">Aún no hay vehículos-repuestos</p>
           <p className="mt-1 max-w-xs text-sm text-muted-foreground">
-            Crea la primera con el botón “Nueva relación”.
+            Crea el primero con el botón “Nuevo vehículo”.
           </p>
         </div>
       ) : (
@@ -144,9 +131,9 @@ export function ArticulosProveedoresView() {
           <DataTable
             columns={COLUMNAS}
             rows={filas}
-            getRowId={(r) => r.id_articulo_proveedor}
-            initialSort={{ key: "id_articulo_proveedor", dir: "desc" }}
-            exportName="articulos-proveedores"
+            getRowId={(r) => r.id_vehiculo}
+            initialSort={{ key: "id_vehiculo", dir: "desc" }}
+            exportName="vehiculos-repuestos"
             actions={(r) => (
               <div className="flex items-center justify-end gap-1">
                 <Button
@@ -182,11 +169,11 @@ export function ArticulosProveedoresView() {
         </div>
       )}
 
-      <ArticuloProveedorDialog
+      <VehiculoRepuestoDialog
         state={modal}
         onClose={() => setModal({ mode: "closed" })}
         onSaved={() => {
-          qc.invalidateQueries({ queryKey: ["articulos-proveedores"] });
+          qc.invalidateQueries({ queryKey: ["vehiculos-repuestos"] });
           setModal({ mode: "closed" });
         }}
       />
@@ -194,12 +181,11 @@ export function ArticulosProveedoresView() {
       <AlertDialog open={!!aEliminar} onOpenChange={(o) => !o && setAEliminar(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>¿Eliminar relación?</AlertDialogTitle>
+            <AlertDialogTitle>¿Eliminar registro?</AlertDialogTitle>
             <AlertDialogDescription>
-              Se eliminará la relación de{" "}
-              <span className="font-semibold">{aEliminar?.descripcion_articulo}</span> con{" "}
-              <span className="font-semibold">{aEliminar?.nombre_proveedor}</span>. Esta acción no se
-              puede deshacer.
+              Se eliminará el modelo <span className="font-semibold">{aEliminar?.modelo}</span> (OEM{" "}
+              <span className="font-semibold">{aEliminar?.codigo_oem}</span>). Esta acción no se puede
+              deshacer.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -207,7 +193,7 @@ export function ArticulosProveedoresView() {
             <AlertDialogAction
               onClick={(e) => {
                 e.preventDefault();
-                if (aEliminar) eliminarMut.mutate(aEliminar.id_articulo_proveedor);
+                if (aEliminar) eliminarMut.mutate(aEliminar.id_vehiculo);
               }}
               disabled={eliminarMut.isPending}
               className="bg-destructive text-white hover:bg-destructive/90"
@@ -224,7 +210,7 @@ export function ArticulosProveedoresView() {
 
 // ─── Dialog de formulario ────────────────────────────────────────────────────
 
-function ArticuloProveedorDialog({
+function VehiculoRepuestoDialog({
   state,
   onClose,
   onSaved,
@@ -237,51 +223,38 @@ function ArticuloProveedorDialog({
   const isView = state.mode === "view";
   const item = state.mode === "edit" || state.mode === "view" ? state.item : null;
 
-  const [idArticulo, setIdArticulo] = useState<number | null>(null);
-  const [articuloLabel, setArticuloLabel] = useState("");
-  const [codPersona, setCodPersona] = useState<number | null>(null);
-  const [proveedorLabel, setProveedorLabel] = useState("");
-  const [idCodProveedor, setIdCodProveedor] = useState("");
+  const [modelo, setModelo] = useState("");
+  const [codigoOem, setCodigoOem] = useState("");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
 
   const [lastKey, setLastKey] = useState("");
-  const key = `${state.mode}:${item?.id_articulo_proveedor ?? "new"}`;
+  const key = `${state.mode}:${item?.id_vehiculo ?? "new"}`;
   if (open && key !== lastKey) {
     setLastKey(key);
-    setIdArticulo(item?.id_articulo ?? null);
-    setArticuloLabel(
-      item ? `${item.descripcion_articulo ?? ""}${item.codigo_oem ? ` (${item.codigo_oem})` : ""}` : "",
-    );
-    setCodPersona(item?.cod_persona ?? null);
-    setProveedorLabel(item?.nombre_proveedor ?? "");
-    setIdCodProveedor(item?.id_cod_proveedor ?? "");
+    setModelo(item?.modelo ?? "");
+    setCodigoOem(item?.codigo_oem ?? "");
     setError("");
   }
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setError("");
-    if (!idArticulo) {
-      setError("Selecciona un artículo");
-      return;
-    }
-    if (!codPersona) {
-      setError("Selecciona un proveedor");
+    if (!codigoOem.trim()) {
+      setError("Selecciona un artículo para tomar su código OEM.");
       return;
     }
     setSaving(true);
     try {
-      const input: ArticuloProveedorInput = {
-        id_articulo: idArticulo,
-        cod_persona: codPersona,
-        id_cod_proveedor: idCodProveedor.trim(),
+      const input: VehiculoRepuestoInput = {
+        modelo: modelo.trim(),
+        codigo_oem: codigoOem.trim(),
         cod_empresa: COD_EMPRESA,
       };
       if (state.mode === "edit") {
-        await actualizarArticuloProveedor(state.item.id_articulo_proveedor, input);
+        await actualizarVehiculoRepuesto(state.item.id_vehiculo, input);
       } else {
-        await crearArticuloProveedor(input);
+        await crearVehiculoRepuesto(input);
       }
       onSaved();
     } catch (err) {
@@ -293,10 +266,10 @@ function ArticuloProveedorDialog({
 
   const titulo =
     state.mode === "create"
-      ? "Nueva relación artículo-proveedor"
+      ? "Nuevo vehículo-repuesto"
       : state.mode === "edit"
-        ? "Editar relación"
-        : "Detalle de la relación";
+        ? "Editar vehículo-repuesto"
+        : "Detalle del vehículo-repuesto";
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
@@ -305,7 +278,7 @@ function ArticuloProveedorDialog({
           <DialogTitle>{titulo}</DialogTitle>
           {!isView && (
             <DialogDescription>
-              Vincula un artículo con un proveedor y su código.
+              Relaciona un modelo de vehículo con el código OEM del repuesto.
             </DialogDescription>
           )}
         </DialogHeader>
@@ -313,71 +286,51 @@ function ArticuloProveedorDialog({
         <form onSubmit={onSubmit} className="space-y-4">
           {isView && item && (
             <div className="text-sm text-muted-foreground">
-              ID: <span className="font-mono text-foreground">{item.id_articulo_proveedor}</span>
+              ID: <span className="font-mono text-foreground">{item.id_vehiculo}</span>
             </div>
           )}
 
           <div className="space-y-2">
-            <Label>Artículo</Label>
-            {isView ? (
-              <Input value={articuloLabel} disabled />
-            ) : (
-              <BuscadorSelect
-                placeholder="Buscar artículo por descripción, OEM o ID..."
-                emptyLabel="Sin artículos"
-                value={idArticulo}
-                label={articuloLabel}
-                buscar={(q) => buscarArticulos(COD_EMPRESA, q)}
-                itemKey={(a) => a.id_articulo}
-                itemTitle={(a) => a.descripcion ?? "—"}
-                itemSub={(a) => `ID ${a.id_articulo}${a.codigo_oem ? ` · OEM ${a.codigo_oem}` : ""}`}
-                onSelect={(a) => {
-                  setIdArticulo(a.id_articulo);
-                  setArticuloLabel(
-                    `${a.descripcion ?? ""}${a.codigo_oem ? ` (${a.codigo_oem})` : ""}`,
-                  );
-                }}
-                disabled={saving}
-              />
-            )}
-          </div>
-
-          <div className="space-y-2">
-            <Label>Proveedor</Label>
-            {isView ? (
-              <Input value={proveedorLabel} disabled />
-            ) : (
-              <BuscadorSelect
-                placeholder="Buscar proveedor por nombre, RUC o CI..."
-                emptyLabel="Sin proveedores"
-                value={codPersona}
-                label={proveedorLabel}
-                buscar={(q) => buscarProveedores(COD_EMPRESA, q)}
-                itemKey={(p) => p.cod_persona}
-                itemTitle={(p) => p.nombre ?? "—"}
-                itemSub={(p) =>
-                  `ID ${p.cod_persona}${p.nro_ruc ? ` · RUC ${p.nro_ruc}` : p.nro_ci ? ` · CI ${p.nro_ci}` : ""}`
-                }
-                onSelect={(p) => {
-                  setCodPersona(p.cod_persona);
-                  setProveedorLabel(p.nombre ?? "");
-                }}
-                disabled={saving}
-              />
-            )}
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="id_cod_proveedor">Código del proveedor</Label>
+            <Label htmlFor="modelo">Modelo</Label>
             <Input
-              id="id_cod_proveedor"
-              value={idCodProveedor}
-              onChange={(e) => setIdCodProveedor(e.target.value)}
-              placeholder="Código con que el proveedor identifica el artículo"
+              id="modelo"
+              value={modelo}
+              onChange={(e) => setModelo(e.target.value)}
+              placeholder="Ej. Toyota Hilux 2015"
               disabled={isView || saving}
               required={!isView}
-              className="font-mono"
+              autoFocus={!isView}
             />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="codigo_oem">Código OEM</Label>
+            {isView ? (
+              <Input value={codigoOem} disabled className="font-mono" />
+            ) : (
+              <>
+                {/* Buscador: elegir un artículo toma su código OEM. */}
+                <BuscadorSelect
+                  placeholder="Buscar artículo por descripción, OEM o ID..."
+                  emptyLabel="Sin artículos"
+                  value={codigoOem || null}
+                  label={codigoOem}
+                  buscar={(q) => buscarArticulos(COD_EMPRESA, q)}
+                  itemKey={(a) => a.id_articulo}
+                  itemTitle={(a) => a.descripcion ?? "—"}
+                  itemSub={(a) =>
+                    `ID ${a.id_articulo}${a.codigo_oem ? ` · OEM ${a.codigo_oem}` : " · sin OEM"}`
+                  }
+                  onSelect={(a) => setCodigoOem(a.codigo_oem ?? "")}
+                  disabled={saving}
+                />
+                {codigoOem && (
+                  <p className="text-xs text-muted-foreground">
+                    OEM seleccionado: <span className="font-mono text-foreground">{codigoOem}</span>
+                  </p>
+                )}
+              </>
+            )}
           </div>
 
           {error && (

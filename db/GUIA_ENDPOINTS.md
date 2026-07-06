@@ -37,20 +37,49 @@ como query param `?cod_empresa=:n`.
 
 ## Pasos para una tabla nueva
 
-1. **Crear el paquete** `db/PKG_<TABLA>_LUBRIMEC.sql` (spec + body).
-   - Procedimientos: `LISTAR`, `OBTENER`, `INSERTAR`, `ACTUALIZAR`, `ELIMINAR`.
-   - Cada uno: 1) valida token → 401 si NULL, 2) ejecuta, 3) responde con APEX_JSON.
-   - Reusar el patrón de helpers `p_error(status, reason, message)` y
-     `f_usuario(token)` de `PKG_MARCAS_LUBRIMEC`.
-   - Si la PK la asigna un trigger (renumerar), una secuencia o `GENERATED ... AS IDENTITY`,
-     **no** incluir la PK en el INSERT y usar `RETURNING <pk> INTO l_id` para devolverla (modelos:
-     `rubros_sql.sql` trigger, `monedas_sql.sql` secuencia, `condiciones_facturas_sql.sql` IDENTITY).
-   - Si la PK **la ingresa el usuario** (no autogenerada), validarla obligatoria y devolver 409 en
-     `DUP_VAL_ON_INDEX` (modelos: `iva_sql.sql`, `unidades_medidas_sql.sql`).
-   - Estados: 201 Created, 400 Bad Request, 404 Not Found, 401 Unauthorized,
-     500 Internal Server Error.
+**Un solo archivo por tabla: `db/<tabla>_sql.sql`** (formato unificado). Contiene el paquete
+CRUD **y** los endpoints ORDS, en dos secciones marcadas con comentarios. Modelo vivo:
+`db/marcas_sql.sql`. (Los antiguos pares `PKG_<TABLA>.sql` + `ORDS_<TABLA>.sql` ya fueron
+fusionados; **no** volver a separarlos.) Estructura del archivo:
 
-2. **Crear el script ORDS** `db/ORDS_<TABLA>.sql`.
+```
+-- <cabecera: tabla, page_id, PK, notas>
+-- === 1) PAQUETE PKG_<TABLA>_LUBRIMEC ===
+CREATE OR REPLACE PACKAGE PKG_<TABLA>_LUBRIMEC AS ... END; /
+CREATE OR REPLACE PACKAGE BODY PKG_<TABLA>_LUBRIMEC AS ... END; /
+-- === 2) ENDPOINTS ORDS ===
+BEGIN ... (DELETE_HANDLER + DEFINE_TEMPLATE/HANDLER/PARAMETER) ... COMMIT; END; /
+```
+
+Se ejecuta completo de una vez (el paquete queda compilado antes de que los handlers ORDS lo
+referencien). Excepciones que **sí** quedan en archivos aparte: piezas compartidas o sin paquete
+CRUD — `PKG_AUTH_LUBRIMEC.sql`, `PROC_ENVIAR_MENSAJES_WHATSAPP.sql`, `WHATSAPP_DDL.sql`, y los
+endpoints de solo lectura sin paquete (`ORDS_MENU_PAGINAS.sql`, `ORDS_VENTAS_*.sql`,
+`ORDS_PEDIDOS_ARTICULOS.sql`, `ORDS_ARTICULOS_MAS_VENDIDOS.sql`).
+
+### Sección 1) Paquete
+
+- Procedimientos: `LISTAR`, `OBTENER`, `INSERTAR`, `ACTUALIZAR`, `ELIMINAR`.
+- Cada uno: 1) valida token → 401 si NULL, 2) ejecuta, 3) responde con APEX_JSON.
+- Reusar el patrón de helpers `p_error(status, reason, message)` y
+  `f_usuario(token)` de `PKG_MARCAS_LUBRIMEC`.
+- Si la PK la asigna un trigger (renumerar), una secuencia o `GENERATED ... AS IDENTITY`,
+  **no** incluir la PK en el INSERT y usar `RETURNING <pk> INTO l_id` para devolverla (modelos:
+  `rubros_sql.sql` trigger, `monedas_sql.sql` secuencia, `condiciones_facturas_sql.sql` IDENTITY).
+- Si la PK **la ingresa el usuario** (no autogenerada), validarla obligatoria y devolver 409 en
+  `DUP_VAL_ON_INDEX` (modelos: `iva_sql.sql`, `unidades_medidas_sql.sql`).
+- **FK a otra tabla** (ej. `id_articulo`): capturar `-2291` (FK padre no existe) → 400 con mensaje
+  claro. En LISTAR/OBTENER hacer `LEFT JOIN` a la tabla padre para devolver su descripción como
+  campo de solo lectura (modelos: `codigos_barras_sql.sql`, `articulos_proveedores_sql.sql`).
+- **Selector de FK:** añadir un `PROCEDURE BUSCAR_*(token, cod_empresa, q)` que devuelva hasta 30
+  filas que matcheen `q` (por descripción / código / id) para alimentar el buscador del formulario
+  (modelos: `BUSCAR_ARTICULOS` en `codigos_barras_sql.sql`, `BUSCAR_PROVEEDORES` en
+  `articulos_proveedores_sql.sql`; endpoints `articulos/buscar`, `proveedores/buscar`).
+- Estados: 201 Created, 400 Bad Request, 404 Not Found, 401 Unauthorized,
+  500 Internal Server Error.
+
+### Sección 2) Endpoints ORDS
+
    - **Estructura PLANA:** cada `DEFINE_HANDLER` instala directamente la lógica de
      negocio en su `p_source`. **NO** usar el patrón anidado "GET que se redefine a sí
      mismo" (un GET cuyo `p_source` borra y recrea handlers): dejaba instalado el bloque
@@ -68,13 +97,22 @@ como query param `?cod_empresa=:n`.
      `<tabla>/:id` (item: GET obtener, PUT, DELETE). OPTIONS no hace falta: el proxy
      server-side evita el preflight CORS del navegador.
 
-3. **Agregar el cliente** en `src/lib/api.ts`.
-   - Tipo `Tabla` (campos exactos de la tabla) y `TablaInput` (sin PK).
+   - **Query params** (los que no son `:id` de la ruta): no se auto-bindean fiable; leerlos del
+     `QUERY_STRING` crudo con el helper `get_qs(qs, key)` (modelo en cualquier handler de
+     `codigos_barras_sql.sql`). El `:id` de la ruta sí llega como bind.
+
+### Agregar el cliente en `src/lib/api.ts`
+
+   - Tipo `Tabla` (campos exactos de la tabla, incluidos los de solo lectura del JOIN) y
+     `TablaInput` (solo lo que se escribe, sin PK ni campos del JOIN).
    - Funciones `listarTablas(codEmpresa)`, `obtenerTabla(id)`, `crearTabla(input)`,
-     `actualizarTabla(id, input)`, `eliminarTabla(id)`.
+     `actualizarTabla(id, input)`, `eliminarTabla(id)`. Si hay FK con selector: `buscar*(codEmpresa, q)`.
    - Usar el helper `authFetch(path, init)` ya existente (mete Bearer, maneja 401).
 
-4. **Ejecutar en BD** (esquema JOSEGALVEZ, en orden): primero el paquete, luego el ORDS.
+### Ejecutar en BD
+
+Ejecutar el archivo `<tabla>_sql.sql` **completo** como el esquema JOSEGALVEZ (una sola corrida:
+paquete + ORDS). Requiere `PKG_AUTH_LUBRIMEC` ya compilado.
 
 ## Mapeo de tipos Oracle → TypeScript
 

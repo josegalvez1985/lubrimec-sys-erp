@@ -177,14 +177,15 @@ export function MonedasView() {
 
 // ─── Panel de detalle (denominaciones) ───────────────────────────────────────
 
-function DetalleMoneda({
+export function DetalleMoneda({
   moneda,
   onEditar,
   onEliminar,
 }: {
   moneda: Moneda;
-  onEditar: () => void;
-  onEliminar: () => void;
+  // Sin handlers (ej. página 83): no se muestran los botones de cabecera.
+  onEditar?: () => void;
+  onEliminar?: () => void;
 }) {
   const qc = useQueryClient();
   const [modalDetalle, setModalDetalle] = useState(false);
@@ -218,20 +219,26 @@ function DetalleMoneda({
             {moneda.decimales ?? 0} decimales · {detalle.length} denominaciones
           </p>
         </div>
-        <div className="flex gap-1">
-          <Button variant="outline" size="sm" onClick={onEditar} className="gap-1">
-            <Pencil className="h-4 w-4" /> Editar
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-9 w-9 text-muted-foreground hover:text-destructive"
-            onClick={onEliminar}
-            aria-label="Eliminar moneda"
-          >
-            <Trash2 className="h-4 w-4" />
-          </Button>
-        </div>
+        {(onEditar || onEliminar) && (
+          <div className="flex gap-1">
+            {onEditar && (
+              <Button variant="outline" size="sm" onClick={onEditar} className="gap-1">
+                <Pencil className="h-4 w-4" /> Editar
+              </Button>
+            )}
+            {onEliminar && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-9 w-9 text-muted-foreground hover:text-destructive"
+                onClick={onEliminar}
+                aria-label="Eliminar moneda"
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="p-4 sm:p-5">
