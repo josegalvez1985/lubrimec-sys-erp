@@ -1,0 +1,675 @@
+--------------------------------------------------------------------------------
+-- ARTICULOS-PROVEEDORES (pagina APEX 27) — paquete CRUD + endpoints ORDS.
+-- Ejecutar completo como el esquema JOSEGALVEZ. Requiere PKG_AUTH_LUBRIMEC.
+--
+-- PK id_articulo_proveedor (IDENTITY). Multiempresa (cod_empresa).
+-- FK id_articulo -> articulos, cod_persona -> personas. LISTAR/OBTENER hacen JOIN
+-- para traer descripcion_articulo + codigo_oem + nombre_proveedor (solo lectura).
+-- BUSCAR_PROVEEDORES alimenta el selector (endpoint proveedores/buscar). El selector
+-- de articulos reutiliza el endpoint articulos/buscar (ver codigos_barras_sql.sql).
+--
+-- === 1) PAQUETE PKG_ARTICULOS_PROVEEDORES_LUBRIMEC =========================
+--------------------------------------------------------------------------------
+
+CREATE OR REPLACE PACKAGE PKG_ARTICULOS_PROVEEDORES_LUBRIMEC AS
+
+  PROCEDURE LISTAR(p_token IN VARCHAR2, p_cod_empresa IN NUMBER);
+  PROCEDURE OBTENER(p_token IN VARCHAR2, p_id IN NUMBER, p_cod_empresa IN NUMBER);
+  PROCEDURE INSERTAR(
+      p_token IN VARCHAR2, p_id_articulo IN NUMBER, p_cod_persona IN NUMBER,
+      p_id_cod_proveedor IN VARCHAR2, p_cod_empresa IN NUMBER);
+  PROCEDURE ACTUALIZAR(
+      p_token IN VARCHAR2, p_id IN NUMBER, p_id_articulo IN NUMBER, p_cod_persona IN NUMBER,
+      p_id_cod_proveedor IN VARCHAR2, p_cod_empresa IN NUMBER);
+  PROCEDURE ELIMINAR(p_token IN VARCHAR2, p_id IN NUMBER, p_cod_empresa IN NUMBER);
+  PROCEDURE BUSCAR_PROVEEDORES(p_token IN VARCHAR2, p_cod_empresa IN NUMBER, p_q IN VARCHAR2);
+
+END PKG_ARTICULOS_PROVEEDORES_LUBRIMEC;
+/
+
+CREATE OR REPLACE PACKAGE BODY PKG_ARTICULOS_PROVEEDORES_LUBRIMEC AS
+
+  PROCEDURE p_error(p_status IN NUMBER, p_reason IN VARCHAR2, p_message IN VARCHAR2) IS
+  BEGIN
+    OWA_UTIL.STATUS_LINE(p_status, p_reason, FALSE);
+    APEX_JSON.OPEN_OBJECT;
+    APEX_JSON.WRITE('success', FALSE);
+    APEX_JSON.WRITE('message', p_message);
+    APEX_JSON.CLOSE_OBJECT;
+  END p_error;
+
+  FUNCTION f_usuario(p_token IN VARCHAR2) RETURN VARCHAR2 IS
+  BEGIN
+    RETURN PKG_AUTH_LUBRIMEC.VALIDAR_TOKEN(p_token);
+  END f_usuario;
+
+  --------------------------------------------------------------------------
+  -- LISTAR (JOIN a articulos y personas para traer descripcion + nombre)
+  --------------------------------------------------------------------------
+  PROCEDURE LISTAR(p_token IN VARCHAR2, p_cod_empresa IN NUMBER) IS
+    l_usuario VARCHAR2(255);
+  BEGIN
+    l_usuario := f_usuario(p_token);
+    IF l_usuario IS NULL THEN
+      p_error(401, 'Unauthorized', 'Token invalido o expirado');
+      RETURN;
+    END IF;
+
+    APEX_JSON.OPEN_OBJECT;
+    APEX_JSON.WRITE('success', TRUE);
+    APEX_JSON.OPEN_ARRAY('data');
+    FOR r IN (
+        SELECT ap.id_articulo_proveedor, ap.id_articulo, ap.cod_persona,
+               ap.id_cod_proveedor, ap.cod_empresa,
+               a.descripcion AS descripcion_articulo, a.codigo_oem,
+               NVL(pe.nombre_fantasia, pe.nombre) AS nombre_proveedor
+          FROM articulos_proveedores ap
+          LEFT JOIN articulos a
+                 ON a.id_articulo = ap.id_articulo
+                AND a.cod_empresa = ap.cod_empresa
+          LEFT JOIN personas pe
+                 ON pe.cod_persona = ap.cod_persona
+                AND pe.cod_empresa = ap.cod_empresa
+         WHERE ap.cod_empresa = p_cod_empresa
+         ORDER BY ap.id_articulo_proveedor DESC
+    ) LOOP
+      APEX_JSON.OPEN_OBJECT;
+      APEX_JSON.WRITE('id_articulo_proveedor', r.id_articulo_proveedor);
+      APEX_JSON.WRITE('id_articulo', r.id_articulo);
+      APEX_JSON.WRITE('cod_persona', r.cod_persona);
+      APEX_JSON.WRITE('id_cod_proveedor', r.id_cod_proveedor);
+      APEX_JSON.WRITE('cod_empresa', r.cod_empresa);
+      APEX_JSON.WRITE('descripcion_articulo', r.descripcion_articulo);
+      APEX_JSON.WRITE('codigo_oem', r.codigo_oem);
+      APEX_JSON.WRITE('nombre_proveedor', r.nombre_proveedor);
+      APEX_JSON.CLOSE_OBJECT;
+    END LOOP;
+    APEX_JSON.CLOSE_ARRAY;
+    APEX_JSON.CLOSE_OBJECT;
+  EXCEPTION
+    WHEN OTHERS THEN
+      p_error(500, 'Internal Server Error', 'Error: ' || SQLERRM);
+  END LISTAR;
+
+  --------------------------------------------------------------------------
+  -- OBTENER
+  --------------------------------------------------------------------------
+  PROCEDURE OBTENER(p_token IN VARCHAR2, p_id IN NUMBER, p_cod_empresa IN NUMBER) IS
+    l_usuario          VARCHAR2(255);
+    l_id_articulo      articulos_proveedores.id_articulo%TYPE;
+    l_cod_persona      articulos_proveedores.cod_persona%TYPE;
+    l_id_cod_proveedor articulos_proveedores.id_cod_proveedor%TYPE;
+    l_desc             articulos.descripcion%TYPE;
+    l_oem              articulos.codigo_oem%TYPE;
+    l_nombre           personas.nombre%TYPE;
+  BEGIN
+    l_usuario := f_usuario(p_token);
+    IF l_usuario IS NULL THEN
+      p_error(401, 'Unauthorized', 'Token invalido o expirado');
+      RETURN;
+    END IF;
+
+    BEGIN
+      SELECT ap.id_articulo, ap.cod_persona, ap.id_cod_proveedor,
+             a.descripcion, a.codigo_oem, NVL(pe.nombre_fantasia, pe.nombre)
+        INTO l_id_articulo, l_cod_persona, l_id_cod_proveedor, l_desc, l_oem, l_nombre
+        FROM articulos_proveedores ap
+        LEFT JOIN articulos a
+               ON a.id_articulo = ap.id_articulo
+              AND a.cod_empresa = ap.cod_empresa
+        LEFT JOIN personas pe
+               ON pe.cod_persona = ap.cod_persona
+              AND pe.cod_empresa = ap.cod_empresa
+       WHERE ap.id_articulo_proveedor = p_id AND ap.cod_empresa = p_cod_empresa;
+    EXCEPTION
+      WHEN NO_DATA_FOUND THEN
+        p_error(404, 'Not Found', 'Articulo-proveedor no encontrado');
+        RETURN;
+    END;
+
+    APEX_JSON.OPEN_OBJECT;
+    APEX_JSON.WRITE('success', TRUE);
+    APEX_JSON.OPEN_OBJECT('data');
+    APEX_JSON.WRITE('id_articulo_proveedor', p_id);
+    APEX_JSON.WRITE('id_articulo', l_id_articulo);
+    APEX_JSON.WRITE('cod_persona', l_cod_persona);
+    APEX_JSON.WRITE('id_cod_proveedor', l_id_cod_proveedor);
+    APEX_JSON.WRITE('cod_empresa', p_cod_empresa);
+    APEX_JSON.WRITE('descripcion_articulo', l_desc);
+    APEX_JSON.WRITE('codigo_oem', l_oem);
+    APEX_JSON.WRITE('nombre_proveedor', l_nombre);
+    APEX_JSON.CLOSE_OBJECT;
+    APEX_JSON.CLOSE_OBJECT;
+  EXCEPTION
+    WHEN OTHERS THEN
+      p_error(500, 'Internal Server Error', 'Error: ' || SQLERRM);
+  END OBTENER;
+
+  --------------------------------------------------------------------------
+  -- INSERTAR (PK IDENTITY; UK y FK controladas)
+  --------------------------------------------------------------------------
+  PROCEDURE INSERTAR(
+      p_token IN VARCHAR2, p_id_articulo IN NUMBER, p_cod_persona IN NUMBER,
+      p_id_cod_proveedor IN VARCHAR2, p_cod_empresa IN NUMBER) IS
+    l_usuario VARCHAR2(255);
+    l_id      articulos_proveedores.id_articulo_proveedor%TYPE;
+  BEGIN
+    l_usuario := f_usuario(p_token);
+    IF l_usuario IS NULL THEN
+      p_error(401, 'Unauthorized', 'Token invalido o expirado');
+      RETURN;
+    END IF;
+
+    IF p_id_articulo IS NULL THEN
+      p_error(400, 'Bad Request', 'El articulo es obligatorio');
+      RETURN;
+    END IF;
+    IF p_cod_persona IS NULL THEN
+      p_error(400, 'Bad Request', 'El proveedor es obligatorio');
+      RETURN;
+    END IF;
+    IF p_id_cod_proveedor IS NULL THEN
+      p_error(400, 'Bad Request', 'El codigo del proveedor es obligatorio');
+      RETURN;
+    END IF;
+    IF p_cod_empresa IS NULL THEN
+      p_error(400, 'Bad Request', 'cod_empresa es obligatorio');
+      RETURN;
+    END IF;
+
+    INSERT INTO articulos_proveedores (id_articulo, cod_persona, id_cod_proveedor, cod_empresa)
+    VALUES (p_id_articulo, p_cod_persona, p_id_cod_proveedor, p_cod_empresa)
+    RETURNING id_articulo_proveedor INTO l_id;
+    COMMIT;
+
+    OWA_UTIL.STATUS_LINE(201, 'Created', FALSE);
+    APEX_JSON.OPEN_OBJECT;
+    APEX_JSON.WRITE('success', TRUE);
+    APEX_JSON.WRITE('message', 'Articulo-proveedor creado');
+    APEX_JSON.WRITE('id_articulo_proveedor', l_id);
+    APEX_JSON.CLOSE_OBJECT;
+  EXCEPTION
+    WHEN DUP_VAL_ON_INDEX THEN
+      ROLLBACK;
+      p_error(409, 'Conflict', 'Ya existe esa combinacion articulo-proveedor');
+    WHEN OTHERS THEN
+      ROLLBACK;
+      -- -2291: FK padre no existe (articulo o proveedor inexistente)
+      IF SQLCODE = -2291 THEN
+        p_error(400, 'Bad Request', 'El articulo o el proveedor indicado no existe');
+      ELSE
+        p_error(500, 'Internal Server Error', 'Error: ' || SQLERRM);
+      END IF;
+  END INSERTAR;
+
+  --------------------------------------------------------------------------
+  -- ACTUALIZAR
+  --------------------------------------------------------------------------
+  PROCEDURE ACTUALIZAR(
+      p_token IN VARCHAR2, p_id IN NUMBER, p_id_articulo IN NUMBER, p_cod_persona IN NUMBER,
+      p_id_cod_proveedor IN VARCHAR2, p_cod_empresa IN NUMBER) IS
+    l_usuario VARCHAR2(255);
+  BEGIN
+    l_usuario := f_usuario(p_token);
+    IF l_usuario IS NULL THEN
+      p_error(401, 'Unauthorized', 'Token invalido o expirado');
+      RETURN;
+    END IF;
+
+    IF p_id_articulo IS NULL THEN
+      p_error(400, 'Bad Request', 'El articulo es obligatorio');
+      RETURN;
+    END IF;
+    IF p_cod_persona IS NULL THEN
+      p_error(400, 'Bad Request', 'El proveedor es obligatorio');
+      RETURN;
+    END IF;
+    IF p_id_cod_proveedor IS NULL THEN
+      p_error(400, 'Bad Request', 'El codigo del proveedor es obligatorio');
+      RETURN;
+    END IF;
+
+    UPDATE articulos_proveedores
+       SET id_articulo      = p_id_articulo,
+           cod_persona      = p_cod_persona,
+           id_cod_proveedor = p_id_cod_proveedor
+     WHERE id_articulo_proveedor = p_id AND cod_empresa = p_cod_empresa;
+
+    IF SQL%ROWCOUNT = 0 THEN
+      ROLLBACK;
+      p_error(404, 'Not Found', 'Articulo-proveedor no encontrado');
+      RETURN;
+    END IF;
+    COMMIT;
+
+    APEX_JSON.OPEN_OBJECT;
+    APEX_JSON.WRITE('success', TRUE);
+    APEX_JSON.WRITE('message', 'Articulo-proveedor actualizado');
+    APEX_JSON.CLOSE_OBJECT;
+  EXCEPTION
+    WHEN DUP_VAL_ON_INDEX THEN
+      ROLLBACK;
+      p_error(409, 'Conflict', 'Ya existe esa combinacion articulo-proveedor');
+    WHEN OTHERS THEN
+      ROLLBACK;
+      IF SQLCODE = -2291 THEN
+        p_error(400, 'Bad Request', 'El articulo o el proveedor indicado no existe');
+      ELSE
+        p_error(500, 'Internal Server Error', 'Error: ' || SQLERRM);
+      END IF;
+  END ACTUALIZAR;
+
+  --------------------------------------------------------------------------
+  -- ELIMINAR
+  --------------------------------------------------------------------------
+  PROCEDURE ELIMINAR(p_token IN VARCHAR2, p_id IN NUMBER, p_cod_empresa IN NUMBER) IS
+    l_usuario VARCHAR2(255);
+  BEGIN
+    l_usuario := f_usuario(p_token);
+    IF l_usuario IS NULL THEN
+      p_error(401, 'Unauthorized', 'Token invalido o expirado');
+      RETURN;
+    END IF;
+
+    DELETE FROM articulos_proveedores
+     WHERE id_articulo_proveedor = p_id AND cod_empresa = p_cod_empresa;
+
+    IF SQL%ROWCOUNT = 0 THEN
+      ROLLBACK;
+      p_error(404, 'Not Found', 'Articulo-proveedor no encontrado');
+      RETURN;
+    END IF;
+    COMMIT;
+
+    APEX_JSON.OPEN_OBJECT;
+    APEX_JSON.WRITE('success', TRUE);
+    APEX_JSON.WRITE('message', 'Articulo-proveedor eliminado');
+    APEX_JSON.CLOSE_OBJECT;
+  EXCEPTION
+    WHEN OTHERS THEN
+      ROLLBACK;
+      p_error(500, 'Internal Server Error', 'Error: ' || SQLERRM);
+  END ELIMINAR;
+
+  --------------------------------------------------------------------------
+  -- BUSCAR_PROVEEDORES (para el selector). Hasta 30 personas de la empresa que
+  -- sean proveedores (ind_cliente_proveedor P o A) y matcheen por nombre /
+  -- nombre_fantasia / ruc / ci / cod_persona. Con q vacio, las primeras por nombre.
+  --------------------------------------------------------------------------
+  PROCEDURE BUSCAR_PROVEEDORES(p_token IN VARCHAR2, p_cod_empresa IN NUMBER, p_q IN VARCHAR2) IS
+    l_usuario VARCHAR2(255);
+    l_q       VARCHAR2(400) := '%' || UPPER(TRIM(p_q)) || '%';
+  BEGIN
+    l_usuario := f_usuario(p_token);
+    IF l_usuario IS NULL THEN
+      p_error(401, 'Unauthorized', 'Token invalido o expirado');
+      RETURN;
+    END IF;
+
+    APEX_JSON.OPEN_OBJECT;
+    APEX_JSON.WRITE('success', TRUE);
+    APEX_JSON.OPEN_ARRAY('data');
+    FOR r IN (
+        SELECT cod_persona,
+               NVL(nombre_fantasia, nombre) AS nombre,
+               nro_ruc, nro_ci
+          FROM personas
+         WHERE cod_empresa = p_cod_empresa
+           AND NVL(ind_cliente_proveedor, '-') IN ('P', 'A')
+           AND (
+                 TRIM(p_q) IS NULL
+                 OR UPPER(nombre) LIKE l_q
+                 OR UPPER(nombre_fantasia) LIKE l_q
+                 OR UPPER(nro_ruc) LIKE l_q
+                 OR UPPER(nro_ci) LIKE l_q
+                 OR TO_CHAR(cod_persona) LIKE l_q
+               )
+         ORDER BY NVL(nombre_fantasia, nombre)
+         FETCH FIRST 30 ROWS ONLY
+    ) LOOP
+      APEX_JSON.OPEN_OBJECT;
+      APEX_JSON.WRITE('cod_persona', r.cod_persona);
+      APEX_JSON.WRITE('nombre', r.nombre);
+      APEX_JSON.WRITE('nro_ruc', r.nro_ruc);
+      APEX_JSON.WRITE('nro_ci', r.nro_ci);
+      APEX_JSON.CLOSE_OBJECT;
+    END LOOP;
+    APEX_JSON.CLOSE_ARRAY;
+    APEX_JSON.CLOSE_OBJECT;
+  EXCEPTION
+    WHEN OTHERS THEN
+      p_error(500, 'Internal Server Error', 'Error: ' || SQLERRM);
+  END BUSCAR_PROVEEDORES;
+
+END PKG_ARTICULOS_PROVEEDORES_LUBRIMEC;
+/
+
+--------------------------------------------------------------------------------
+-- === 2) ENDPOINTS ORDS =====================================================
+--
+--   GET    /lubrimec/articulos-proveedores?cod_empresa=:n   -> listar
+--   GET    /lubrimec/articulos-proveedores/:id              -> obtener
+--   POST   /lubrimec/articulos-proveedores                  -> insertar
+--   PUT    /lubrimec/articulos-proveedores/:id              -> actualizar
+--   DELETE /lubrimec/articulos-proveedores/:id              -> eliminar
+--   GET    /lubrimec/proveedores/buscar?cod_empresa=:n&q=:q -> selector de proveedores
+--------------------------------------------------------------------------------
+
+BEGIN
+  BEGIN ORDS.DELETE_HANDLER('lubrimec', 'articulos-proveedores', 'GET');        EXCEPTION WHEN OTHERS THEN NULL; END;
+  BEGIN ORDS.DELETE_HANDLER('lubrimec', 'articulos-proveedores', 'POST');       EXCEPTION WHEN OTHERS THEN NULL; END;
+  BEGIN ORDS.DELETE_HANDLER('lubrimec', 'articulos-proveedores/:id', 'GET');    EXCEPTION WHEN OTHERS THEN NULL; END;
+  BEGIN ORDS.DELETE_HANDLER('lubrimec', 'articulos-proveedores/:id', 'PUT');    EXCEPTION WHEN OTHERS THEN NULL; END;
+  BEGIN ORDS.DELETE_HANDLER('lubrimec', 'articulos-proveedores/:id', 'DELETE'); EXCEPTION WHEN OTHERS THEN NULL; END;
+  BEGIN ORDS.DELETE_HANDLER('lubrimec', 'proveedores/buscar', 'GET');           EXCEPTION WHEN OTHERS THEN NULL; END;
+
+  ----------------------------------------------------------------------------
+  -- Plantilla coleccion: /articulos-proveedores
+  ----------------------------------------------------------------------------
+  BEGIN
+    ORDS.DEFINE_TEMPLATE(
+        p_module_name => 'lubrimec',
+        p_pattern     => 'articulos-proveedores',
+        p_priority    => 0,
+        p_etag_type   => 'HASH',
+        p_comments    => NULL);
+  EXCEPTION WHEN OTHERS THEN NULL; END;
+
+  -- GET /articulos-proveedores?cod_empresa=:n  -> listar
+  ORDS.DEFINE_HANDLER(
+      p_module_name => 'lubrimec',
+      p_pattern     => 'articulos-proveedores',
+      p_method      => 'GET',
+      p_source_type => 'plsql/block',
+      p_source      => q'~
+DECLARE
+    l_token       VARCHAR2(256); l_pos PLS_INTEGER;
+    l_query       VARCHAR2(4000); l_cod_empresa VARCHAR2(20);
+    FUNCTION get_qs(p_qs IN VARCHAR2, p_key IN VARCHAR2) RETURN VARCHAR2 IS
+        l_p PLS_INTEGER; l_e PLS_INTEGER; l_v VARCHAR2(4000);
+    BEGIN
+        l_p := INSTR('&' || p_qs, '&' || p_key || '=');
+        IF l_p = 0 THEN RETURN NULL; END IF;
+        l_p := l_p + LENGTH(p_key) + 1;
+        l_e := INSTR(p_qs || '&', '&', l_p);
+        l_v := SUBSTR(p_qs, l_p, l_e - l_p);
+        l_v := REPLACE(l_v, '+', ' ');
+        RETURN UTL_URL.UNESCAPE(l_v);
+    END;
+BEGIN
+    OWA_UTIL.MIME_HEADER('application/json', FALSE);
+    HTP.P('Access-Control-Allow-Origin: *');
+    HTP.P('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
+    HTP.P('Access-Control-Allow-Headers: Authorization, Content-Type');
+    OWA_UTIL.HTTP_HEADER_CLOSE;
+    l_token := :authorization;
+    IF l_token IS NOT NULL THEN
+        l_pos := INSTR(UPPER(l_token), 'BEARER ');
+        IF l_pos > 0 THEN l_token := TRIM(SUBSTR(l_token, l_pos + 7)); END IF;
+    END IF;
+    l_query       := OWA_UTIL.GET_CGI_ENV('QUERY_STRING');
+    l_cod_empresa := get_qs(l_query, 'cod_empresa');
+    PKG_ARTICULOS_PROVEEDORES_LUBRIMEC.LISTAR(p_token => l_token, p_cod_empresa => TO_NUMBER(l_cod_empresa));
+END;
+~');
+
+  ORDS.DEFINE_PARAMETER(
+      p_module_name        => 'lubrimec',
+      p_pattern            => 'articulos-proveedores',
+      p_method             => 'GET',
+      p_name               => 'Authorization',
+      p_bind_variable_name => 'authorization',
+      p_source_type        => 'HEADER',
+      p_param_type         => 'STRING',
+      p_access_method      => 'IN');
+
+  -- POST /articulos-proveedores  -> insertar
+  ORDS.DEFINE_HANDLER(
+      p_module_name => 'lubrimec',
+      p_pattern     => 'articulos-proveedores',
+      p_method      => 'POST',
+      p_source_type => 'plsql/block',
+      p_source      => q'~
+DECLARE l_token VARCHAR2(256); l_pos PLS_INTEGER;
+BEGIN
+    OWA_UTIL.MIME_HEADER('application/json', FALSE);
+    HTP.P('Access-Control-Allow-Origin: *');
+    HTP.P('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
+    HTP.P('Access-Control-Allow-Headers: Authorization, Content-Type');
+    OWA_UTIL.HTTP_HEADER_CLOSE;
+    l_token := :authorization;
+    IF l_token IS NOT NULL THEN
+        l_pos := INSTR(UPPER(l_token), 'BEARER ');
+        IF l_pos > 0 THEN l_token := TRIM(SUBSTR(l_token, l_pos + 7)); END IF;
+    END IF;
+    PKG_ARTICULOS_PROVEEDORES_LUBRIMEC.INSERTAR(
+        p_token => l_token, p_id_articulo => TO_NUMBER(:id_articulo),
+        p_cod_persona => TO_NUMBER(:cod_persona), p_id_cod_proveedor => :id_cod_proveedor,
+        p_cod_empresa => TO_NUMBER(:cod_empresa));
+END;
+~');
+
+  ORDS.DEFINE_PARAMETER(
+      p_module_name        => 'lubrimec',
+      p_pattern            => 'articulos-proveedores',
+      p_method             => 'POST',
+      p_name               => 'Authorization',
+      p_bind_variable_name => 'authorization',
+      p_source_type        => 'HEADER',
+      p_param_type         => 'STRING',
+      p_access_method      => 'IN');
+
+  ----------------------------------------------------------------------------
+  -- Plantilla item: /articulos-proveedores/:id
+  ----------------------------------------------------------------------------
+  BEGIN
+    ORDS.DEFINE_TEMPLATE(
+        p_module_name => 'lubrimec',
+        p_pattern     => 'articulos-proveedores/:id',
+        p_priority    => 0,
+        p_etag_type   => 'HASH',
+        p_comments    => NULL);
+  EXCEPTION WHEN OTHERS THEN NULL; END;
+
+  -- GET /articulos-proveedores/:id  -> obtener
+  ORDS.DEFINE_HANDLER(
+      p_module_name => 'lubrimec',
+      p_pattern     => 'articulos-proveedores/:id',
+      p_method      => 'GET',
+      p_source_type => 'plsql/block',
+      p_source      => q'~
+DECLARE
+    l_token       VARCHAR2(256); l_pos PLS_INTEGER;
+    l_query       VARCHAR2(4000); l_cod_empresa VARCHAR2(20);
+    FUNCTION get_qs(p_qs IN VARCHAR2, p_key IN VARCHAR2) RETURN VARCHAR2 IS
+        l_p PLS_INTEGER; l_e PLS_INTEGER; l_v VARCHAR2(4000);
+    BEGIN
+        l_p := INSTR('&' || p_qs, '&' || p_key || '=');
+        IF l_p = 0 THEN RETURN NULL; END IF;
+        l_p := l_p + LENGTH(p_key) + 1;
+        l_e := INSTR(p_qs || '&', '&', l_p);
+        l_v := SUBSTR(p_qs, l_p, l_e - l_p);
+        l_v := REPLACE(l_v, '+', ' ');
+        RETURN UTL_URL.UNESCAPE(l_v);
+    END;
+BEGIN
+    OWA_UTIL.MIME_HEADER('application/json', FALSE);
+    HTP.P('Access-Control-Allow-Origin: *');
+    HTP.P('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
+    HTP.P('Access-Control-Allow-Headers: Authorization, Content-Type');
+    OWA_UTIL.HTTP_HEADER_CLOSE;
+    l_token := :authorization;
+    IF l_token IS NOT NULL THEN
+        l_pos := INSTR(UPPER(l_token), 'BEARER ');
+        IF l_pos > 0 THEN l_token := TRIM(SUBSTR(l_token, l_pos + 7)); END IF;
+    END IF;
+    l_query       := OWA_UTIL.GET_CGI_ENV('QUERY_STRING');
+    l_cod_empresa := get_qs(l_query, 'cod_empresa');
+    PKG_ARTICULOS_PROVEEDORES_LUBRIMEC.OBTENER(
+        p_token => l_token, p_id => TO_NUMBER(:id), p_cod_empresa => TO_NUMBER(l_cod_empresa));
+END;
+~');
+
+  ORDS.DEFINE_PARAMETER(
+      p_module_name        => 'lubrimec',
+      p_pattern            => 'articulos-proveedores/:id',
+      p_method             => 'GET',
+      p_name               => 'Authorization',
+      p_bind_variable_name => 'authorization',
+      p_source_type        => 'HEADER',
+      p_param_type         => 'STRING',
+      p_access_method      => 'IN');
+
+  -- PUT /articulos-proveedores/:id  -> actualizar
+  ORDS.DEFINE_HANDLER(
+      p_module_name => 'lubrimec',
+      p_pattern     => 'articulos-proveedores/:id',
+      p_method      => 'PUT',
+      p_source_type => 'plsql/block',
+      p_source      => q'~
+DECLARE l_token VARCHAR2(256); l_pos PLS_INTEGER;
+BEGIN
+    OWA_UTIL.MIME_HEADER('application/json', FALSE);
+    HTP.P('Access-Control-Allow-Origin: *');
+    HTP.P('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
+    HTP.P('Access-Control-Allow-Headers: Authorization, Content-Type');
+    OWA_UTIL.HTTP_HEADER_CLOSE;
+    l_token := :authorization;
+    IF l_token IS NOT NULL THEN
+        l_pos := INSTR(UPPER(l_token), 'BEARER ');
+        IF l_pos > 0 THEN l_token := TRIM(SUBSTR(l_token, l_pos + 7)); END IF;
+    END IF;
+    PKG_ARTICULOS_PROVEEDORES_LUBRIMEC.ACTUALIZAR(
+        p_token => l_token, p_id => TO_NUMBER(:id), p_id_articulo => TO_NUMBER(:id_articulo),
+        p_cod_persona => TO_NUMBER(:cod_persona), p_id_cod_proveedor => :id_cod_proveedor,
+        p_cod_empresa => TO_NUMBER(:cod_empresa));
+END;
+~');
+
+  ORDS.DEFINE_PARAMETER(
+      p_module_name        => 'lubrimec',
+      p_pattern            => 'articulos-proveedores/:id',
+      p_method             => 'PUT',
+      p_name               => 'Authorization',
+      p_bind_variable_name => 'authorization',
+      p_source_type        => 'HEADER',
+      p_param_type         => 'STRING',
+      p_access_method      => 'IN');
+
+  -- DELETE /articulos-proveedores/:id  -> eliminar
+  ORDS.DEFINE_HANDLER(
+      p_module_name => 'lubrimec',
+      p_pattern     => 'articulos-proveedores/:id',
+      p_method      => 'DELETE',
+      p_source_type => 'plsql/block',
+      p_source      => q'~
+DECLARE
+    l_token       VARCHAR2(256); l_pos PLS_INTEGER;
+    l_query       VARCHAR2(4000); l_cod_empresa VARCHAR2(20);
+    FUNCTION get_qs(p_qs IN VARCHAR2, p_key IN VARCHAR2) RETURN VARCHAR2 IS
+        l_p PLS_INTEGER; l_e PLS_INTEGER; l_v VARCHAR2(4000);
+    BEGIN
+        l_p := INSTR('&' || p_qs, '&' || p_key || '=');
+        IF l_p = 0 THEN RETURN NULL; END IF;
+        l_p := l_p + LENGTH(p_key) + 1;
+        l_e := INSTR(p_qs || '&', '&', l_p);
+        l_v := SUBSTR(p_qs, l_p, l_e - l_p);
+        l_v := REPLACE(l_v, '+', ' ');
+        RETURN UTL_URL.UNESCAPE(l_v);
+    END;
+BEGIN
+    OWA_UTIL.MIME_HEADER('application/json', FALSE);
+    HTP.P('Access-Control-Allow-Origin: *');
+    HTP.P('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
+    HTP.P('Access-Control-Allow-Headers: Authorization, Content-Type');
+    OWA_UTIL.HTTP_HEADER_CLOSE;
+    l_token := :authorization;
+    IF l_token IS NOT NULL THEN
+        l_pos := INSTR(UPPER(l_token), 'BEARER ');
+        IF l_pos > 0 THEN l_token := TRIM(SUBSTR(l_token, l_pos + 7)); END IF;
+    END IF;
+    l_query       := OWA_UTIL.GET_CGI_ENV('QUERY_STRING');
+    l_cod_empresa := get_qs(l_query, 'cod_empresa');
+    PKG_ARTICULOS_PROVEEDORES_LUBRIMEC.ELIMINAR(
+        p_token => l_token, p_id => TO_NUMBER(:id), p_cod_empresa => TO_NUMBER(l_cod_empresa));
+END;
+~');
+
+  ORDS.DEFINE_PARAMETER(
+      p_module_name        => 'lubrimec',
+      p_pattern            => 'articulos-proveedores/:id',
+      p_method             => 'DELETE',
+      p_name               => 'Authorization',
+      p_bind_variable_name => 'authorization',
+      p_source_type        => 'HEADER',
+      p_param_type         => 'STRING',
+      p_access_method      => 'IN');
+
+  ----------------------------------------------------------------------------
+  -- /proveedores/buscar  -> selector de proveedores del formulario
+  ----------------------------------------------------------------------------
+  BEGIN
+    ORDS.DEFINE_TEMPLATE(
+        p_module_name => 'lubrimec',
+        p_pattern     => 'proveedores/buscar',
+        p_priority    => 0,
+        p_etag_type   => 'HASH',
+        p_comments    => NULL);
+  EXCEPTION WHEN OTHERS THEN NULL; END;
+
+  ORDS.DEFINE_HANDLER(
+      p_module_name => 'lubrimec',
+      p_pattern     => 'proveedores/buscar',
+      p_method      => 'GET',
+      p_source_type => 'plsql/block',
+      p_source      => q'~
+DECLARE
+    l_token       VARCHAR2(256); l_pos PLS_INTEGER;
+    l_query       VARCHAR2(4000); l_cod_empresa VARCHAR2(20); l_q VARCHAR2(4000);
+    FUNCTION get_qs(p_qs IN VARCHAR2, p_key IN VARCHAR2) RETURN VARCHAR2 IS
+        l_p PLS_INTEGER; l_e PLS_INTEGER; l_v VARCHAR2(4000);
+    BEGIN
+        l_p := INSTR('&' || p_qs, '&' || p_key || '=');
+        IF l_p = 0 THEN RETURN NULL; END IF;
+        l_p := l_p + LENGTH(p_key) + 1;
+        l_e := INSTR(p_qs || '&', '&', l_p);
+        l_v := SUBSTR(p_qs, l_p, l_e - l_p);
+        l_v := REPLACE(l_v, '+', ' ');
+        RETURN UTL_URL.UNESCAPE(l_v);
+    END;
+BEGIN
+    OWA_UTIL.MIME_HEADER('application/json', FALSE);
+    HTP.P('Access-Control-Allow-Origin: *');
+    HTP.P('Access-Control-Allow-Methods: GET, OPTIONS');
+    HTP.P('Access-Control-Allow-Headers: Authorization, Content-Type');
+    OWA_UTIL.HTTP_HEADER_CLOSE;
+    l_token := :authorization;
+    IF l_token IS NOT NULL THEN
+        l_pos := INSTR(UPPER(l_token), 'BEARER ');
+        IF l_pos > 0 THEN l_token := TRIM(SUBSTR(l_token, l_pos + 7)); END IF;
+    END IF;
+    l_query       := OWA_UTIL.GET_CGI_ENV('QUERY_STRING');
+    l_cod_empresa := get_qs(l_query, 'cod_empresa');
+    l_q           := get_qs(l_query, 'q');
+    PKG_ARTICULOS_PROVEEDORES_LUBRIMEC.BUSCAR_PROVEEDORES(
+        p_token => l_token, p_cod_empresa => TO_NUMBER(l_cod_empresa), p_q => l_q);
+END;
+~');
+
+  ORDS.DEFINE_PARAMETER(
+      p_module_name        => 'lubrimec',
+      p_pattern            => 'proveedores/buscar',
+      p_method             => 'GET',
+      p_name               => 'Authorization',
+      p_bind_variable_name => 'authorization',
+      p_source_type        => 'HEADER',
+      p_param_type         => 'STRING',
+      p_access_method      => 'IN');
+
+  COMMIT;
+EXCEPTION
+  WHEN OTHERS THEN
+    ROLLBACK;
+    RAISE;
+END;
+/

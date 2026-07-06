@@ -10,8 +10,6 @@ import { ApkInstallGuide } from "@/components/apk-install-guide";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { login } from "@/lib/api";
 import { descargarEInstalarApk } from "@/lib/apk-install";
-// Versión publicada del proyecto (misma fuente que el banner de actualización del APK).
-import versionInfo from "../../public/apk-version.json";
 import {
   esNativo,
   biometriaDisponible,
@@ -42,9 +40,20 @@ function LoginPage() {
   const [descargandoApk, setDescargandoApk] = useState(false);
   // Versión del APK instalado (solo dentro de la app nativa; en navegador queda null).
   const [apkVer, setApkVer] = useState<string | null>(null);
+  // Versión publicada del sistema. Se lee de public/apk-version.json por URL (mismo
+  // patrón que logo.png y el banner): importar desde public/ rompe el dev server de Vite.
+  const [sysVer, setSysVer] = useState<string | null>(null);
 
   // El APK se sirve desde GitHub Pages (public/lubrimesys.apk), mismo origen que la web.
   const APK_URL = `${import.meta.env.BASE_URL}lubrimesys.apk`;
+
+  // Versión publicada del sistema (para el pie del login).
+  useEffect(() => {
+    fetch(`${import.meta.env.BASE_URL}apk-version.json`, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => d?.version && setSysVer(d.version))
+      .catch(() => {});
+  }, []);
 
   // Estado de biometría (solo dentro del APK). La activación se hace desde Perfil.
   useEffect(() => {
@@ -273,7 +282,7 @@ function LoginPage() {
               </p>
 
               <p className="text-center text-[10px] text-muted-foreground/70">
-                Sistema v{versionInfo.version}
+                {sysVer ? `Sistema v${sysVer}` : ""}
                 {apkVer ? ` · APK v${apkVer}` : ""}
               </p>
             </form>

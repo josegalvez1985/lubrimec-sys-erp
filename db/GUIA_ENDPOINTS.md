@@ -157,9 +157,12 @@ Front (React):
 
 ## Archivos de referencia (tabla `marcas`)
 
-- `db/PKG_MARCAS_LUBRIMEC.sql` — paquete CRUD modelo.
-- `db/PKG_PERSONAS_LUBRIMEC.sql` — CRUD con muchos campos (fecha, códigos de 1 char, helper JSON).
-- `db/ORDS_MARCAS.sql` — script ORDS modelo (estructura plana + `DEFINE_PARAMETER` del header).
+- `db/marcas_sql.sql` — modelo CRUD: paquete + endpoints ORDS en un solo archivo
+  (sección `=== 1) PAQUETE ===` y `=== 2) ENDPOINTS ORDS ===`, estructura plana +
+  `DEFINE_PARAMETER` del header). **Todo endpoint nuevo sigue este formato unificado.**
+- `db/personas_sql.sql` — CRUD con muchos campos (fecha, códigos de 1 char, helper JSON).
+- `db/codigos_barras_sql.sql` / `db/articulos_proveedores_sql.sql` — CRUD con selector
+  (endpoint de búsqueda `articulos/buscar`, `proveedores/buscar`) para elegir la FK en el form.
 - `db/ORDS_MENU_PAGINAS.sql` — endpoint de solo lectura (sin paquete), también modelo plano.
 - `db/ORDS_VENTAS_DASHBOARD.sql` — 3 GET de solo lectura para los gráficos del dashboard
   (`ventas/anios|meses|por-dia`), `cod_empresa` opcional con default 24.
