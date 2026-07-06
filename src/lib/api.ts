@@ -1517,6 +1517,143 @@ export async function crearSubaPrecio(input: SubaPrecioInput): Promise<number> {
   return data.id_precio as number;
 }
 
+// ─── Descuentos (página 67) ──────────────────────────────────────────────────
+// CRUD de DESCUENTOS. PK id_descuento (IDENTITY). Multiempresa. Vigencia por rango
+// de fechas (fecha_desde/fecha_hasta) + porc_descuento. (Distinta de TABLA_DESCUENTOS
+// / Descuentos Escalonados de la pág 106.)
+
+export type Descuento = {
+  id_descuento: number;
+  fecha_desde: string | null; // YYYY-MM-DD
+  fecha_hasta: string | null;
+  porc_descuento: number | null;
+  cod_empresa: number;
+};
+
+export type DescuentoInput = {
+  fecha_desde: string | null;
+  fecha_hasta: string | null;
+  porc_descuento: number | null;
+  cod_empresa: number;
+};
+
+export async function listarDescuentos(codEmpresa: number): Promise<Descuento[]> {
+  const q = new URLSearchParams({ cod_empresa: String(codEmpresa) });
+  const data = await authFetch(`descuentos?${q}`);
+  return (data.data ?? []) as Descuento[];
+}
+
+export async function crearDescuento(input: DescuentoInput): Promise<number> {
+  const data = await authFetch("descuentos", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  return data.id_descuento as number;
+}
+
+export async function actualizarDescuento(id: number, input: DescuentoInput): Promise<void> {
+  await authFetch(`descuentos/${id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+}
+
+export async function eliminarDescuento(id: number, codEmpresa: number): Promise<void> {
+  const q = new URLSearchParams({ cod_empresa: String(codEmpresa) });
+  await authFetch(`descuentos/${id}?${q}`, { method: "DELETE" });
+}
+
+// ─── Cierre del Día (página 62) ──────────────────────────────────────────────
+// Solo lectura sobre V_COBROS_CLIENTES. Reporte agrupado por fecha/forma/banco/
+// transacción/vendedor. La dona del dashboard usa hoy-por-forma.
+
+export type CierreDiaFila = {
+  fecha: string; // dd/mm/yyyy (viene formateada de la vista)
+  id_forma: number | null;
+  desc_forma: string | null;
+  id_banco: number | null;
+  nombre_banco: string | null;
+  nro_transaccion: string | null;
+  nombre_vendedor: string | null;
+  total: number;
+};
+
+export type CobroPorForma = { desc_forma: string | null; total: number };
+
+export async function listarCierreDia(codEmpresa: number): Promise<CierreDiaFila[]> {
+  const q = new URLSearchParams({ cod_empresa: String(codEmpresa) });
+  const data = await authFetch(`cierre-dia?${q}`);
+  return (data.data ?? []) as CierreDiaFila[];
+}
+
+export async function cobrosHoyPorForma(codEmpresa: number): Promise<CobroPorForma[]> {
+  const q = new URLSearchParams({ cod_empresa: String(codEmpresa) });
+  const data = await authFetch(`cierre-dia/hoy-por-forma?${q}`);
+  return (data.data ?? []) as CobroPorForma[];
+}
+
+// ─── Números de Vouchers (página 71) ─────────────────────────────────────────
+// CRUD de NUMEROS_VOUCHERS. PK id_voucher (IDENTITY). FK id_persona -> personas
+// (selector con buscarPersonas). Sin cod_empresa propio: se pasa para el JOIN al
+// nombre de la persona. Rango numero_desde/hasta, fecha_vencimiento, % descuento.
+
+export type NumeroVoucher = {
+  id_voucher: number;
+  id_persona: number;
+  numero_desde: number;
+  numero_hasta: number;
+  fecha_vencimiento: string; // YYYY-MM-DD
+  porcentaje_descuento: number | null;
+  nombre_persona: string | null;
+};
+
+export type NumeroVoucherInput = {
+  id_persona: number;
+  numero_desde: number;
+  numero_hasta: number;
+  fecha_vencimiento: string;
+  porcentaje_descuento: number | null;
+};
+
+export async function listarNumerosVouchers(codEmpresa: number): Promise<NumeroVoucher[]> {
+  const q = new URLSearchParams({ cod_empresa: String(codEmpresa) });
+  const data = await authFetch(`numeros-vouchers?${q}`);
+  return (data.data ?? []) as NumeroVoucher[];
+}
+
+export async function crearNumeroVoucher(input: NumeroVoucherInput): Promise<number> {
+  const data = await authFetch("numeros-vouchers", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  return data.id_voucher as number;
+}
+
+export async function actualizarNumeroVoucher(
+  id: number,
+  input: NumeroVoucherInput,
+): Promise<void> {
+  await authFetch(`numeros-vouchers/${id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+}
+
+export async function eliminarNumeroVoucher(id: number): Promise<void> {
+  await authFetch(`numeros-vouchers/${id}`, { method: "DELETE" });
+}
+
+// Buscador de personas (todas las de la empresa) para el selector del voucher.
+export async function buscarPersonas(codEmpresa: number, q: string): Promise<ProveedorBusqueda[]> {
+  const params = new URLSearchParams({ cod_empresa: String(codEmpresa), q });
+  const data = await authFetch(`personas/buscar?${params}`);
+  return (data.data ?? []) as ProveedorBusqueda[];
+}
+
 // ─── Conteo de Efectivo (página 85, modal 86) ────────────────────────────────
 // CRUD de CONTEO_EFECTIVO. PK id_conteo (IDENTITY). total = valor·cantidad.
 // Permisos: JOSEG ve todo/filtra por fecha; resto solo hoy (lo resuelve el backend
@@ -1548,13 +1685,16 @@ export async function listarMonedasDetalle(codMoneda: number): Promise<MonedaDet
   return (data.data ?? []) as MonedaDetalle[];
 }
 
+// dias = ventana hacia atrás (default 3 en el backend). 0 = todos. Se ignora si hay fecha.
 export async function listarConteoEfectivo(
   codEmpresa: number,
   appUser: string,
   fecha?: string,
+  dias?: number,
 ): Promise<ConteoEfectivo[]> {
   const q = new URLSearchParams({ cod_empresa: String(codEmpresa), app_user: appUser });
   if (fecha) q.set("fecha", fecha);
+  if (dias != null) q.set("dias", String(dias));
   const data = await authFetch(`conteo-efectivo?${q}`);
   return (data.data ?? []) as ConteoEfectivo[];
 }

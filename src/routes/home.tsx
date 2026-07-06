@@ -79,6 +79,7 @@ import { cn } from "@/lib/utils";
 import { getSesion, cerrarSesion, getMenuPaginas, ventasPorDia, type PaginaMenu } from "@/lib/api";
 import { MarcasView } from "@/components/marcas-view";
 import { VentasDashboardChart } from "@/components/ventas-dashboard-chart";
+import { CobrosHoyChart } from "@/components/cobros-hoy-chart";
 import { VentasArticulosView } from "@/components/ventas-articulos-view";
 import { ArticulosMasVendidosView } from "@/components/articulos-mas-vendidos-view";
 import { PedidosArticulosView } from "@/components/pedidos-articulos-view";
@@ -104,6 +105,9 @@ import { DescuentosEscalonadosView } from "@/components/descuentos-escalonados-v
 import { PostVentaView } from "@/components/post-venta-view";
 import { SubaPreciosView } from "@/components/suba-precios-view";
 import { ConteoEfectivoView } from "@/components/conteo-efectivo-view";
+import { DescuentosView } from "@/components/descuentos-view";
+import { NumerosVouchersView } from "@/components/numeros-vouchers-view";
+import { CierreDiaView } from "@/components/cierre-dia-view";
 import { ArticulosView } from "@/components/articulos-view";
 import { LogsWhatsappView } from "@/components/logs-whatsapp-view";
 import { PerfilModal } from "@/components/perfil-modal";
@@ -253,6 +257,9 @@ const VISTAS: Record<number, () => ReactElement> = {
   105: () => <PostVentaView />, // Post Venta
   100: () => <SubaPreciosView />, // Suba de Precios
   85: () => <ConteoEfectivoView />, // Conteo de Efectivo
+  67: () => <DescuentosView />, // Descuentos
+  71: () => <NumerosVouchersView />, // Números de Vouchers
+  62: () => <CierreDiaView />, // Cierre del Día
 };
 
 // page_id que ya tienen algo implementado (vista propia o acción especial como el
@@ -746,6 +753,9 @@ function DashboardView({
           <span className="sm:hidden">Venta</span>
         </Button>
       </div>
+
+      {/* Cobranza de hoy por forma de cobro */}
+      <CobrosHoyChart />
 
       {/* Gráfico de ventas por día */}
       <VentasDashboardChart />

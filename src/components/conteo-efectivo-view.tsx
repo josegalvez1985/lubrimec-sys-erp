@@ -101,11 +101,20 @@ export function ConteoEfectivoView() {
 
   const [modal, setModal] = useState<ModalState>({ mode: "closed" });
   const [aEliminar, setAEliminar] = useState<ConteoEfectivo | null>(null);
-  const [fecha, setFecha] = useState(""); // filtro (solo admin)
+  const [fecha, setFecha] = useState(""); // filtro por fecha exacta (solo admin)
+  const [dias, setDias] = useState(3); // ventana inicial: últimos 3 días
+
+  // Escalones del botón "Mostrar más". 0 = todos.
+  const ESCALONES = [3, 7, 15, 30, 0];
+  const siguienteEscalon = ESCALONES.find((d) => d > dias || d === 0) ?? 0;
+
+  // La ventana de días solo aplica cuando no hay fecha exacta filtrada.
+  const diasEfectivo = fecha ? undefined : dias;
 
   const { data, isLoading, isError, error } = useQuery({
-    queryKey: ["conteo-efectivo", COD_EMPRESA, appUser, esAdmin ? fecha : "hoy"],
-    queryFn: () => listarConteoEfectivo(COD_EMPRESA, appUser, esAdmin ? fecha : undefined),
+    queryKey: ["conteo-efectivo", COD_EMPRESA, appUser, esAdmin ? fecha : "hoy", diasEfectivo],
+    queryFn: () =>
+      listarConteoEfectivo(COD_EMPRESA, appUser, esAdmin ? fecha : undefined, diasEfectivo),
     retry: false,
   });
 
@@ -241,6 +250,16 @@ export function ConteoEfectivoView() {
               </div>
             )}
           />
+        )}
+
+        {/* Cargar más días (solo admin, sin fecha exacta y si aún no es "todos") */}
+        {esAdmin && !fecha && dias !== 0 && filas.length > 0 && (
+          <div className="mt-4 flex flex-col items-center gap-1">
+            <p className="text-xs text-muted-foreground">Mostrando los últimos {dias} días</p>
+            <Button variant="outline" size="sm" onClick={() => setDias(siguienteEscalon)}>
+              {siguienteEscalon === 0 ? "Mostrar todos" : `Mostrar más (${siguienteEscalon} días)`}
+            </Button>
+          </div>
         )}
       </div>
 

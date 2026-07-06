@@ -19,7 +19,7 @@
 CREATE OR REPLACE PACKAGE PKG_CONTEO_EFECTIVO_LUBRIMEC AS
 
   PROCEDURE LISTAR(p_token IN VARCHAR2, p_cod_empresa IN NUMBER,
-                   p_app_user IN VARCHAR2, p_fecha IN VARCHAR2);
+                   p_app_user IN VARCHAR2, p_fecha IN VARCHAR2, p_dias IN NUMBER);
   PROCEDURE OBTENER(p_token IN VARCHAR2, p_id IN NUMBER, p_cod_empresa IN NUMBER);
   PROCEDURE INSERTAR(
       p_token IN VARCHAR2, p_fecha IN VARCHAR2, p_valor IN NUMBER,
@@ -56,10 +56,12 @@ CREATE OR REPLACE PACKAGE BODY PKG_CONTEO_EFECTIVO_LUBRIMEC AS
   -- Permiso: JOSEG filtra por p_fecha (o ve todo si viene NULL); el resto solo hoy.
   --------------------------------------------------------------------------
   PROCEDURE LISTAR(p_token IN VARCHAR2, p_cod_empresa IN NUMBER,
-                   p_app_user IN VARCHAR2, p_fecha IN VARCHAR2) IS
+                   p_app_user IN VARCHAR2, p_fecha IN VARCHAR2, p_dias IN NUMBER) IS
     l_usuario VARCHAR2(255);
     l_es_admin BOOLEAN := (UPPER(NVL(p_app_user, '-')) = 'JOSEG');
     l_fecha    DATE := TO_DATE(p_fecha, 'YYYY-MM-DD');
+    -- Ventana de dias hacia atras (default 3). 0 o NULL = sin limite (todo).
+    l_dias     NUMBER := NVL(p_dias, 3);
   BEGIN
     l_usuario := f_usuario(p_token);
     IF l_usuario IS NULL THEN
@@ -78,8 +80,13 @@ CREATE OR REPLACE PACKAGE BODY PKG_CONTEO_EFECTIVO_LUBRIMEC AS
           LEFT JOIN monedas m ON m.cod_moneda = a.cod_moneda
          WHERE a.cod_empresa = p_cod_empresa
            AND (
-                 -- JOSEG: filtra por fecha si viene, o ve todo
-                 (l_es_admin AND (l_fecha IS NULL OR TRUNC(a.fecha) = l_fecha))
+                 -- JOSEG: si eligio fecha, esa fecha; si no, los ultimos l_dias
+                 -- dias (o todo si l_dias <= 0).
+                 (l_es_admin AND (
+                     (l_fecha IS NOT NULL AND TRUNC(a.fecha) = l_fecha)
+                     OR (l_fecha IS NULL AND (l_dias <= 0
+                          OR TRUNC(a.fecha) >= TRUNC(SYSDATE) - (l_dias - 1)))
+                 ))
                  -- resto: solo hoy
                  OR (NOT l_es_admin AND TRUNC(a.fecha) = TRUNC(SYSDATE))
                )
@@ -461,7 +468,7 @@ BEGIN
 DECLARE
     l_token       VARCHAR2(256); l_pos PLS_INTEGER;
     l_query       VARCHAR2(4000); l_cod_empresa VARCHAR2(20);
-    l_app_user    VARCHAR2(255); l_fecha VARCHAR2(20);
+    l_app_user    VARCHAR2(255); l_fecha VARCHAR2(20); l_dias VARCHAR2(20);
     FUNCTION get_qs(p_qs IN VARCHAR2, p_key IN VARCHAR2) RETURN VARCHAR2 IS
         l_p PLS_INTEGER; l_e PLS_INTEGER; l_v VARCHAR2(4000);
     BEGIN
@@ -488,9 +495,11 @@ BEGIN
     l_cod_empresa := get_qs(l_query, 'cod_empresa');
     l_app_user    := get_qs(l_query, 'app_user');
     l_fecha       := get_qs(l_query, 'fecha');
+    l_dias        := get_qs(l_query, 'dias');
     PKG_CONTEO_EFECTIVO_LUBRIMEC.LISTAR(
         p_token => l_token, p_cod_empresa => TO_NUMBER(l_cod_empresa),
-        p_app_user => l_app_user, p_fecha => l_fecha);
+        p_app_user => l_app_user, p_fecha => l_fecha,
+        p_dias => CASE WHEN l_dias IS NULL THEN NULL ELSE TO_NUMBER(l_dias) END);
 END;
 ~');
 
