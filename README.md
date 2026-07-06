@@ -77,7 +77,7 @@ accesos rápidos se arman dinámicamente desde el endpoint `menu/paginas`.
 - **Personas** (page_id 2) — CRUD de clientes/proveedores. Tabla con búsqueda (nombre/CI/RUC/
   teléfono) y columna de acciones (ver/editar/borrar); formulario en modal para crear/editar
   (selects tipo F/J, cliente-proveedor C/P/A, sexo, fecha). "Nombre de fantasía" se autocopia del
-  "Nombre" hasta que se edite a mano. Backend: `db/PKG_PERSONAS_LUBRIMEC.sql`, `db/ORDS_PERSONAS.sql`.
+  "Nombre" hasta que se edite a mano. Backend: `db/personas_sql.sql`.
 - **Pedidos de Artículos** (page_id 63) — grilla de compras/ventas/existencia/costo por artículo.
   Filtrado 100% en el front: búsqueda + facetas dependientes en sidebar (En Falta, Rubro, Proveedor)
   y orden por columnas. Check + cantidad por fila y botón "Copiar pedido" al portapapeles. Backend:
@@ -101,8 +101,14 @@ accesos rápidos se arman dinámicamente desde el endpoint `menu/paginas`.
   `handleNav` de `src/routes/home.tsx`.
 - **Mensajes a WhatsApp** (page_id 117) — envío masivo de texto/imagen vía wasenderapi:
   números desde la BD (`numeros_whatsapp`) o manuales, importar CSV de contactos, envío async con
-  progreso, borrador persistente, guía de uso integrada. Backend: `db/PKG_WHATSAPP_LUBRIMEC.sql`,
-  `db/ORDS_WHATSAPP.sql`, `db/PROC_ENVIAR_MENSAJES_WHATSAPP.sql`, `db/WHATSAPP_DDL.sql`.
+  progreso, borrador persistente, guía de uso integrada. Backend: `db/whatsapp_sql.sql`
+  (paquete + endpoints), `db/PROC_ENVIAR_MENSAJES_WHATSAPP.sql`, `db/WHATSAPP_DDL.sql`.
+- **Códigos de Barras** (page_id 24) — CRUD de `codigos_barras`. El artículo se elige con un
+  buscador con debounce (endpoint `articulos/buscar`); grilla con `DataTable` + export. Backend:
+  `db/codigos_barras_sql.sql`.
+- **Artículos-Proveedores** (page_id 27) — CRUD de `articulos_proveedores` (relación artículo↔
+  proveedor + código del proveedor). Dos buscadores con debounce (`articulos/buscar`,
+  `proveedores/buscar`). Backend: `db/articulos_proveedores_sql.sql`.
 
 ## Deploy
 

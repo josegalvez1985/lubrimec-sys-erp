@@ -1081,3 +1081,164 @@ export async function buscarProveedores(codEmpresa: number, q: string): Promise<
   const data = await authFetch(`proveedores/buscar?${params}`);
   return (data.data ?? []) as ProveedorBusqueda[];
 }
+
+// ─── Vehículos-Repuestos (página 94) ─────────────────────────────────────────
+// CRUD de VEHICULOS_REPUESTOS. PK id_vehiculo (IDENTITY). UK (cod_empresa, modelo,
+// codigo_oem). Relaciona un modelo de vehículo con el código OEM de un repuesto.
+
+export type VehiculoRepuesto = {
+  id_vehiculo: number;
+  cod_empresa: number;
+  modelo: string;
+  codigo_oem: string;
+};
+
+export type VehiculoRepuestoInput = {
+  modelo: string;
+  codigo_oem: string;
+  cod_empresa: number;
+};
+
+export async function listarVehiculosRepuestos(codEmpresa: number): Promise<VehiculoRepuesto[]> {
+  const q = new URLSearchParams({ cod_empresa: String(codEmpresa) });
+  const data = await authFetch(`vehiculos-repuestos?${q}`);
+  return (data.data ?? []) as VehiculoRepuesto[];
+}
+
+export async function crearVehiculoRepuesto(input: VehiculoRepuestoInput): Promise<number> {
+  const data = await authFetch("vehiculos-repuestos", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  return data.id_vehiculo as number;
+}
+
+export async function actualizarVehiculoRepuesto(
+  id: number,
+  input: VehiculoRepuestoInput,
+): Promise<void> {
+  await authFetch(`vehiculos-repuestos/${id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+}
+
+export async function eliminarVehiculoRepuesto(id: number, codEmpresa: number): Promise<void> {
+  const q = new URLSearchParams({ cod_empresa: String(codEmpresa) });
+  await authFetch(`vehiculos-repuestos/${id}?${q}`, { method: "DELETE" });
+}
+
+// ─── Artículos (página 4) ────────────────────────────────────────────────────
+// CRUD de ARTICULOS. PK id_articulo por trigger. FKs: iva, unidad, rubro, marca,
+// viscosidad. Imagen en BLOB (base64 en JSON). LISTAR NO trae el blob: solo
+// tiene_imagen + descripciones del JOIN. OBTENER trae imagen_base64. Campos
+// calculados por otros procesos (existencia, cantidad_vendida, costo_ultima_compra,
+// fecha_ultimo_inventario) son de solo lectura: se muestran pero no se envían.
+
+export type Articulo = {
+  id_articulo: number;
+  descripcion: string | null;
+  cod_iva: number | null;
+  cod_unidad_medida: string | null;
+  estado: string | null; // 'A' activo / 'I' inactivo
+  es_activo: string | null; // 'S' / 'N'
+  id_rubro: number | null;
+  id_marca: number | null;
+  id_viscosidad: number | null;
+  codigo_oem: string | null;
+  precio_venta: number | null;
+  valoracion: number | null;
+  existencia: number | null;
+  cantidad_vendida: number | null;
+  costo_ultima_compra: number | null;
+  fecha_ultimo_inventario: string | null;
+  tiene_imagen: number; // 1/0
+  descripcion_rubro: string | null;
+  descripcion_marca: string | null;
+  descripcion_viscosidad: string | null;
+};
+
+// Detalle de OBTENER: agrega la imagen y quita los campos derivados del JOIN.
+export type ArticuloDetalle = {
+  id_articulo: number;
+  descripcion: string | null;
+  cod_iva: number | null;
+  cod_unidad_medida: string | null;
+  estado: string | null;
+  es_activo: string | null;
+  id_rubro: number | null;
+  id_marca: number | null;
+  id_viscosidad: number | null;
+  codigo_oem: string | null;
+  precio_venta: number | null;
+  valoracion: number | null;
+  existencia: number | null;
+  cantidad_vendida: number | null;
+  costo_ultima_compra: number | null;
+  fecha_ultimo_inventario: string | null;
+  nombre_imagen: string | null;
+  mime_type: string | null;
+  imagen_base64: string | null;
+  cod_empresa: number;
+};
+
+// Lo que el usuario escribe. imagen_base64/nombre/mime null = no cambiar la imagen.
+export type ArticuloInput = {
+  descripcion: string | null;
+  cod_iva: number | null;
+  cod_unidad_medida: string | null;
+  id_rubro: number | null;
+  id_marca: number | null;
+  id_viscosidad: number | null;
+  codigo_oem: string | null;
+  valoracion: number | null;
+  estado: string | null;
+  es_activo: string | null;
+  imagen_base64: string | null;
+  nombre_imagen: string | null;
+  mime_type: string | null;
+  cod_empresa: number;
+};
+
+export async function listarArticulos(codEmpresa: number): Promise<Articulo[]> {
+  const q = new URLSearchParams({ cod_empresa: String(codEmpresa) });
+  const data = await authFetch(`articulos?${q}`);
+  return (data.data ?? []) as Articulo[];
+}
+
+export async function obtenerArticulo(id: number, codEmpresa: number): Promise<ArticuloDetalle> {
+  const q = new URLSearchParams({ cod_empresa: String(codEmpresa) });
+  const data = await authFetch(`articulos/${id}?${q}`);
+  return data.data as ArticuloDetalle;
+}
+
+export async function crearArticulo(input: ArticuloInput): Promise<number> {
+  const data = await authFetch("articulos", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  return data.id_articulo as number;
+}
+
+export async function actualizarArticulo(id: number, input: ArticuloInput): Promise<void> {
+  await authFetch(`articulos/${id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+}
+
+export async function eliminarArticulo(id: number, codEmpresa: number): Promise<void> {
+  const q = new URLSearchParams({ cod_empresa: String(codEmpresa) });
+  await authFetch(`articulos/${id}?${q}`, { method: "DELETE" });
+}
+
+// URL directa del BLOB de la imagen (endpoint público, para <img src>). No usa
+// authFetch: el navegador no manda Authorization en un <img>.
+export function urlImagenArticulo(id: number, codEmpresa: number): string {
+  const q = new URLSearchParams({ cod_empresa: String(codEmpresa) });
+  return url(`articulos/${id}/imagen?${q}`);
+}

@@ -96,6 +96,9 @@ import { ViscosidadView } from "@/components/viscosidad-view";
 import { WhatsappView } from "@/components/whatsapp-view";
 import { CodigosBarrasView } from "@/components/codigos-barras-view";
 import { ArticulosProveedoresView } from "@/components/articulos-proveedores-view";
+import { MonedasDetalleView } from "@/components/monedas-detalle-view";
+import { VehiculosRepuestosView } from "@/components/vehiculos-repuestos-view";
+import { ArticulosView } from "@/components/articulos-view";
 import { PerfilModal } from "@/components/perfil-modal";
 
 // Icono por page_id (APEX). Tiene prioridad sobre el match por palabra clave.
@@ -216,6 +219,7 @@ type NavKey = "dashboard" | number;
 // Las páginas del menú sin entrada aquí muestran un Placeholder con su título.
 const VISTAS: Record<number, () => ReactElement> = {
   2: () => <PersonasView />, // Personas
+  4: () => <ArticulosView />, // Artículos
   6: () => <MarcasView />, // Marcas
   10: () => <IvaView />, // IVA
   12: () => <EmpresasView />, // Empresas
@@ -233,6 +237,8 @@ const VISTAS: Record<number, () => ReactElement> = {
   117: () => <WhatsappView />, // Mensajes a Whatsapp
   24: () => <CodigosBarrasView />, // Códigos de Barras
   27: () => <ArticulosProveedoresView />, // Artículos-Proveedores
+  83: () => <MonedasDetalleView />, // Detalle de Monedas
+  94: () => <VehiculosRepuestosView />, // Vehículos-Repuestos
 };
 
 // page_id que ya tienen algo implementado (vista propia o acción especial como el
