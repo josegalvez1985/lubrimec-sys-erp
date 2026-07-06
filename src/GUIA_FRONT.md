@@ -199,11 +199,36 @@ Notas de `Column<T>`:
 - `num: true` alinea a la derecha y ordena numéricamente.
 - `sortable`/`filterable`/`hideable` = `false` para desactivar por columna (la columna principal
   suele ir `hideable: false`).
+- `footer: (rows) => ReactNode` = **fila de totales al pie** (el "sum on break" de APEX). Recibe las
+  filas visibles ya filtradas/ordenadas. Si **ninguna** columna define `footer`, no se muestra el pie.
+  Sumar sobre las filas: `footer: (rows) => fmtNum(rows.reduce((a, r) => a + (r.total ?? 0), 0))`.
+  Poner `footer: () => "Total"` en la primera columna como etiqueta. Modelo: `conteo-efectivo-view.tsx`.
 - El componente **no** hace fetch ni pagina: recibe el array ya traído (regla "sin caché" intacta).
 - El search/filtro reemplaza al `<Input>` manual: quitar el estado `filtro` local de la vista.
 - **Export Excel** (`exportName`): exporta las columnas **visibles** con `accessor` y las filas
   **ya filtradas/ordenadas** (lo que se ve en pantalla), reusando `exportarExcel` de
   `src/lib/export.ts`. Sin `exportName` no se muestra el botón.
+
+## Reglas transversales (obligatorias en toda vista nueva)
+
+- **Montos con separador de miles — SIEMPRE.** Todo campo de monto/importe/precio/total/cantidad
+  grande lleva separador de miles (es-PY), tanto al mostrar como al editar.
+  - **Mostrar** (grillas, campos readonly, reportes): `Intl.NumberFormat("es-PY", { maximumFractionDigits: 0 })`
+    para guaraníes. Ver `fmtNum`/`fmtMonto` en las vistas.
+  - **Editar**: NO usar `<input type="number">` (no admite separador). Usar el componente
+    **`src/components/ui/input-monto.tsx`** (`InputMonto`): input de texto con miles en vivo, trabaja
+    con `value: number | null` + `onValueChange`, prop `maxDecimals` (0 = guaraníes). Modelos:
+    `suba-precios-view`, `compras-pagos-view`, `descuentos-escalonados-view`, `conteo-efectivo-view`.
+  - Porcentajes, nro de recibo e IDs **no** son montos: pueden seguir como `type="number"`.
+- **Botón "Limpiar" en toda vista con filtros.** Si la vista tiene filtros propios (facetas, checkboxes,
+  fecha, search fuera de la grilla), agregar un botón **"Limpiar"** (ícono `X`) que resetee todos los
+  filtros; mostrarlo solo si hay alguno activo. Etiqueta "Limpiar" (no "Restablecer" aunque el APEX
+  diga eso). Modelos: `post-venta-view`, `suba-precios-view`, `conteo-efectivo-view`. (El `DataTable`
+  ya trae su propio "Limpiar" para search/filtros de columna.)
+- **Permisos por usuario (app_user).** Cuando el APEX restringe por usuario (ej. solo `JOSEG` ve
+  ciertos datos/campos), replicarlo: el front lee `getSesion().app_user` (viene en MAYÚSCULAS) y el
+  backend recibe `app_user` como query param para decidir el filtro/visibilidad. Modelo: `conteo-efectivo`
+  (JOSEG filtra por fecha y ve el panel de totales; el resto solo ve el día de hoy, sin panel).
 
 ## Gotchas de UI
 
