@@ -955,3 +955,129 @@ export async function logsWhatsapp(desde?: string): Promise<LogWhatsapp[]> {
     return [];
   }
 }
+
+// ─── Códigos de Barras (página 24) ───────────────────────────────────────────
+// CRUD de CODIGOS_BARRAS. PK id_barra. descripcion_articulo/codigo_oem vienen del
+// JOIN a articulos (solo lectura). El artículo se elige con buscarArticulos.
+
+export type CodigoBarra = {
+  id_barra: number;
+  id_articulo: number;
+  cod_barra: string;
+  cod_empresa: number;
+  descripcion_articulo: string | null;
+  codigo_oem: string | null;
+};
+
+export type CodigoBarraInput = {
+  id_articulo: number;
+  cod_barra: string;
+  cod_empresa: number;
+};
+
+export type ArticuloBusqueda = {
+  id_articulo: number;
+  descripcion: string | null;
+  codigo_oem: string | null;
+};
+
+export async function listarCodigosBarras(codEmpresa: number): Promise<CodigoBarra[]> {
+  const q = new URLSearchParams({ cod_empresa: String(codEmpresa) });
+  const data = await authFetch(`codigos-barras?${q}`);
+  return (data.data ?? []) as CodigoBarra[];
+}
+
+export async function crearCodigoBarra(input: CodigoBarraInput): Promise<number> {
+  const data = await authFetch("codigos-barras", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  return data.id_barra as number;
+}
+
+export async function actualizarCodigoBarra(idBarra: number, input: CodigoBarraInput): Promise<void> {
+  await authFetch(`codigos-barras/${idBarra}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+}
+
+export async function eliminarCodigoBarra(idBarra: number, codEmpresa: number): Promise<void> {
+  const q = new URLSearchParams({ cod_empresa: String(codEmpresa) });
+  await authFetch(`codigos-barras/${idBarra}?${q}`, { method: "DELETE" });
+}
+
+export async function buscarArticulos(codEmpresa: number, q: string): Promise<ArticuloBusqueda[]> {
+  const params = new URLSearchParams({ cod_empresa: String(codEmpresa), q });
+  const data = await authFetch(`articulos/buscar?${params}`);
+  return (data.data ?? []) as ArticuloBusqueda[];
+}
+
+// ─── Artículos-Proveedores (página 27) ───────────────────────────────────────
+// CRUD de ARTICULOS_PROVEEDORES. PK id_articulo_proveedor. descripcion_articulo/
+// codigo_oem/nombre_proveedor vienen del JOIN (solo lectura). El artículo se elige
+// con buscarArticulos y el proveedor con buscarProveedores.
+
+export type ArticuloProveedor = {
+  id_articulo_proveedor: number;
+  id_articulo: number;
+  cod_persona: number;
+  id_cod_proveedor: string;
+  cod_empresa: number;
+  descripcion_articulo: string | null;
+  codigo_oem: string | null;
+  nombre_proveedor: string | null;
+};
+
+export type ArticuloProveedorInput = {
+  id_articulo: number;
+  cod_persona: number;
+  id_cod_proveedor: string;
+  cod_empresa: number;
+};
+
+export type ProveedorBusqueda = {
+  cod_persona: number;
+  nombre: string | null;
+  nro_ruc: string | null;
+  nro_ci: string | null;
+};
+
+export async function listarArticulosProveedores(codEmpresa: number): Promise<ArticuloProveedor[]> {
+  const q = new URLSearchParams({ cod_empresa: String(codEmpresa) });
+  const data = await authFetch(`articulos-proveedores?${q}`);
+  return (data.data ?? []) as ArticuloProveedor[];
+}
+
+export async function crearArticuloProveedor(input: ArticuloProveedorInput): Promise<number> {
+  const data = await authFetch("articulos-proveedores", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  return data.id_articulo_proveedor as number;
+}
+
+export async function actualizarArticuloProveedor(
+  id: number,
+  input: ArticuloProveedorInput,
+): Promise<void> {
+  await authFetch(`articulos-proveedores/${id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+}
+
+export async function eliminarArticuloProveedor(id: number, codEmpresa: number): Promise<void> {
+  const q = new URLSearchParams({ cod_empresa: String(codEmpresa) });
+  await authFetch(`articulos-proveedores/${id}?${q}`, { method: "DELETE" });
+}
+
+export async function buscarProveedores(codEmpresa: number, q: string): Promise<ProveedorBusqueda[]> {
+  const params = new URLSearchParams({ cod_empresa: String(codEmpresa), q });
+  const data = await authFetch(`proveedores/buscar?${params}`);
+  return (data.data ?? []) as ProveedorBusqueda[];
+}
