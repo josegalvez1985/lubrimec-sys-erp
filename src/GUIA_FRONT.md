@@ -108,10 +108,31 @@ Cuando un campo es una FK (elegir un artículo, un proveedor…), **no** cargar 
 
 - El backend expone `articulos/buscar?cod_empresa=&q=` y `proveedores/buscar?...` (ver
   `db/GUIA_ENDPOINTS.md`, sección "Selector de FK"). Cliente: `buscarArticulos` / `buscarProveedores`.
-- En el front, un componente `BuscadorSelect` genérico (en `articulos-proveedores-view.tsx`): input
-  con `useState` + debounce de 300ms → `useQuery({ enabled: abierto })` → dropdown de resultados;
-  al elegir guarda el id (para el input) y un label legible (para mostrar). La grilla usa `DataTable`
-  y muestra las columnas de solo lectura del JOIN (descripción del artículo, nombre del proveedor).
+- Componente compartido **`src/components/ui/buscador-select.tsx`** (`BuscadorSelect`): input con
+  debounce de 300ms → `useQuery({ enabled: abierto })` → dropdown de resultados; al elegir llama
+  `onSelect(item)`. Usado en `articulos-proveedores-view`, `codigos-barras-view` y
+  `vehiculos-repuestos-view`. **No dupliques** este componente por vista; importá el de `ui/`.
+- **Gotcha:** no pongas un `<Input>` de "fallback manual" con el mismo valor **debajo** del
+  `BuscadorSelect` — su dropdown es `absolute` y el input siguiente compite/lo tapa, y parecía "no
+  funcionar" (pasó en la pág 94). Si necesitás mostrar el valor elegido, usá un `<p>` de texto.
+- La grilla usa `DataTable` y muestra las columnas de solo lectura del JOIN (descripción del
+  artículo, nombre del proveedor).
+
+### Imágenes en BLOB (modelos: `articulos-view`, `monedas-view`)
+
+Tablas con imagen (`archivo_imagen BLOB` + `mime_type`). Dos caminos según el tamaño esperado:
+
+- **Subir / editar:** el archivo se lee a base64 en el navegador (`FileReader`/`btoa` por chunks) y
+  viaja como `imagen_base64` en el JSON del POST/PUT. El backend lo convierte a BLOB. Enviar `null`
+  = no tocar la imagen (patrón de `monedas_detalle` y `articulos`).
+- **Mostrar en un modal (una imagen):** el `OBTENER` (`GET tabla/:id`) devuelve `imagen_base64`; el
+  front la pinta con `src={`data:${mime};base64,${b64}`}`. Bien para 1 imagen a la vez.
+- **Thumbnail en una grilla (muchas):** el `LISTAR` **no** trae los blobs (solo un flag
+  `tiene_imagen`); cada fila apunta a un endpoint **público** que sirve el BLOB directo:
+  `<img src={urlImagenArticulo(id, codEmpresa)}>` → `GET articulos/:id/imagen`. Es público porque el
+  navegador no manda `Authorization` en un `<img>`. Cliente: helper `urlImagenArticulo` en `api.ts`.
+- **Proxy y binarios:** `src/routes/api/ords.$.ts` reenvía el body como `arrayBuffer()` (no
+  `res.text()`, que corrompe binarios decodificándolos como UTF-8). Sirve igual para JSON e imágenes.
 
 ## Sin caché: todo dato se consulta en el momento
 

@@ -99,6 +99,7 @@ import { ArticulosProveedoresView } from "@/components/articulos-proveedores-vie
 import { MonedasDetalleView } from "@/components/monedas-detalle-view";
 import { VehiculosRepuestosView } from "@/components/vehiculos-repuestos-view";
 import { ArticulosView } from "@/components/articulos-view";
+import { LogsWhatsappView } from "@/components/logs-whatsapp-view";
 import { PerfilModal } from "@/components/perfil-modal";
 
 // Icono por page_id (APEX). Tiene prioridad sobre el match por palabra clave.
@@ -239,6 +240,7 @@ const VISTAS: Record<number, () => ReactElement> = {
   27: () => <ArticulosProveedoresView />, // Artículos-Proveedores
   83: () => <MonedasDetalleView />, // Detalle de Monedas
   94: () => <VehiculosRepuestosView />, // Vehículos-Repuestos
+  120: () => <LogsWhatsappView />, // Logs de WhatsApp
 };
 
 // page_id que ya tienen algo implementado (vista propia o acción especial como el

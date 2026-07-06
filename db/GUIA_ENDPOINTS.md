@@ -75,6 +75,17 @@ endpoints de solo lectura sin paquete (`ORDS_MENU_PAGINAS.sql`, `ORDS_VENTAS_*.s
   filas que matcheen `q` (por descripción / código / id) para alimentar el buscador del formulario
   (modelos: `BUSCAR_ARTICULOS` en `codigos_barras_sql.sql`, `BUSCAR_PROVEEDORES` en
   `articulos_proveedores_sql.sql`; endpoints `articulos/buscar`, `proveedores/buscar`).
+- **Imagen en BLOB** (modelo: `articulos_sql.sql`). Reglas para no serializar megas de más:
+  - `LISTAR` **no** devuelve el blob: solo `CASE WHEN DBMS_LOB.GETLENGTH(archivo_imagen) > 0 THEN 1
+    ELSE 0 END AS tiene_imagen`.
+  - `OBTENER` devuelve `imagen_base64` con `APEX_WEB_SERVICE.BLOB2CLOBBASE64(blob)`.
+  - `INSERTAR`/`ACTUALIZAR` reciben `p_imagen_base64 IN CLOB`; se convierte con
+    `APEX_WEB_SERVICE.CLOBBASE642BLOB`. En ACTUALIZAR, si viene NULL/vacío **no** se toca la imagen
+    (solo se actualizan los campos de negocio); si viene, se hace un UPDATE aparte del blob.
+  - **Servir el thumbnail:** `PROCEDURE SERVIR_IMAGEN(p_id, p_cod_empresa)` que emite el blob con
+    `OWA_UTIL.MIME_HEADER(mime)` + `WPG_DOCLOAD.DOWNLOAD_FILE(blob)`. Su endpoint `tabla/:id/imagen`
+    es **público** (sin `DEFINE_PARAMETER` de Authorization): el `<img>` del navegador no manda el
+    header. El proxy (`ords.$.ts`) reenvía binarios como `arrayBuffer`, no como texto.
 - Estados: 201 Created, 400 Bad Request, 404 Not Found, 401 Unauthorized,
   500 Internal Server Error.
 
@@ -162,9 +173,11 @@ Gotcha de PL/SQL (paquete):
 
 Desde 2026-07: **un solo archivo por página** con el paquete + los endpoints ORDS juntos, nombrado
 `db/<tabla>_sql.sql` (minúsculas). Ejecutar completo como JOSEGALVEZ: corre primero el paquete,
-luego el bloque `BEGIN ... ORDS.DEFINE_* ... END;`. Ejemplos: `personas_sql.sql`, `iva_sql.sql`,
-`monedas_sql.sql`, `rubros_sql.sql`. (Las páginas viejas — marcas, whatsapp, ventas — quedan como
-`PKG_*.sql` + `ORDS_*.sql` separados; no hace falta migrarlas.)
+luego el bloque `BEGIN ... ORDS.DEFINE_* ... END;`. Ejemplos con CRUD simple: `marcas_sql.sql`,
+`personas_sql.sql`, `iva_sql.sql`, `rubros_sql.sql`, `vehiculos_repuestos_sql.sql`. Con selector de
+FK: `codigos_barras_sql.sql`, `articulos_proveedores_sql.sql`. Con imagen BLOB: `articulos_sql.sql`,
+`monedas_sql.sql`. (Solo quedan como `ORDS_*.sql` sueltos los endpoints de solo lectura sin paquete:
+menu-paginas, ventas-*, pedidos, articulos-mas-vendidos.)
 
 ## Formularios cabecera + detalle (maestro-detalle)
 
