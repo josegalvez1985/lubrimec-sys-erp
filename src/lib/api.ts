@@ -1242,3 +1242,40 @@ export function urlImagenArticulo(id: number, codEmpresa: number): string {
   const q = new URLSearchParams({ cod_empresa: String(codEmpresa) });
   return url(`articulos/${id}/imagen?${q}`);
 }
+
+// ─── Logs de WhatsApp (página 120) ───────────────────────────────────────────
+// Auditoría de envíos (LOG_WHATSAPP), solo lectura. Sin cod_empresa (es global).
+// Distinto de whatsapp/logs (ese es el polling del envío en curso).
+
+// Fila de LOG_WHATSAPP para la auditoría (pág 120). Nombre distinto de LogWhatsapp
+// (ese es el del polling del envío en curso, pág 117, con otra forma).
+export type LogWhatsappRegistro = {
+  id: number;
+  fecha: string; // DD/MM/YYYY HH24:MI:SS
+  numero_original: string | null;
+  numero_limpio: string | null;
+  mensaje: string | null;
+  estado: string | null; // ENVIADO / ERROR / INVALIDO / EXCEPCION
+  http_status: number | null;
+  detalle_error: string | null;
+};
+
+export type LogWhatsappFiltros = {
+  numero?: string;
+  estado?: string;
+  fecha_desde?: string; // YYYY-MM-DD
+  fecha_hasta?: string; // YYYY-MM-DD
+};
+
+export async function listarLogsWhatsapp(
+  filtros: LogWhatsappFiltros = {},
+): Promise<LogWhatsappRegistro[]> {
+  const q = new URLSearchParams();
+  if (filtros.numero) q.set("numero", filtros.numero);
+  if (filtros.estado) q.set("estado", filtros.estado);
+  if (filtros.fecha_desde) q.set("fecha_desde", filtros.fecha_desde);
+  if (filtros.fecha_hasta) q.set("fecha_hasta", filtros.fecha_hasta);
+  const qs = q.toString();
+  const data = await authFetch(`logs-whatsapp${qs ? `?${qs}` : ""}`);
+  return (data.data ?? []) as LogWhatsappRegistro[];
+}

@@ -109,6 +109,17 @@ accesos rápidos se arman dinámicamente desde el endpoint `menu/paginas`.
 - **Artículos-Proveedores** (page_id 27) — CRUD de `articulos_proveedores` (relación artículo↔
   proveedor + código del proveedor). Dos buscadores con debounce (`articulos/buscar`,
   `proveedores/buscar`). Backend: `db/articulos_proveedores_sql.sql`.
+- **Artículos** (page_id 4) — CRUD de `articulos` (tabla maestra). FKs (IVA, unidad, rubro, marca,
+  viscosidad) por `<select>` de catálogos; imagen en BLOB. `precio_venta`, `existencia`,
+  `cantidad_vendida`, `costo_ultima_compra`, `fecha_ultimo_inventario` son **solo lectura** (los
+  mantienen otros procesos). La grilla muestra un **thumbnail** por el endpoint público
+  `articulos/:id/imagen`; el modal de detalle trae la imagen grande vía `articulos/:id` (base64).
+  Backend: `db/articulos_sql.sql`.
+- **Detalle de Monedas** (page_id 83) — vista propia del detalle de `monedas_detalle`: selector de
+  moneda + denominaciones con imagen. Reutiliza `DetalleMoneda` de la página 18. Sin backend nuevo.
+- **Vehículos-Repuestos** (page_id 94) — CRUD de `vehiculos_repuestos` (modelo ↔ código OEM). El
+  OEM se elige con un buscador que toma el `codigo_oem` de un artículo (endpoint `articulos/buscar`).
+  Backend: `db/vehiculos_repuestos_sql.sql`.
 
 ## Deploy
 
