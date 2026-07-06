@@ -169,6 +169,25 @@ Gotcha de PL/SQL (paquete):
   (`PLS-00302`). Fix: usar una **variable tipada** puesta a NULL (ej. `l_b64 CLOB := NULL;`
   `APEX_JSON.WRITE('imagen_base64', l_b64);`). Pasó en `PKG_MONEDAS_LUBRIMEC`.
 
+## Permisos por usuario (app_user)
+
+Cuando el APEX restringe qué ve cada usuario (ej. solo `JOSEG` ve todo o ciertos campos), replicarlo
+en el paquete: recibir `p_app_user IN VARCHAR2` y decidir el filtro/visibilidad dentro del PL/SQL.
+- El front pasa `app_user` como **query param** (`?app_user=JOSEG&...`); leerlo con `get_qs` como
+  cualquier otro query param. Viene en MAYÚSCULAS (igual que en `menu/paginas`).
+- Ejemplo de regla (pág 85 conteo-efectivo): `l_es_admin := (UPPER(NVL(p_app_user,'-')) = 'JOSEG')`;
+  si es admin filtra por fecha opcional, si no fuerza `TRUNC(fecha)=TRUNC(SYSDATE)`.
+- Un endpoint de **resumen/totales** solo para admin devuelve `{ visible:false }` cuando no es JOSEG
+  (el front no dibuja el panel). Modelo: `PKG_CONTEO_EFECTIVO_LUBRIMEC.RESUMEN` + endpoint
+  `conteo-efectivo/resumen`.
+
+## Sub-ruta fija junto a `/:id` (ej. `/resumen`, `/buscar`)
+
+Una plantilla con segmento fijo (`tabla/resumen`) que convive con `tabla/:id` puede colisionar: si la
+petición cae en `:id`, `TO_NUMBER('resumen')` revienta → **400**. Fijar `p_priority => 1` en la
+plantilla del segmento fijo para que ORDS la matchee **antes** que `:id` (que va con prioridad 0).
+Modelo: `conteo-efectivo/resumen`.
+
 ## Convención de archivos SQL
 
 Desde 2026-07: **un solo archivo por página** con el paquete + los endpoints ORDS juntos, nombrado
