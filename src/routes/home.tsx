@@ -89,6 +89,7 @@ import { ExistenciaArticulosView } from "@/components/existencia-articulos-view"
 import { ComprasVsVentasView } from "@/components/compras-vs-ventas-view";
 import { SaldosProveedoresView } from "@/components/saldos-proveedores-view";
 import { ConsultaInventariosView } from "@/components/consulta-inventarios-view";
+import { PuntoVentaView } from "@/components/punto-venta-view";
 import { VentasArticulosView } from "@/components/ventas-articulos-view";
 import { ArticulosMasVendidosView } from "@/components/articulos-mas-vendidos-view";
 import { PedidosArticulosView } from "@/components/pedidos-articulos-view";
@@ -287,6 +288,7 @@ const VISTAS: Record<number, () => ReactElement> = {
   75: () => <ComprasVsVentasView />, // Compras Vs Ventas
   79: () => <SaldosProveedoresView />, // Saldos de Proveedores
   80: () => <ConsultaInventariosView />, // Consulta de Inventarios
+  39: () => <PuntoVentaView />, // Punto de Venta
 };
 
 // page_id que ya tienen algo implementado (vista propia o acción especial como el
