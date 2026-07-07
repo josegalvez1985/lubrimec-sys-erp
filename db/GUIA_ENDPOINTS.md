@@ -190,13 +190,37 @@ Modelo: `conteo-efectivo/resumen`.
 
 ## Convención de archivos SQL
 
-Desde 2026-07: **un solo archivo por página** con el paquete + los endpoints ORDS juntos, nombrado
-`db/<tabla>_sql.sql` (minúsculas). Ejecutar completo como JOSEGALVEZ: corre primero el paquete,
-luego el bloque `BEGIN ... ORDS.DEFINE_* ... END;`. Ejemplos con CRUD simple: `marcas_sql.sql`,
-`personas_sql.sql`, `iva_sql.sql`, `rubros_sql.sql`, `vehiculos_repuestos_sql.sql`. Con selector de
-FK: `codigos_barras_sql.sql`, `articulos_proveedores_sql.sql`. Con imagen BLOB: `articulos_sql.sql`,
-`monedas_sql.sql`. (Solo quedan como `ORDS_*.sql` sueltos los endpoints de solo lectura sin paquete:
-menu-paginas, ventas-*, pedidos, articulos-mas-vendidos.)
+**Un archivo por página, nombre en minúsculas con sufijo `_sql.sql` y SIN prefijo `ORDS_`** —
+aunque el archivo sea solo endpoints de lectura sin paquete. Nombrar `db/<tabla_o_recurso>_sql.sql`.
+El nombre del archivo **no** afecta las rutas ORDS (esas son literales dentro de
+`ORDS.DEFINE_TEMPLATE`). Ejecutar completo como JOSEGALVEZ: corre primero el paquete (si hay), luego
+el bloque `BEGIN ... ORDS.DEFINE_* ... END;`.
+
+- **CRUD simple:** `marcas_sql.sql`, `personas_sql.sql`, `iva_sql.sql`, `rubros_sql.sql`.
+- **Selector de FK:** `codigos_barras_sql.sql`, `articulos_proveedores_sql.sql`.
+- **Imagen BLOB:** `articulos_sql.sql`, `monedas_sql.sql`.
+- **Reporte facetado de solo lectura (sin paquete):** `compras_articulos_sql.sql`,
+  `ficha_existencia_sql.sql`, `articulos_sin_barra_sql.sql`, `existencia_articulos_sql.sql`.
+
+> Los `ORDS_*.sql` en mayúsculas son la convención vieja (quedan algunos: `ORDS_MENU_PAGINAS`,
+> `ORDS_VENTAS_*`, `ORDS_PEDIDOS_ARTICULOS`, `ORDS_ARTICULOS_MAS_VENDIDOS`, `ORDS_CIERRE_DIA`); al
+> tocarlos, renombrarlos con `git mv` a minúsculas.
+
+## Reporte facetado de solo lectura (front filtra todo)
+
+Patrón para páginas APEX de **búsqueda facetada** (Interactive Report + facetas): páginas 55, 56,
+57, 70, 102, 63. El backend es un handler plano de solo lectura que devuelve **todo el dataset** de
+la vista (`WHERE cod_empresa` + los filtros fijos del IR); el filtrado (búsqueda global + facetas
+multi-select dependientes) es **100% en el front**. No filtrar por fecha en el `WHERE` de la vista:
+si la vista es pesada puede colgar/500 (pasó con `V_COBROS_CLIENTES`); traer todo y filtrar/paginar
+por mes en el front.
+
+- Front: componente compartido de facetas `src/components/ui/faceta.tsx` (look de Pedidos de
+  Artículos) + `DataTable` con total al pie y export. Imagen por artículo con `ArticuloImgModal`.
+  Para datasets con fecha, **carga incremental por mes** ("Mostrar más"). Ver `src/GUIA_FRONT.md`.
+- Permiso por usuario: si el IR oculta columnas por `fn_verifica_campo` (ej. costos solo para
+  JOSEG), el handler recibe `app_user` como query param y solo escribe esas columnas si corresponde
+  (modelo: `existencia_articulos_sql.sql`, misma idea que `conteo-efectivo`).
 
 ## Formularios cabecera + detalle (maestro-detalle)
 

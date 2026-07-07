@@ -147,6 +147,23 @@ accesos rápidos se arman dinámicamente desde el endpoint `menu/paginas`.
   factura, % recargo del rubro, **precio de venta sugerido** (`CEIL((compra·(1+recargo/100))/1000)·
   1000` con delivery prorrateado) y **precio de venta anterior** (`pkg_ventas.fn_precio_venta`).
   Grilla con margen/rubro/marca/OEM. Backend: `db/precios_ventas_sql.sql`.
+- **Compras por Artículos** (page_id 55) — reporte de solo lectura de `COMPRAS_ARTICULOS`
+  (`tip_comprobante != 'AJS'`). Búsqueda + facetas Proveedor/Fecha/Referencia, **carga incremental
+  por mes** ("Mostrar más"), imagen por artículo, total al pie y export. Backend:
+  `db/compras_articulos_sql.sql`.
+- **Ficha de Artículos** (page_id 56) — reporte de solo lectura de `V_FICHA_EXISTENCIA`
+  (movimientos por artículo). Búsqueda + facetas Rubro/Tipo/Activo/Fecha, carga por mes, imagen.
+  Backend: `db/ficha_existencia_sql.sql`.
+- **Artículos sin Código de Barra** (page_id 57) — artículos activos con existencia y sin código
+  de barra (excluye rubros 30/39). Búsqueda + faceta Rubro + imagen. Backend:
+  `db/articulos_sin_barra_sql.sql`.
+- **Consulta de Precios** (page_id 61) — buscador por **código de barra** (pistola en mostrador):
+  resuelve el artículo desde `codigos_barras` y muestra una tarjeta con precio
+  (`pkg_ventas.fn_precio_venta`), existencia (`pkg_stock.fn_existencia`), imagen embebida, marca,
+  rubro y viscosidad. Backend: `db/consulta_precios_sql.sql`.
+- **Existencia de Artículos** (page_id 70) — existencia agrupada por artículo (SUM de cantidad) +
+  costo. Búsqueda + facetas OEM/Activo, imagen. **Costo último / total costo solo para JOSEG**
+  (permiso por usuario, replica `fn_verifica_campo`). Backend: `db/existencia_articulos_sql.sql`.
 
 ## Deploy
 

@@ -2263,3 +2263,35 @@ export async function consultarPrecio(
   const data = await authFetch(`consulta-precios?${q}`);
   return (data.data ?? null) as FichaPrecio | null;
 }
+
+// ─── Existencia de Artículos (pág 70) ────────────────────────────────────────
+// Existencia agrupada por artículo (SUM de cantidad) + costo. costo_ultimo y
+// total_costo solo vienen si el usuario ve costos (JOSEG); ve_costo lo indica.
+// Filtrado (búsqueda + facetas) 100% en el front.
+
+export type ExistenciaArticulo = {
+  id_articulo: number;
+  desc_articulo: string | null;
+  cantidad: number | null;
+  codigo_oem: string | null;
+  es_activo: string | null;
+  costo_ultimo?: number | null;
+  total_costo?: number | null;
+};
+
+export type ExistenciaListado = {
+  ve_costo: boolean;
+  filas: ExistenciaArticulo[];
+};
+
+export async function listarExistencia(
+  codEmpresa: number,
+  appUser: string,
+): Promise<ExistenciaListado> {
+  const q = new URLSearchParams({ cod_empresa: String(codEmpresa), app_user: appUser });
+  const json = await authFetch(`existencia?${q}`);
+  return {
+    ve_costo: json.ve_costo === "S",
+    filas: (json.data ?? []) as ExistenciaArticulo[],
+  };
+}
