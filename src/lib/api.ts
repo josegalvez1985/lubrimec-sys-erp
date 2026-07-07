@@ -1583,6 +1583,7 @@ export type CierreDiaFila = {
 };
 
 export type CobroPorForma = { desc_forma: string | null; total: number };
+export type CobrosHoy = { fecha: string | null; filas: CobroPorForma[] };
 
 export async function listarCierreDia(codEmpresa: number): Promise<CierreDiaFila[]> {
   const q = new URLSearchParams({ cod_empresa: String(codEmpresa) });
@@ -1590,10 +1591,13 @@ export async function listarCierreDia(codEmpresa: number): Promise<CierreDiaFila
   return (data.data ?? []) as CierreDiaFila[];
 }
 
-export async function cobrosHoyPorForma(codEmpresa: number): Promise<CobroPorForma[]> {
+export async function cobrosHoyPorForma(codEmpresa: number): Promise<CobrosHoy> {
   const q = new URLSearchParams({ cod_empresa: String(codEmpresa) });
   const data = await authFetch(`cierre-dia/hoy-por-forma?${q}`);
-  return (data.data ?? []) as CobroPorForma[];
+  return {
+    fecha: (data.fecha ?? null) as string | null,
+    filas: (data.data ?? []) as CobroPorForma[],
+  };
 }
 
 // ─── Números de Vouchers (página 71) ─────────────────────────────────────────
@@ -2137,4 +2141,32 @@ export async function articulosParaPrecio(
   if (idFactura != null) params.set("id_factura", String(idFactura));
   const data = await authFetch(`precios-ventas/articulos?${params}`);
   return (data.data ?? []) as ArticuloPrecioLov[];
+}
+
+// ─── Acreditación de cobros (pág 111) ────────────────────────────────────────
+// Cobros bancarios (cheques/transferencias) aún sin acreditar. Al acreditar se
+// setea ind_acreditado='S' y monto_acreditado en VENTAS_COBROS. fecha_cobro es
+// texto (viene de V_COBROS_CLIENTES).
+
+export type CobroPorAcreditar = {
+  id_cobro: number;
+  fecha_cobro: string | null;
+  desc_forma: string | null;
+  total: number;
+};
+
+export async function listarCobrosPorAcreditar(
+  codEmpresa: number,
+): Promise<CobroPorAcreditar[]> {
+  const q = new URLSearchParams({ cod_empresa: String(codEmpresa) });
+  const data = await authFetch(`cobros-acreditar?${q}`);
+  return (data.data ?? []) as CobroPorAcreditar[];
+}
+
+export async function acreditarCobro(idCobro: number, montoAcreditado: number): Promise<void> {
+  await authFetch(`cobros-acreditar/${idCobro}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ monto_acreditado: montoAcreditado }),
+  });
 }

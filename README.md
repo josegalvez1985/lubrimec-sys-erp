@@ -70,9 +70,14 @@ Detalles del consumo desde el front y gotchas del proxy: **[src/GUIA_FRONT.md](s
 Las páginas se mapean por `page_id` de APEX en `src/routes/home.tsx` (mapa `VISTAS`). El menú y los
 accesos rápidos se arman dinámicamente desde el endpoint `menu/paginas`.
 
-- **Dashboard** (vista fija) — gráfico de ventas por día (barras/línea/área, recharts) con
-  filtros año/mes y KPI "Ventas hoy" real (variación vs. ayer). Endpoints:
-  `db/ORDS_VENTAS_DASHBOARD.sql` (`ventas/anios`, `ventas/meses`, `ventas/por-dia`).
+- **Dashboard** (vista fija) — de arriba a abajo:
+  - **Cobros por acreditar** (tarjeta): cheques/tarjetas/transferencias pendientes; cada fila abre
+    el modal de acreditación de la página 111. Se oculta si no hay pendientes.
+  - **Cobranza de hoy:** KPI del total cobrado hoy (tarjeta) + dona por forma de cobro. Reusa el
+    endpoint `cierre-dia` (trae todo sin filtrar fecha en SQL) y filtra "hoy" + agrupa por forma en
+    el front (mismo patrón que la página Cierre del Día).
+  - **Ventas por día:** gráfico (barras/línea/área, recharts) con filtros año/mes. Endpoints:
+    `db/ORDS_VENTAS_DASHBOARD.sql` (`ventas/anios`, `ventas/meses`, `ventas/por-dia`).
 - **Marcas** (page_id 6) — CRUD, referencia del patrón.
 - **Personas** (page_id 2) — CRUD de clientes/proveedores. Tabla con búsqueda (nombre/CI/RUC/
   teléfono) y columna de acciones (ver/editar/borrar); formulario en modal para crear/editar
@@ -120,6 +125,28 @@ accesos rápidos se arman dinámicamente desde el endpoint `menu/paginas`.
 - **Vehículos-Repuestos** (page_id 94) — CRUD de `vehiculos_repuestos` (modelo ↔ código OEM). El
   OEM se elige con un buscador que toma el `codigo_oem` de un artículo (endpoint `articulos/buscar`).
   Backend: `db/vehiculos_repuestos_sql.sql`.
+- **Rendición de Caja** (page_id 73) — CRUD de `rendiciones_cajas` (cierres de caja por fecha).
+  Al elegir la fecha, un endpoint `rendiciones/sugeridos` precarga (editables) caja anterior, venta
+  y pago replicando los auto-cálculos del modal APEX; `Total Caja = caja_anterior + venta − retiro
+  − pago` se calcula en vivo. Backend: `db/rendiciones_cajas_sql.sql`.
+- **Ventas** (page_id 60) — grilla de `ventas_cabecera` (solo update/delete: las ventas se crean en
+  otro sistema) con filtros de fecha (por defecto el último día con ventas). Por fila: **Artículos**
+  (detalle `ventas_detalle` editable, pág 109), **Cobros** (cobros de la factura editables, pág 110,
+  reusa el modal de la pág 65) y editar/eliminar la cabecera. Backend: `db/ventas_sql.sql`.
+- **Cobros de Ventas** (page_id 65) — CRUD de `ventas_cobros`. La factura se elige con buscador
+  (`ventas/buscar`); selects de forma/banco/moneda; vuelto auto-calculado (`recibido − total`).
+  Filtra por `cod_empresa` vía JOIN a `ventas_cabecera`. Backend: `db/ventas_cobros_sql.sql`.
+- **Acreditación de Cobros** (page_id 111) — lista los cobros bancarios (formas 41/42/21) sin
+  acreditar (`ind_acreditado='N'`); cada fila abre un modal que hace
+  `UPDATE ventas_cobros SET ind_acreditado='S', monto_acreditado=…`. También aparece como tarjeta en
+  el dashboard. Backend: `db/ventas_acreditar_sql.sql`.
+- **Precios de Ventas** (page_id 34) — CRUD de `precios_ventas` (historial de precios por artículo).
+  `fecha` la asigna un trigger; otro trigger sincroniza `articulos.precio_venta` con el último
+  precio (el paquete resincroniza también en update/delete). Al elegir artículo, un endpoint
+  `precios-ventas/sugerir` replica los Dynamic Actions del APEX: precio de compra + nro línea de la
+  factura, % recargo del rubro, **precio de venta sugerido** (`CEIL((compra·(1+recargo/100))/1000)·
+  1000` con delivery prorrateado) y **precio de venta anterior** (`pkg_ventas.fn_precio_venta`).
+  Grilla con margen/rubro/marca/OEM. Backend: `db/precios_ventas_sql.sql`.
 
 ## Deploy
 
