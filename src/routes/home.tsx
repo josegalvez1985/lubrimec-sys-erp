@@ -76,10 +76,11 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { cn } from "@/lib/utils";
-import { getSesion, cerrarSesion, getMenuPaginas, ventasPorDia, type PaginaMenu } from "@/lib/api";
+import { getSesion, cerrarSesion, getMenuPaginas, type PaginaMenu } from "@/lib/api";
 import { MarcasView } from "@/components/marcas-view";
 import { VentasDashboardChart } from "@/components/ventas-dashboard-chart";
 import { CobrosHoyChart } from "@/components/cobros-hoy-chart";
+import { CobrosAcreditarCard } from "@/components/cobros-acreditar-card";
 import { VentasArticulosView } from "@/components/ventas-articulos-view";
 import { ArticulosMasVendidosView } from "@/components/articulos-mas-vendidos-view";
 import { PedidosArticulosView } from "@/components/pedidos-articulos-view";
@@ -112,6 +113,7 @@ import { RendicionesCajasView } from "@/components/rendiciones-cajas-view";
 import { VentasCobrosView } from "@/components/ventas-cobros-view";
 import { VentasView } from "@/components/ventas-view";
 import { PreciosVentasView } from "@/components/precios-ventas-view";
+import { CobrosAcreditarView } from "@/components/cobros-acreditar-view";
 import { ArticulosView } from "@/components/articulos-view";
 import { LogsWhatsappView } from "@/components/logs-whatsapp-view";
 import { PerfilModal } from "@/components/perfil-modal";
@@ -268,6 +270,7 @@ const VISTAS: Record<number, () => ReactElement> = {
   65: () => <VentasCobrosView />, // Cobros de Ventas
   60: () => <VentasView />, // Ventas
   34: () => <PreciosVentasView />, // Precios de Ventas
+  111: () => <CobrosAcreditarView />, // Acreditación de Cobros
 };
 
 // page_id que ya tienen algo implementado (vista propia o acción especial como el
@@ -668,81 +671,6 @@ function DashboardView({
   paginas: PaginaMenu[];
   onNavigate: (k: NavKey) => void;
 }) {
-  // Ventas de hoy (real, desde ventas/por-dia del mes actual). Comparte queryKey
-  // con el gráfico del dashboard, así react-query hace una sola consulta.
-  const hoy = new Date();
-  const anioHoy = String(hoy.getFullYear());
-  const mesHoy = String(hoy.getMonth() + 1).padStart(2, "0");
-  const ddmmHoy = `${String(hoy.getDate()).padStart(2, "0")}/${mesHoy}`;
-  const ventasMesQuery = useQuery({
-    queryKey: ["ventas-por-dia", 24, anioHoy, mesHoy],
-    queryFn: () => ventasPorDia(anioHoy, mesHoy, 24),
-    retry: false,
-  });
-  const montoHoy = ventasMesQuery.data?.find((d) => d.fecha === ddmmHoy)?.monto ?? 0;
-  // Variación vs. ayer. Si ayer cae en el mes anterior (día 1), se consulta ese mes.
-  const ayer = new Date(hoy);
-  ayer.setDate(hoy.getDate() - 1);
-  const anioAyer = String(ayer.getFullYear());
-  const mesAyer = String(ayer.getMonth() + 1).padStart(2, "0");
-  const ddmmAyer = `${String(ayer.getDate()).padStart(2, "0")}/${mesAyer}`;
-  const ayerEnOtroMes = mesAyer !== mesHoy || anioAyer !== anioHoy;
-  const ventasMesAyerQuery = useQuery({
-    queryKey: ["ventas-por-dia", 24, anioAyer, mesAyer],
-    queryFn: () => ventasPorDia(anioAyer, mesAyer, 24),
-    enabled: ayerEnOtroMes,
-    retry: false,
-  });
-  const datosAyer = ayerEnOtroMes ? ventasMesAyerQuery.data : ventasMesQuery.data;
-  const montoAyer = datosAyer ? (datosAyer.find((d) => d.fecha === ddmmAyer)?.monto ?? 0) : null;
-  const cambioHoy =
-    montoAyer != null && montoAyer > 0
-      ? `${montoHoy >= montoAyer ? "+" : ""}${(((montoHoy - montoAyer) / montoAyer) * 100).toLocaleString("es-PY", { maximumFractionDigits: 1 })}%`
-      : null;
-
-  // Crecimiento: acumulado del mes actual (hasta hoy) vs. mismo período del mes
-  // anterior (día 1 al día de hoy). Reusa el query del mes actual y agrega el previo.
-  const mesPrev = new Date(hoy.getFullYear(), hoy.getMonth() - 1, 1);
-  const anioPrev = String(mesPrev.getFullYear());
-  const mesPrevMM = String(mesPrev.getMonth() + 1).padStart(2, "0");
-  const ventasMesPrevQuery = useQuery({
-    queryKey: ["ventas-por-dia", 24, anioPrev, mesPrevMM],
-    queryFn: () => ventasPorDia(anioPrev, mesPrevMM, 24),
-    retry: false,
-  });
-  const diaHoy = hoy.getDate();
-  const acumHasta = (datos: { fecha: string; monto: number }[] | undefined) =>
-    (datos ?? []).reduce(
-      (t, d) => (Number(d.fecha.slice(0, 2)) <= diaHoy ? t + d.monto : t),
-      0,
-    );
-  const acumMes = acumHasta(ventasMesQuery.data);
-  const acumMesPrev = acumHasta(ventasMesPrevQuery.data);
-  const crecimiento =
-    acumMesPrev > 0 ? ((acumMes - acumMesPrev) / acumMesPrev) * 100 : null;
-
-  const stats = [
-    {
-      label: "Ventas hoy",
-      value: ventasMesQuery.isLoading
-        ? "..."
-        : `₲ ${Math.round(montoHoy).toLocaleString("es-PY", { maximumFractionDigits: 0 })}`,
-      change: cambioHoy,
-      icon: DollarSign,
-    },
-    {
-      label: "Crecimiento",
-      value:
-        ventasMesQuery.isLoading || ventasMesPrevQuery.isLoading
-          ? "..."
-          : crecimiento != null
-            ? `${crecimiento >= 0 ? "+" : ""}${crecimiento.toLocaleString("es-PY", { maximumFractionDigits: 1 })}%`
-            : "—",
-      change: null,
-      icon: TrendingUp,
-    },
-  ];
-
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -762,39 +690,14 @@ function DashboardView({
         </Button>
       </div>
 
+      {/* Cobros pendientes de acreditar (link al modal de la página 111) */}
+      <CobrosAcreditarCard />
+
       {/* Cobranza de hoy por forma de cobro */}
       <CobrosHoyChart />
 
       {/* Gráfico de ventas por día */}
       <VentasDashboardChart />
-
-      {/* Stats */}
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {stats.map((s) => {
-          const Icon = s.icon;
-          return (
-            <div
-              key={s.label}
-              className="group relative overflow-hidden rounded-2xl border border-border bg-card p-5 shadow-elegant transition-all hover:-translate-y-0.5 hover:shadow-glow"
-            >
-              <div className="flex items-start justify-between">
-                <div>
-                  <p className="text-xs uppercase tracking-wider text-muted-foreground">
-                    {s.label}
-                  </p>
-                  <p className="mt-2 font-display text-2xl font-bold">{s.value}</p>
-                </div>
-                <div className="grid h-10 w-10 place-items-center rounded-xl bg-primary/10 text-primary">
-                  <Icon className="h-5 w-5" />
-                </div>
-              </div>
-              {s.change && (
-                <p className="mt-3 text-xs font-medium text-primary">{s.change} vs. ayer</p>
-              )}
-            </div>
-          );
-        })}
-      </div>
 
       {/* Quick actions */}
       <div className="rounded-2xl border border-border bg-card p-5 shadow-elegant">

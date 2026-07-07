@@ -154,17 +154,22 @@ BEGIN
     END IF;
     l_query       := OWA_UTIL.GET_CGI_ENV('QUERY_STRING');
     l_cod_empresa := get_qs(l_query, 'cod_empresa');
-    l_hoy         := TO_CHAR(SYSDATE, 'dd/mm/yyyy');
+    -- Hora local de Paraguay (UTC-3), igual que el APEX (SYSDATE - 3h): el server
+    -- puede estar en otra zona horaria y "hoy" cambiaria de dia.
+    l_hoy         := TO_CHAR(SYSDATE - INTERVAL '3' HOUR, 'dd/mm/yyyy');
 
     APEX_JSON.OPEN_OBJECT;
     APEX_JSON.WRITE('success', TRUE);
     APEX_JSON.WRITE('fecha', l_hoy);
     APEX_JSON.OPEN_ARRAY('data');
+    -- Filtro de HOY con TO_DATE(fecha,'dd/mm/yyyy'), la MISMA expresion que el
+    -- handler de cierre-dia usa en su ORDER BY sin fallar (confirma formato y
+    -- que no cuelga). Comparo contra TRUNC(SYSDATE - 3h) = hoy hora Paraguay.
     FOR r IN (
         SELECT desc_forma, SUM(total) total
           FROM v_cobros_clientes
          WHERE cod_empresa = TO_NUMBER(l_cod_empresa)
-           AND fecha = l_hoy
+           AND TO_DATE(fecha, 'dd/mm/yyyy') = TRUNC(SYSDATE - INTERVAL '3' HOUR)
          GROUP BY desc_forma
          ORDER BY SUM(total) DESC
     ) LOOP
