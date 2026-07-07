@@ -1,13 +1,12 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ClipboardCheck, Search, X, ImageIcon } from "lucide-react";
+import { ClipboardCheck, Search, X, ImageOff } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { DataTable, type Column } from "@/components/ui/data-table";
 import { Faceta } from "@/components/ui/faceta";
-import { ArticuloImgModal } from "@/components/articulo-img-modal";
+import { imgArticuloUrl } from "@/components/articulo-img-modal";
 import { listarInventarios, type Inventario } from "@/lib/api";
 
 const COD_EMPRESA = 24;
@@ -74,7 +73,6 @@ export function ConsultaInventariosView() {
   const [cerradoSel, setCerradoSel] = useState<string | null>(null);
   const [difSel, setDifSel] = useState<string | null>(null); // 'Si' | 'No'
   const [activoSel, setActivoSel] = useState<string | null>(null);
-  const [imgArticulo, setImgArticulo] = useState<Inventario | null>(null);
 
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ["inventarios", COD_EMPRESA],
@@ -154,93 +152,6 @@ export function ConsultaInventariosView() {
     difSel != null ||
     activoSel != null;
 
-  const COLUMNAS: Column<Inventario>[] = [
-    {
-      key: "img",
-      header: "Img",
-      sortable: false,
-      filterable: false,
-      className: "w-14",
-      render: (r) => (
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-8 w-8 text-muted-foreground hover:text-primary"
-          onClick={() => setImgArticulo(r)}
-          aria-label="Ver imagen del artículo"
-        >
-          <ImageIcon className="h-4 w-4" />
-        </Button>
-      ),
-    },
-    {
-      key: "codigo_oem",
-      header: "Cód. OEM",
-      accessor: (r) => r.codigo_oem ?? "",
-      render: (r) => r.codigo_oem || "—",
-    },
-    {
-      key: "descripcion",
-      header: "Artículo",
-      accessor: (r) => r.descripcion ?? "",
-      hideable: false,
-    },
-    {
-      key: "fecha",
-      header: "Fecha",
-      accessor: (r) => fechaOrden(r.fecha),
-      render: (r) => fmtFecha(r.fecha),
-    },
-    {
-      key: "cantidad_fisica",
-      header: "Física",
-      num: true,
-      accessor: (r) => r.cantidad_fisica ?? 0,
-      render: (r) => <span className="font-mono">{fmtNum(r.cantidad_fisica)}</span>,
-    },
-    {
-      key: "cantidad_sistema",
-      header: "Sistema",
-      num: true,
-      accessor: (r) => r.cantidad_sistema ?? 0,
-      render: (r) => <span className="font-mono">{fmtNum(r.cantidad_sistema)}</span>,
-    },
-    {
-      key: "diferencia",
-      header: "Diferencia",
-      num: true,
-      accessor: (r) => r.diferencia ?? 0,
-      render: (r) => {
-        const d = r.diferencia ?? 0;
-        return (
-          <span
-            className={`font-mono font-semibold ${
-              d === 0 ? "" : d > 0 ? "text-emerald-600" : "text-destructive"
-            }`}
-          >
-            {d > 0 ? "+" : ""}
-            {fmtNum(d)}
-          </span>
-        );
-      },
-    },
-    {
-      key: "cerrado",
-      header: "Cerrado",
-      accessor: (r) => r.cerrado ?? "",
-      render: (r) =>
-        r.cerrado === "S" ? (
-          <Badge variant="outline" className="border-emerald-500/40 text-emerald-600">
-            Sí
-          </Badge>
-        ) : (
-          <Badge variant="outline" className="border-amber-500/40 text-amber-600">
-            No
-          </Badge>
-        ),
-    },
-  ];
-
   return (
     <div className="rounded-2xl border border-border bg-card shadow-elegant">
       <div className="flex flex-col gap-3 border-b border-border p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
@@ -315,23 +226,86 @@ export function ConsultaInventariosView() {
           </aside>
 
           <div className="min-w-0">
-            <DataTable
-              columns={COLUMNAS}
-              rows={filasFiltradas}
-              getRowId={(r) => r.id_inventario}
-              exportName="inventarios"
-              initialSort={{ key: "fecha", dir: "desc" }}
-            />
+            {filasFiltradas.length === 0 ? (
+              <p className="py-16 text-center text-sm text-muted-foreground">
+                Ningún artículo coincide con los filtros.
+              </p>
+            ) : (
+              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                {filasFiltradas.map((r) => (
+                  <TarjetaInventario key={r.id_inventario} item={r} />
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}
+    </div>
+  );
+}
 
-      <ArticuloImgModal
-        open={!!imgArticulo}
-        id={imgArticulo ? String(imgArticulo.id_articulo) : null}
-        titulo={imgArticulo?.descripcion}
-        onClose={() => setImgArticulo(null)}
-      />
+// ─── Tarjeta de inventario (imagen embebida, como el APEX NATIVE_CARDS) ──────
+
+function TarjetaInventario({ item }: { item: Inventario }) {
+  const [imgOk, setImgOk] = useState(true);
+  const dif = item.diferencia ?? 0;
+
+  return (
+    <div className="flex flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-elegant">
+      {/* Cabecera: título + OEM */}
+      <div className="border-b border-border p-4">
+        <div className="flex items-start justify-between gap-2">
+          <h3 className="font-semibold leading-tight">{item.descripcion ?? `Artículo ${item.id_articulo}`}</h3>
+          {item.cerrado === "S" ? (
+            <Badge variant="outline" className="shrink-0 border-emerald-500/40 text-emerald-600">
+              Cerrado
+            </Badge>
+          ) : (
+            <Badge variant="outline" className="shrink-0 border-amber-500/40 text-amber-600">
+              Abierto
+            </Badge>
+          )}
+        </div>
+        <p className="mt-0.5 text-xs text-muted-foreground">Cod. OEM: {item.codigo_oem ?? item.id_articulo}</p>
+      </div>
+
+      {/* Imagen embebida */}
+      <div className="grid min-h-[180px] place-items-center bg-muted/30 p-3">
+        {imgOk ? (
+          <img
+            src={imgArticuloUrl(String(item.id_articulo))}
+            alt={item.descripcion ?? "Artículo"}
+            className="max-h-52 w-auto object-contain"
+            loading="lazy"
+            onError={() => setImgOk(false)}
+          />
+        ) : (
+          <div className="flex flex-col items-center gap-2 text-muted-foreground">
+            <ImageOff className="h-8 w-8" />
+            <span className="text-xs">Sin imagen</span>
+          </div>
+        )}
+      </div>
+
+      {/* Cantidades + fecha */}
+      <div className="mt-auto space-y-1 border-t border-border p-4">
+        <p className="text-sm">
+          <span className="text-muted-foreground">Física </span>
+          <span className="font-mono font-semibold">{fmtNum(item.cantidad_fisica)}</span>
+          <span className="text-muted-foreground">, Sistema </span>
+          <span className="font-mono font-semibold">{fmtNum(item.cantidad_sistema)}</span>
+          <span className="text-muted-foreground">, Diferencia </span>
+          <span
+            className={`font-mono font-semibold ${
+              dif === 0 ? "" : dif > 0 ? "text-emerald-600" : "text-destructive"
+            }`}
+          >
+            {dif > 0 ? "+" : ""}
+            {fmtNum(dif)}
+          </span>
+        </p>
+        <p className="text-xs text-muted-foreground">{fmtFecha(item.fecha)}</p>
+      </div>
     </div>
   );
 }

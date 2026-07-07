@@ -2395,3 +2395,101 @@ export async function listarInventarios(codEmpresa: number): Promise<Inventario[
   const data = await authFetch(`inventarios?${q}`);
   return (data.data ?? []) as Inventario[];
 }
+
+// ─── Punto de Venta (pág 39/40/45/47) ────────────────────────────────────────
+// Grilla de artículos con stock + carrito en React + registro atómico (los 3
+// INSERT en una transacción). Reemplaza las apex_collections del APEX.
+
+export type ArticuloPOS = {
+  id_articulo: number;
+  descripcion: string | null;
+  id_rubro: number | null;
+  id_marca: number | null;
+  rubro: string | null;
+  marca: string | null;
+  codigo_oem: string | null;
+  precio_venta: number | null;
+  precio_con_descuento: number | null;
+};
+
+// Trae todos los artículos con stock; el filtrado por facetas (rubro/marca) y
+// búsqueda es en el front. El descuento sí va al backend (afecta el precio).
+export async function listarArticulosPOS(
+  codEmpresa: number,
+  opts: { descuento?: number } = {},
+): Promise<ArticuloPOS[]> {
+  const p = new URLSearchParams({ cod_empresa: String(codEmpresa) });
+  if (opts.descuento) p.set("descuento", String(opts.descuento));
+  const data = await authFetch(`pos/articulos?${p}`);
+  return (data.data ?? []) as ArticuloPOS[];
+}
+
+export async function buscarArticuloPorBarra(
+  codEmpresa: number,
+  codBarra: string,
+): Promise<{ id_articulo: number; descripcion: string | null; precio_venta: number | null } | null> {
+  const p = new URLSearchParams({ cod_empresa: String(codEmpresa), cod_barra: codBarra });
+  const data = await authFetch(`pos/barra?${p}`);
+  return (data.data ?? null) as {
+    id_articulo: number;
+    descripcion: string | null;
+    precio_venta: number | null;
+  } | null;
+}
+
+export async function siguienteNroComprobante(
+  codEmpresa: number,
+  serTimbrado: string,
+): Promise<number> {
+  const p = new URLSearchParams({ cod_empresa: String(codEmpresa), ser_timbrado: serTimbrado });
+  const data = await authFetch(`pos/siguiente-nro?${p}`);
+  return (data.nro_comprobante ?? 1) as number;
+}
+
+export type VentaPOSInput = {
+  cabecera: {
+    tip_comprobante: string;
+    ser_timbrado: string;
+    nro_timbrado: number | null;
+    nro_comprobante: number;
+    cod_persona: number;
+    cod_moneda: number;
+    tip_cambio: number;
+    id_talonario: number | null;
+    cod_vendedor: number;
+    nro_voucher: number | null;
+    nro_telefono: string | null;
+    observacion: string | null;
+    modelo_vehiculo: string | null;
+  };
+  detalle: {
+    id_articulo: number;
+    cantidad: number;
+    precio: number;
+    descuento: number | null;
+    precio_lista: number | null;
+  }[];
+  cobros: {
+    id_forma: number;
+    id_banco: number | null;
+    nro_transaccion: string | null;
+    observacion: string | null;
+    total: number;
+    cod_moneda: number;
+    efectivo_recibido: number | null;
+    efectivo_vuelto: number | null;
+  }[];
+};
+
+export async function registrarVentaPOS(
+  codEmpresa: number,
+  input: VentaPOSInput,
+): Promise<number> {
+  const p = new URLSearchParams({ cod_empresa: String(codEmpresa) });
+  const data = await authFetch(`pos/registrar?${p}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  return data.id_factura as number;
+}
