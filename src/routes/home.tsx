@@ -86,6 +86,9 @@ import { FichaArticulosView } from "@/components/ficha-articulos-view";
 import { ArticulosSinBarraView } from "@/components/articulos-sin-barra-view";
 import { ConsultaPreciosView } from "@/components/consulta-precios-view";
 import { ExistenciaArticulosView } from "@/components/existencia-articulos-view";
+import { ComprasVsVentasView } from "@/components/compras-vs-ventas-view";
+import { SaldosProveedoresView } from "@/components/saldos-proveedores-view";
+import { ConsultaInventariosView } from "@/components/consulta-inventarios-view";
 import { VentasArticulosView } from "@/components/ventas-articulos-view";
 import { ArticulosMasVendidosView } from "@/components/articulos-mas-vendidos-view";
 import { PedidosArticulosView } from "@/components/pedidos-articulos-view";
@@ -281,6 +284,9 @@ const VISTAS: Record<number, () => ReactElement> = {
   57: () => <ArticulosSinBarraView />, // Artículos sin Código de Barra
   61: () => <ConsultaPreciosView />, // Consulta de Precios
   70: () => <ExistenciaArticulosView />, // Existencia de Artículos
+  75: () => <ComprasVsVentasView />, // Compras Vs Ventas
+  79: () => <SaldosProveedoresView />, // Saldos de Proveedores
+  80: () => <ConsultaInventariosView />, // Consulta de Inventarios
 };
 
 // page_id que ya tienen algo implementado (vista propia o acción especial como el

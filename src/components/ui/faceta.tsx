@@ -6,21 +6,28 @@ import { Checkbox } from "@/components/ui/checkbox";
 // conteo entre paréntesis y "Mostrar todo/menos" cuando pasa del límite.
 // Usar este componente en toda vista con búsqueda facetada (unifica el look).
 
-const LIMITE = 8;
+const LIMITE_DEFAULT = 8;
 
 export function Faceta({
   titulo,
   valores,
   seleccion,
   onToggle,
+  limite = LIMITE_DEFAULT,
 }: {
   titulo: string;
   valores: { valor: string; n: number }[];
   seleccion: Set<string>;
   onToggle: (v: string) => void;
+  limite?: number; // opciones visibles antes de "Mostrar todo" (default 8)
 }) {
   const [abierta, setAbierta] = useState(false);
-  const visibles = abierta ? valores : valores.slice(0, LIMITE);
+  // Los seleccionados van primero, para que sigan visibles al colapsar a limite.
+  const ordenados = [
+    ...valores.filter((v) => seleccion.has(v.valor)),
+    ...valores.filter((v) => !seleccion.has(v.valor)),
+  ];
+  const visibles = abierta ? ordenados : ordenados.slice(0, limite);
 
   return (
     <div className="space-y-1.5">
@@ -35,11 +42,11 @@ export function Faceta({
           >
             <Checkbox checked={seleccion.has(valor)} onCheckedChange={() => onToggle(valor)} />
             <span className="min-w-0 flex-1 truncate">{valor}</span>
-            <span className="shrink-0 text-xs">({n})</span>
+            {n > 0 && <span className="shrink-0 text-xs">({n})</span>}
           </label>
         ))
       )}
-      {valores.length > LIMITE && (
+      {valores.length > limite && (
         <button
           type="button"
           onClick={() => setAbierta((a) => !a)}
