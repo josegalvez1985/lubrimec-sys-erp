@@ -81,6 +81,10 @@ import { MarcasView } from "@/components/marcas-view";
 import { VentasDashboardChart } from "@/components/ventas-dashboard-chart";
 import { CobrosHoyChart } from "@/components/cobros-hoy-chart";
 import { CobrosAcreditarCard } from "@/components/cobros-acreditar-card";
+import { ComprasArticulosView } from "@/components/compras-articulos-view";
+import { FichaArticulosView } from "@/components/ficha-articulos-view";
+import { ArticulosSinBarraView } from "@/components/articulos-sin-barra-view";
+import { ConsultaPreciosView } from "@/components/consulta-precios-view";
 import { VentasArticulosView } from "@/components/ventas-articulos-view";
 import { ArticulosMasVendidosView } from "@/components/articulos-mas-vendidos-view";
 import { PedidosArticulosView } from "@/components/pedidos-articulos-view";
@@ -271,6 +275,10 @@ const VISTAS: Record<number, () => ReactElement> = {
   60: () => <VentasView />, // Ventas
   34: () => <PreciosVentasView />, // Precios de Ventas
   111: () => <CobrosAcreditarView />, // Acreditación de Cobros
+  55: () => <ComprasArticulosView />, // Compras por Artículos
+  56: () => <FichaArticulosView />, // Ficha de Artículos
+  57: () => <ArticulosSinBarraView />, // Artículos sin Código de Barra
+  61: () => <ConsultaPreciosView />, // Consulta de Precios
 };
 
 // page_id que ya tienen algo implementado (vista propia o acción especial como el
