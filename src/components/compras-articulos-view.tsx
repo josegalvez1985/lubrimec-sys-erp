@@ -3,9 +3,9 @@ import { useQuery } from "@tanstack/react-query";
 import { ShoppingBag, Search, X, ImageIcon } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
 import { DataTable, type Column } from "@/components/ui/data-table";
+import { Faceta } from "@/components/ui/faceta";
 import { ArticuloImgModal } from "@/components/articulo-img-modal";
 import { listarComprasArticulos, type CompraArticulo } from "@/lib/api";
 
@@ -21,40 +21,6 @@ const fmtFecha = (iso: string | null) => {
 // "yyyy-mm-dd" -> número ordenable (para ordenar fecha cronológicamente).
 const fechaOrden = (iso: string | null): number =>
   iso ? Number(iso.replace(/-/g, "")) || 0 : 0;
-
-function Faceta({
-  titulo,
-  valores,
-  seleccion,
-  onToggle,
-}: {
-  titulo: string;
-  valores: { valor: string; n: number }[];
-  seleccion: Set<string>;
-  onToggle: (v: string) => void;
-}) {
-  return (
-    <div className="rounded-xl border border-border">
-      <div className="border-b border-border px-3 py-2 text-sm font-semibold">{titulo}</div>
-      <div className="max-h-52 space-y-1 overflow-auto p-2">
-        {valores.length === 0 ? (
-          <p className="px-2 py-1 text-xs text-muted-foreground">Sin valores</p>
-        ) : (
-          valores.map(({ valor, n }) => (
-            <label
-              key={valor}
-              className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-accent"
-            >
-              <Checkbox checked={seleccion.has(valor)} onCheckedChange={() => onToggle(valor)} />
-              <span className="flex-1 truncate">{valor}</span>
-              <span className="text-xs text-muted-foreground">{n}</span>
-            </label>
-          ))
-        )}
-      </div>
-    </div>
-  );
-}
 
 export function ComprasArticulosView() {
   const [busqueda, setBusqueda] = useState("");
@@ -276,7 +242,7 @@ export function ComprasArticulosView() {
         </div>
       ) : (
         <div className="grid gap-4 p-4 sm:p-5 md:grid-cols-[240px_1fr]">
-          <aside className="space-y-4">
+          <aside className="space-y-5">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
@@ -294,7 +260,7 @@ export function ComprasArticulosView() {
             />
             <Faceta
               titulo="Fecha"
-              valores={facetFecha.map((f) => ({ valor: f.valor, n: f.n }))}
+              valores={facetFecha}
               seleccion={fechaSel}
               onToggle={(v) => toggle(fechaSel, setFechaSel, v)}
             />
