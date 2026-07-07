@@ -2295,3 +2295,103 @@ export async function listarExistencia(
     filas: (json.data ?? []) as ExistenciaArticulo[],
   };
 }
+
+// ─── Compras Vs Ventas (pág 75) ──────────────────────────────────────────────
+// Dos datasets (compras/ventas) del año; el front filtra por mes/activo (facetas)
+// y calcula la ganancia = SUM(rentabilidad ventas) − SUM(total compras).
+
+export type CompraVsFila = {
+  id_articulo: number | null;
+  referencia: string | null;
+  proveedor: string | null;
+  fec_comprobante: string | null; // YYYY-MM-DD
+  descripcion: string | null;
+  cantidad: number | null;
+  precio: number | null;
+  total: number | null;
+  es_activo: string | null;
+};
+
+export type VentaVsFila = {
+  id_articulo: number | null;
+  descripcion: string | null;
+  fec_comprobante: string | null; // YYYY-MM-DD
+  costo_ultimo: number | null;
+  rentabilidad: number | null;
+  cantidad: number | null;
+  precio: number | null;
+  total: number | null;
+  total_costo: number | null;
+};
+
+export type ComprasVsVentas = {
+  anio: string;
+  anios: string[];
+  compras: CompraVsFila[];
+  ventas: VentaVsFila[];
+};
+
+export async function comprasVsVentas(
+  codEmpresa: number,
+  anio?: string,
+): Promise<ComprasVsVentas> {
+  const q = new URLSearchParams({ cod_empresa: String(codEmpresa) });
+  if (anio) q.set("anio", anio);
+  const json = await authFetch(`compras-vs-ventas?${q}`);
+  return {
+    anio: (json.anio ?? "") as string,
+    anios: (json.anios ?? []) as string[],
+    compras: (json.compras ?? []) as CompraVsFila[],
+    ventas: (json.ventas ?? []) as VentaVsFila[],
+  };
+}
+
+// ─── Saldos de Proveedores (pág 79) ──────────────────────────────────────────
+// Reporte de solo lectura: facturas de compra (FCR) + pagos, con saldo por
+// factura (S/N) y próxima fecha de pago. Filtrado (búsqueda + facetas) en el
+// front. Saldo total pendiente = SUM(total_factura) − SUM(total_pago).
+
+export type SaldoProveedor = {
+  nro_factura: string | null;
+  fec_comprobante: string | null; // YYYY-MM-DD
+  nombre: string | null;
+  total_factura: number | null;
+  fec_pago: string | null; // YYYY-MM-DD
+  fec_proximo_pago: string | null; // YYYY-MM-DD
+  forma_pago: string | null;
+  total_pago: number | null;
+  id_factura: number;
+  saldo: string | null; // 'S' | 'N'
+};
+
+export async function listarSaldosProveedores(codEmpresa: number): Promise<SaldoProveedor[]> {
+  const q = new URLSearchParams({ cod_empresa: String(codEmpresa) });
+  const data = await authFetch(`saldos-proveedores?${q}`);
+  return (data.data ?? []) as SaldoProveedor[];
+}
+
+// ─── Consulta de Inventarios (pág 80) ────────────────────────────────────────
+// Último inventario por artículo: cantidad física vs sistema + diferencia.
+// Filtrado (búsqueda + facetas) en el front. Imagen por artículo.
+
+export type Inventario = {
+  id_inventario: number;
+  id_articulo: number;
+  descripcion: string | null;
+  codigo_oem: string | null;
+  fecha: string | null; // YYYY-MM-DD
+  cantidad_fisica: number | null;
+  cantidad_sistema: number | null;
+  diferencia: number | null;
+  con_diferencia: string | null; // 'Si' | 'No'
+  cerrado: string | null; // 'S' | 'N'
+  es_activo: string | null;
+  rubro: string | null;
+  marca: string | null;
+};
+
+export async function listarInventarios(codEmpresa: number): Promise<Inventario[]> {
+  const q = new URLSearchParams({ cod_empresa: String(codEmpresa) });
+  const data = await authFetch(`inventarios?${q}`);
+  return (data.data ?? []) as Inventario[];
+}

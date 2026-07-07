@@ -228,7 +228,27 @@ Notas de `Column<T>`:
 - **Permisos por usuario (app_user).** Cuando el APEX restringe por usuario (ej. solo `JOSEG` ve
   ciertos datos/campos), replicarlo: el front lee `getSesion().app_user` (viene en MAYÚSCULAS) y el
   backend recibe `app_user` como query param para decidir el filtro/visibilidad. Modelo: `conteo-efectivo`
-  (JOSEG filtra por fecha y ve el panel de totales; el resto solo ve el día de hoy, sin panel).
+  (JOSEG filtra por fecha y ve el panel de totales; el resto solo ve el día de hoy, sin panel);
+  `existencia-articulos-view` (columnas de costo solo para JOSEG).
+- **Fechas — SIEMPRE `dd/mm/yyyy`.** El backend devuelve fechas como `YYYY-MM-DD` (ISO); en el front
+  convertir con un helper `fmtFecha` (`iso.split("-")` → `${d}/${m}/${y}`). NO mostrar un campo de
+  fecha de texto libre de la vista Oracle sin normalizar (puede venir en cualquier formato); usar
+  siempre la columna ISO + `fmtFecha`. Modelos: `compras-articulos-view`, `ficha-articulos-view`.
+- **Facetas — componente compartido `src/components/ui/faceta.tsx`.** Toda vista con búsqueda
+  facetada usa `<Faceta>` (look de Pedidos de Artículos: título simple, checkbox muted con hover,
+  conteo `(N)`, "Mostrar todo/menos" con límite 8, sin caja). NO crear un `Faceta` local con borde.
+  Props: `titulo`, `valores: {valor,n}[]`, `seleccion: Set<string>`, `onToggle`. Sidebar en
+  `<aside className="space-y-5">`. Modelos: `existencia-articulos-view`, `compras-articulos-view`,
+  `ficha-articulos-view`, `articulos-sin-barra-view`.
+
+## Reporte facetado con carga incremental por mes
+
+Para reportes de solo lectura con muchos registros y fecha (modelos: `compras-articulos-view`,
+`ficha-articulos-view`): el endpoint trae **todo el dataset** (ver `db/GUIA_ENDPOINTS.md`, "Reporte
+facetado"); el front muestra al inicio solo el **último mes con datos** y un botón **"Mostrar más"**
+que agrega un mes hacia atrás. Se deriva la lista de meses (`yyyy-mm`) del dataset, se toma una
+ventana de los N más recientes (`mesesVisibles`), y las facetas/búsqueda/total operan sobre esa
+ventana (no sobre todo el histórico). El botón se oculta cuando ya se muestran todos los meses.
 
 ## Gotchas de UI
 
