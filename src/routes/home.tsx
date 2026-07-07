@@ -108,6 +108,10 @@ import { ConteoEfectivoView } from "@/components/conteo-efectivo-view";
 import { DescuentosView } from "@/components/descuentos-view";
 import { NumerosVouchersView } from "@/components/numeros-vouchers-view";
 import { CierreDiaView } from "@/components/cierre-dia-view";
+import { RendicionesCajasView } from "@/components/rendiciones-cajas-view";
+import { VentasCobrosView } from "@/components/ventas-cobros-view";
+import { VentasView } from "@/components/ventas-view";
+import { PreciosVentasView } from "@/components/precios-ventas-view";
 import { ArticulosView } from "@/components/articulos-view";
 import { LogsWhatsappView } from "@/components/logs-whatsapp-view";
 import { PerfilModal } from "@/components/perfil-modal";
@@ -260,6 +264,10 @@ const VISTAS: Record<number, () => ReactElement> = {
   67: () => <DescuentosView />, // Descuentos
   71: () => <NumerosVouchersView />, // Números de Vouchers
   62: () => <CierreDiaView />, // Cierre del Día
+  73: () => <RendicionesCajasView />, // Rendición de Caja
+  65: () => <VentasCobrosView />, // Cobros de Ventas
+  60: () => <VentasView />, // Ventas
+  34: () => <PreciosVentasView />, // Precios de Ventas
 };
 
 // page_id que ya tienen algo implementado (vista propia o acción especial como el

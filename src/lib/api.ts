@@ -979,6 +979,8 @@ export type ArticuloBusqueda = {
   id_articulo: number;
   descripcion: string | null;
   codigo_oem: string | null;
+  precio_venta: number | null;
+  costo_ultima_compra: number | null;
 };
 
 export async function listarCodigosBarras(codEmpresa: number): Promise<CodigoBarra[]> {
@@ -1749,4 +1751,390 @@ export async function obtenerResumenConteo(
   });
   const data = await authFetch(`conteo-efectivo/resumen?${q}`);
   return (data.data ?? { visible: false }) as ConteoResumen;
+}
+
+// ─── Rendiciones de Caja (pág 73/74) ─────────────────────────────────────────
+
+export type RendicionCaja = {
+  id_cierre: number;
+  cod_empresa: number;
+  fecha: string; // YYYY-MM-DD
+  total_caja_anterior: number;
+  total_venta: number;
+  total_retiro: number;
+  total_caja: number;
+  total_pago: number | null;
+  observacion: string | null;
+};
+
+export type RendicionCajaInput = {
+  cod_empresa: number;
+  fecha: string;
+  total_caja_anterior: number;
+  total_venta: number;
+  total_retiro: number;
+  total_caja: number;
+  total_pago: number | null;
+  observacion: string | null;
+};
+
+export type RendicionSugeridos = {
+  total_caja_anterior: number;
+  total_venta: number;
+  total_pago: number;
+};
+
+export async function listarRendiciones(codEmpresa: number): Promise<RendicionCaja[]> {
+  const q = new URLSearchParams({ cod_empresa: String(codEmpresa) });
+  const data = await authFetch(`rendiciones?${q}`);
+  return (data.data ?? []) as RendicionCaja[];
+}
+
+export async function obtenerSugeridosRendicion(
+  codEmpresa: number,
+  fecha: string,
+): Promise<RendicionSugeridos> {
+  const q = new URLSearchParams({ cod_empresa: String(codEmpresa), fecha });
+  const data = await authFetch(`rendiciones/sugeridos?${q}`);
+  return (data.data ?? {
+    total_caja_anterior: 0,
+    total_venta: 0,
+    total_pago: 0,
+  }) as RendicionSugeridos;
+}
+
+export async function crearRendicion(input: RendicionCajaInput): Promise<number> {
+  const data = await authFetch("rendiciones", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  return data.id_cierre as number;
+}
+
+export async function actualizarRendicion(id: number, input: RendicionCajaInput): Promise<void> {
+  await authFetch(`rendiciones/${id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+}
+
+export async function eliminarRendicion(id: number, codEmpresa: number): Promise<void> {
+  const q = new URLSearchParams({ cod_empresa: String(codEmpresa) });
+  await authFetch(`rendiciones/${id}?${q}`, { method: "DELETE" });
+}
+
+// ─── Cobros de Ventas (pág 65) ───────────────────────────────────────────────
+// CRUD de VENTAS_COBROS. PK id_cobro (IDENTITY). La factura (id_factura) se elige
+// con buscarVentas; forma/banco/moneda con listarFormasCobroPago/listarBancos/
+// listarMonedas. Los campos *_forma / nombre_banco / descripcion_moneda /
+// nombre_cliente / tip_comprobante / ser_timbrado / nro_comprobante vienen del
+// JOIN (solo lectura). VENTAS_COBROS no tiene cod_empresa: se filtra por la factura.
+
+export type VentaCobro = {
+  id_cobro: number;
+  fecha: string; // YYYY-MM-DD
+  id_factura: number;
+  id_forma: number;
+  id_banco: number | null;
+  nro_transaccion: string | null;
+  observacion: string | null;
+  total: number;
+  cod_moneda: number;
+  efectivo_recibido: number | null;
+  efectivo_vuelto: number | null;
+  tip_comprobante: string | null;
+  ser_timbrado: string | null;
+  nro_comprobante: number | null;
+  nombre_cliente: string | null;
+  descripcion_forma: string | null;
+  nombre_banco: string | null;
+  descripcion_moneda: string | null;
+};
+
+export type VentaCobroInput = {
+  fecha: string;
+  id_factura: number;
+  id_forma: number;
+  id_banco: number | null;
+  nro_transaccion: string | null;
+  observacion: string | null;
+  total: number;
+  cod_moneda: number;
+  efectivo_recibido: number | null;
+  efectivo_vuelto: number | null;
+};
+
+export type VentaBusqueda = {
+  id_factura: number;
+  nro_comprobante: number | null;
+  ser_timbrado: string | null;
+  tip_comprobante: string | null;
+  fec_comprobante: string | null;
+  nombre_cliente: string | null;
+};
+
+export async function listarVentasCobros(
+  codEmpresa: number,
+  idFactura?: number,
+): Promise<VentaCobro[]> {
+  const q = new URLSearchParams({ cod_empresa: String(codEmpresa) });
+  if (idFactura != null) q.set("id_factura", String(idFactura));
+  const data = await authFetch(`ventas-cobros?${q}`);
+  return (data.data ?? []) as VentaCobro[];
+}
+
+export async function crearVentaCobro(input: VentaCobroInput): Promise<number> {
+  const data = await authFetch("ventas-cobros", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  return data.id_cobro as number;
+}
+
+export async function actualizarVentaCobro(id: number, input: VentaCobroInput): Promise<void> {
+  await authFetch(`ventas-cobros/${id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+}
+
+export async function eliminarVentaCobro(id: number): Promise<void> {
+  await authFetch(`ventas-cobros/${id}`, { method: "DELETE" });
+}
+
+export async function buscarVentas(codEmpresa: number, q: string): Promise<VentaBusqueda[]> {
+  const params = new URLSearchParams({ cod_empresa: String(codEmpresa), q });
+  const data = await authFetch(`ventas/buscar?${params}`);
+  return (data.data ?? []) as VentaBusqueda[];
+}
+
+// ─── Ventas (pág 60 grilla + 109 detalle) ────────────────────────────────────
+// VENTAS_CABECERA: solo update/delete (las ventas se crean desde otro sistema).
+// Sin filtros de fecha el back carga el último día con ventas (fecha_default).
+// El detalle (VENTAS_DETALLE) es de solo lectura. Cobros de la factura:
+// listarVentasCobros(codEmpresa, idFactura).
+
+export type VentaCabecera = {
+  id_factura: number;
+  tip_comprobante: string;
+  ser_timbrado: string | null;
+  nro_timbrado: number | null;
+  nro_comprobante: number;
+  fec_comprobante: string; // YYYY-MM-DD
+  cod_persona: number;
+  nombre_cliente: string | null;
+  cod_moneda: number | null;
+  tip_cambio: number | null;
+  estado: string | null;
+  id_talonario: number | null;
+  cod_vendedor: number;
+  nombre_vendedor: string | null;
+  nro_telefono: string | null;
+};
+
+export type VentaCabeceraInput = {
+  cod_empresa: number;
+  tip_comprobante: string;
+  nro_comprobante: number;
+  fec_comprobante: string;
+  cod_persona: number;
+  cod_vendedor: number;
+  nro_telefono: string | null;
+};
+
+export type VentaDetalleLinea = {
+  nro_linea: number;
+  id_articulo: number;
+  descripcion_articulo: string | null;
+  cantidad: number | null;
+  precio: number | null;
+  cod_iva: number | null;
+  descuento: number | null;
+  total: number;
+};
+
+export type VentasListado = {
+  fecha_default?: string;
+  data: VentaCabecera[];
+};
+
+export async function listarVentas(
+  codEmpresa: number,
+  fechaDesde?: string,
+  fechaHasta?: string,
+): Promise<VentasListado> {
+  const q = new URLSearchParams({ cod_empresa: String(codEmpresa) });
+  if (fechaDesde) q.set("fecha_desde", fechaDesde);
+  if (fechaHasta) q.set("fecha_hasta", fechaHasta);
+  const json = await authFetch(`ventas-cabecera?${q}`);
+  return {
+    fecha_default: json.fecha_default as string | undefined,
+    data: (json.data ?? []) as VentaCabecera[],
+  };
+}
+
+export async function actualizarVenta(id: number, input: VentaCabeceraInput): Promise<void> {
+  await authFetch(`ventas-cabecera/${id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+}
+
+export async function eliminarVenta(id: number, codEmpresa: number): Promise<void> {
+  const q = new URLSearchParams({ cod_empresa: String(codEmpresa) });
+  await authFetch(`ventas-cabecera/${id}?${q}`, { method: "DELETE" });
+}
+
+export async function listarVentaDetalle(idFactura: number): Promise<VentaDetalleLinea[]> {
+  const data = await authFetch(`ventas-cabecera/${idFactura}/detalle`);
+  return (data.data ?? []) as VentaDetalleLinea[];
+}
+
+// Upsert de línea del detalle: nro_linea null = insertar (el back numera max+1
+// por factura y copia cod_iva del artículo); con nro_linea = actualizar.
+export type VentaDetalleInput = {
+  nro_linea: number | null;
+  id_articulo: number;
+  cantidad: number;
+  precio: number;
+  descuento: number | null;
+};
+
+export async function guardarVentaDetalle(
+  idFactura: number,
+  input: VentaDetalleInput,
+): Promise<number> {
+  const data = await authFetch(`ventas-cabecera/${idFactura}/detalle`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  return data.nro_linea as number;
+}
+
+export async function eliminarVentaDetalle(idFactura: number, nroLinea: number): Promise<void> {
+  await authFetch(`ventas-cabecera/${idFactura}/detalle/${nroLinea}`, { method: "DELETE" });
+}
+
+// ─── Precios de Ventas (pág 34) ──────────────────────────────────────────────
+// CRUD de PRECIOS_VENTAS (historial de precios por artículo). PK id_precio
+// (IDENTITY). fecha la asigna un trigger de BD (BEFORE INSERT); no se envía.
+// El artículo se elige con buscarArticulos; la factura de compra que originó
+// el precio (opcional) con buscarCompras. nro_linea es un número libre.
+// Un trigger de BD (AFTER INSERT) sincroniza articulos.precio_venta con el
+// último precio insertado; el backend resincroniza también en update/delete.
+
+export type PrecioVenta = {
+  id_precio: number;
+  id_articulo: number;
+  descripcion_articulo: string | null;
+  porc_recargo: number | null;
+  fecha: string; // ISO con hora
+  precio_compra: number | null;
+  precio_venta: number;
+  cod_empresa: number;
+  nro_linea: number | null;
+  id_factura: number | null;
+  margen: number | null;
+  rubro: string | null;
+  marca: string | null;
+  codigo_oem: string | null;
+};
+
+// Sugeridos al elegir artículo (replica los Dynamic Actions de la pág APEX 35).
+export type PrecioSugerido = {
+  precio_compra: number | null;
+  nro_linea: number | null;
+  porc_recargo: number | null;
+  precio_venta: number | null;
+  precio_venta_anterior: number | null;
+};
+
+// Artículo de la LOV cascada de precios (con o sin factura de compra).
+export type ArticuloPrecioLov = {
+  id_articulo: number;
+  descripcion: string | null;
+  codigo_oem: string | null;
+};
+
+export type PrecioVentaInput = {
+  id_articulo: number;
+  porc_recargo: number | null;
+  precio_compra: number | null;
+  precio_venta: number;
+  cod_empresa: number;
+  nro_linea: number | null;
+  id_factura: number | null;
+};
+
+export async function listarPreciosVentas(
+  codEmpresa: number,
+  idArticulo?: number,
+): Promise<PrecioVenta[]> {
+  const q = new URLSearchParams({ cod_empresa: String(codEmpresa) });
+  if (idArticulo != null) q.set("id_articulo", String(idArticulo));
+  const data = await authFetch(`precios-ventas?${q}`);
+  return (data.data ?? []) as PrecioVenta[];
+}
+
+export async function crearPrecioVenta(input: PrecioVentaInput): Promise<number> {
+  const data = await authFetch("precios-ventas", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  return data.id_precio as number;
+}
+
+export async function actualizarPrecioVenta(id: number, input: PrecioVentaInput): Promise<void> {
+  await authFetch(`precios-ventas/${id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+}
+
+export async function eliminarPrecioVenta(id: number, codEmpresa: number): Promise<void> {
+  const q = new URLSearchParams({ cod_empresa: String(codEmpresa) });
+  await authFetch(`precios-ventas/${id}?${q}`, { method: "DELETE" });
+}
+
+// Al elegir artículo: precio de compra, nro línea, % recargo (del rubro),
+// precio de venta sugerido y precio de venta anterior. id_factura opcional.
+export async function sugerirPrecio(
+  codEmpresa: number,
+  idArticulo: number,
+  idFactura?: number | null,
+): Promise<PrecioSugerido> {
+  const q = new URLSearchParams({
+    cod_empresa: String(codEmpresa),
+    id_articulo: String(idArticulo),
+  });
+  if (idFactura != null) q.set("id_factura", String(idFactura));
+  const data = await authFetch(`precios-ventas/sugerir?${q}`);
+  return (data.data ?? {
+    precio_compra: null,
+    nro_linea: null,
+    porc_recargo: null,
+    precio_venta: null,
+    precio_venta_anterior: null,
+  }) as PrecioSugerido;
+}
+
+// LOV cascada de artículos: si hay factura, los de esa compra sin precio aún;
+// si no, los artículos activos. Alimenta el BuscadorSelect del formulario.
+export async function articulosParaPrecio(
+  codEmpresa: number,
+  q: string,
+  idFactura?: number | null,
+): Promise<ArticuloPrecioLov[]> {
+  const params = new URLSearchParams({ cod_empresa: String(codEmpresa), q });
+  if (idFactura != null) params.set("id_factura", String(idFactura));
+  const data = await authFetch(`precios-ventas/articulos?${params}`);
+  return (data.data ?? []) as ArticuloPrecioLov[];
 }
