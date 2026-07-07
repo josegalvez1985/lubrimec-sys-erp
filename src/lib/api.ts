@@ -2170,3 +2170,96 @@ export async function acreditarCobro(idCobro: number, montoAcreditado: number): 
     body: JSON.stringify({ monto_acreditado: montoAcreditado }),
   });
 }
+
+// ─── Compras por Artículos (pág 55) ──────────────────────────────────────────
+// Reporte de solo lectura de COMPRAS_ARTICULOS. El backend devuelve todo el
+// dataset (WHERE cod_empresa, tip_comprobante != 'AJS') y el filtrado (búsqueda
+// + facetas) es 100% en el front, como articulos-mas-vendidos.
+
+export type CompraArticulo = {
+  id_articulo: number;
+  descripcion: string | null;
+  codigo_oem: string | null;
+  id_cod_proveedor: string | null;
+  proveedor: string | null;
+  referencia: string | null;
+  fec_comprobante: string | null; // YYYY-MM-DD
+  cantidad: number | null;
+  precio: number | null;
+  total: number | null;
+  id_factura: number;
+  nro_linea: number | null;
+};
+
+export async function listarComprasArticulos(codEmpresa: number): Promise<CompraArticulo[]> {
+  const q = new URLSearchParams({ cod_empresa: String(codEmpresa) });
+  const data = await authFetch(`compras/articulos?${q}`);
+  return (data.data ?? []) as CompraArticulo[];
+}
+
+// ─── Ficha de Artículos (pág 56) ─────────────────────────────────────────────
+// Reporte de solo lectura de V_FICHA_EXISTENCIA (movimientos por artículo). El
+// backend devuelve todo el dataset (WHERE cod_empresa) y el filtrado (búsqueda
+// + facetas) es 100% en el front, como compras-articulos.
+
+export type FichaExistencia = {
+  cod_empresa: number;
+  fec_comprobante: string | null; // YYYY-MM-DD
+  id_articulo: number;
+  desc_articulo: string | null;
+  cantidad: number | null;
+  tipo: string | null;
+  fecha: string | null;
+  nro_comprobante: number | null;
+  desc_rubro: string | null;
+  codigo_oem: string | null;
+  es_activo: string | null;
+};
+
+export async function listarFichaExistencia(codEmpresa: number): Promise<FichaExistencia[]> {
+  const q = new URLSearchParams({ cod_empresa: String(codEmpresa) });
+  const data = await authFetch(`ficha/existencia?${q}`);
+  return (data.data ?? []) as FichaExistencia[];
+}
+
+// ─── Artículos sin Código de Barra (pág 57) ──────────────────────────────────
+// Reporte de solo lectura: artículos activos con existencia y sin código de
+// barra. Filtrado (búsqueda + faceta Rubro) 100% en el front.
+
+export type ArticuloSinBarra = {
+  id_articulo: number;
+  descripcion: string | null;
+  id_rubro: number | null;
+  desc_rubro: string | null;
+};
+
+export async function listarArticulosSinBarra(codEmpresa: number): Promise<ArticuloSinBarra[]> {
+  const q = new URLSearchParams({ cod_empresa: String(codEmpresa) });
+  const data = await authFetch(`articulos/sin-barra?${q}`);
+  return (data.data ?? []) as ArticuloSinBarra[];
+}
+
+// ─── Consulta de Precios (pág 61) ────────────────────────────────────────────
+// Busca un artículo por su código de barra (pistola lectora en mostrador) y
+// devuelve su ficha: precio de venta, existencia, marca, rubro, viscosidad.
+// data = null si el código no existe o el artículo no está activo.
+
+export type FichaPrecio = {
+  id_articulo: number;
+  descripcion: string | null;
+  marca: string | null;
+  rubro: string | null;
+  viscosidad: string | null;
+  precio_venta: number | null;
+  existencia: number | null;
+  tiene_imagen: number;
+};
+
+export async function consultarPrecio(
+  codEmpresa: number,
+  codBarra: string,
+): Promise<FichaPrecio | null> {
+  const q = new URLSearchParams({ cod_empresa: String(codEmpresa), cod_barra: codBarra });
+  const data = await authFetch(`consulta-precios?${q}`);
+  return (data.data ?? null) as FichaPrecio | null;
+}
