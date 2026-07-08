@@ -1079,7 +1079,8 @@ export async function eliminarArticuloProveedor(id: number, codEmpresa: number):
 }
 
 export async function buscarProveedores(codEmpresa: number, q: string): Promise<ProveedorBusqueda[]> {
-  const params = new URLSearchParams({ cod_empresa: String(codEmpresa), q });
+  const params = new URLSearchParams({ cod_empresa: String(codEmpresa) });
+  if (q.trim()) params.set("q", q.trim());
   const data = await authFetch(`proveedores/buscar?${params}`);
   return (data.data ?? []) as ProveedorBusqueda[];
 }
@@ -2024,6 +2025,218 @@ export async function guardarVentaDetalle(
 
 export async function eliminarVentaDetalle(idFactura: number, nroLinea: number): Promise<void> {
   await authFetch(`ventas-cabecera/${idFactura}/detalle/${nroLinea}`, { method: "DELETE" });
+}
+
+// ─── Compras (pág 28 grilla + 36 detalle) ────────────────────────────────────
+// CRUD de COMPRAS_CABECERA (solo update/delete) + detalle de artículos
+// (COMPRAS_DETALLE). Replica el patrón de ventas-cabecera. cod_persona = proveedor.
+export type CompraCabecera = {
+  id_factura: number;
+  tip_comprobante: string;
+  ser_timbrado: string | null;
+  nro_timbrado: number | null;
+  nro_comprobante: number;
+  fec_comprobante: string; // YYYY-MM-DD
+  fec_vencimiento: string | null; // YYYY-MM-DD
+  cod_persona: number;
+  nombre_proveedor: string | null;
+  cod_moneda: number | null;
+  desc_moneda: string | null;
+  tip_cambio: number | null;
+  id_condicion: number | null;
+  id_comprador: number | null;
+  total: number | null;
+};
+
+export type CompraCabeceraInput = {
+  cod_empresa: number;
+  tip_comprobante: string;
+  nro_comprobante: number;
+  fec_comprobante: string;
+  fec_vencimiento: string | null;
+  cod_persona: number;
+  id_condicion: number | null;
+  id_comprador: number | null;
+};
+
+export type CompraDetalleLinea = {
+  nro_linea: number;
+  id_articulo: number;
+  descripcion_articulo: string | null;
+  cantidad: number | null;
+  precio: number | null;
+  cod_iva: number | null;
+  costo_anterior: number | null; // pkg_compras.fn_costo_ultimo (P36_PRECIO_ANTERIOR)
+  total: number;
+};
+
+export type ComprasListado = {
+  anio: number;
+  mes: number;
+  anios: number[];
+  data: CompraCabecera[];
+};
+
+// Comprobantes filtrados por anio/mes. anio/mes = 0 (o ausente) = "Todos": trae
+// todos los comprobantes. El back informa anio/mes usados + los anios con compras.
+export async function listarCompras(
+  codEmpresa: number,
+  anio = 0,
+  mes = 0,
+): Promise<ComprasListado> {
+  const q = new URLSearchParams({ cod_empresa: String(codEmpresa) });
+  if (anio) q.set("anio", String(anio));
+  if (mes) q.set("mes", String(mes));
+  const json = await authFetch(`compras-cabecera?${q}`);
+  return {
+    anio: json.anio as number,
+    mes: json.mes as number,
+    anios: (json.anios ?? []) as number[],
+    data: (json.data ?? []) as CompraCabecera[],
+  };
+}
+
+export async function actualizarCompra(id: number, input: CompraCabeceraInput): Promise<void> {
+  await authFetch(`compras-cabecera/${id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+}
+
+// Alta de cabecera (pág 29). id_factura lo genera el sistema. Defaults del APEX:
+// cod_moneda=1, tip_cambio=1, condición=1, comprador=81.
+export type CompraCabeceraNueva = {
+  cod_empresa: number;
+  tip_comprobante: string;
+  ser_timbrado: string;
+  nro_timbrado: number | null;
+  nro_comprobante: number;
+  fec_comprobante: string;
+  fec_vencimiento: string | null;
+  cod_persona: number;
+  id_condicion: number | null;
+  id_comprador: number | null;
+  cod_moneda: number;
+  tip_cambio: number;
+  costo_delivery: number | null;
+};
+
+export async function crearCompra(input: CompraCabeceraNueva): Promise<number> {
+  const data = await authFetch("compras-cabecera", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  return data.id_factura as number;
+}
+
+// DAs del alta (pág 29): siguiente nro de comprobante por tip+serie del proveedor
+// y timbrado sugerido (último del proveedor).
+export async function sugeridosAltaCompra(
+  codEmpresa: number,
+  opts: { codPersona?: number; tipComprobante?: string; serTimbrado?: string },
+): Promise<{ nro_comprobante: number | null; nro_timbrado: number | null }> {
+  const q = new URLSearchParams({ cod_empresa: String(codEmpresa) });
+  if (opts.codPersona) q.set("cod_persona", String(opts.codPersona));
+  if (opts.tipComprobante) q.set("tip_comprobante", opts.tipComprobante);
+  if (opts.serTimbrado) q.set("ser_timbrado", opts.serTimbrado);
+  const data = await authFetch(`compras-cabecera/sugeridos-alta?${q}`);
+  return {
+    nro_comprobante: (data.nro_comprobante ?? null) as number | null,
+    nro_timbrado: (data.nro_timbrado ?? null) as number | null,
+  };
+}
+
+export async function eliminarCompra(id: number, codEmpresa: number): Promise<void> {
+  const q = new URLSearchParams({ cod_empresa: String(codEmpresa) });
+  await authFetch(`compras-cabecera/${id}?${q}`, { method: "DELETE" });
+}
+
+export async function listarCompraDetalle(idFactura: number): Promise<CompraDetalleLinea[]> {
+  const data = await authFetch(`compras-cabecera/${idFactura}/detalle`);
+  return (data.data ?? []) as CompraDetalleLinea[];
+}
+
+// Upsert de línea: nro_linea null = insertar (el back numera max+1, copia cod_iva
+// del artículo y cod_persona/cod_empresa de la cabecera); con nro_linea = actualizar.
+export type CompraDetalleInput = {
+  nro_linea: number | null;
+  id_articulo: number;
+  cantidad: number;
+  precio: number;
+  cod_iva: number | null; // el modal lo autocarga del artículo; permite override
+};
+
+export async function guardarCompraDetalle(
+  idFactura: number,
+  input: CompraDetalleInput,
+): Promise<number> {
+  const data = await authFetch(`compras-cabecera/${idFactura}/detalle`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  return data.nro_linea as number;
+}
+
+export async function eliminarCompraDetalle(idFactura: number, nroLinea: number): Promise<void> {
+  await authFetch(`compras-cabecera/${idFactura}/detalle/${nroLinea}`, { method: "DELETE" });
+}
+
+// Resuelve el artículo por el código del proveedor (DA recupera_codigo pág 36).
+// Devuelve null si no hay match para ese proveedor/código.
+export type CompraArticuloResuelto = {
+  id_articulo: number;
+  descripcion_articulo: string | null;
+  cod_iva: number | null;
+  costo_anterior: number | null;
+};
+
+export async function resolverCodProveedor(
+  idFactura: number,
+  codProveedor: string,
+): Promise<CompraArticuloResuelto | null> {
+  const q = new URLSearchParams({ cod_prov: codProveedor });
+  const data = await authFetch(`compras-cabecera/${idFactura}/resolver-cod-proveedor?${q}`);
+  return (data.data ?? null) as CompraArticuloResuelto | null;
+}
+
+// LOVs propios del módulo de compras (no compartidos con otras páginas).
+// q vacío = primeras 30 filas; ambos toleran q vacío u omitido.
+
+export type ProveedorCompra = {
+  cod_persona: number;
+  nombre: string | null;
+  nro_ruc: string | null;
+  nro_ci: string | null;
+};
+
+export async function buscarProveedoresCompra(
+  codEmpresa: number,
+  q: string,
+): Promise<ProveedorCompra[]> {
+  const params = new URLSearchParams({ cod_empresa: String(codEmpresa) });
+  if (q.trim()) params.set("q", q.trim());
+  const data = await authFetch(`compras-cabecera/buscar-proveedores?${params}`);
+  return (data.data ?? []) as ProveedorCompra[];
+}
+
+export type ArticuloCompra = {
+  id_articulo: number;
+  descripcion: string | null;
+  codigo_oem: string | null;
+  cod_iva: number | null;
+};
+
+export async function buscarArticulosCompra(
+  codEmpresa: number,
+  q: string,
+): Promise<ArticuloCompra[]> {
+  const params = new URLSearchParams({ cod_empresa: String(codEmpresa) });
+  if (q.trim()) params.set("q", q.trim());
+  const data = await authFetch(`compras-cabecera/buscar-articulos?${params}`);
+  return (data.data ?? []) as ArticuloCompra[];
 }
 
 // ─── Precios de Ventas (pág 34) ──────────────────────────────────────────────
