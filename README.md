@@ -164,6 +164,31 @@ accesos rápidos se arman dinámicamente desde el endpoint `menu/paginas`.
 - **Existencia de Artículos** (page_id 70) — existencia agrupada por artículo (SUM de cantidad) +
   costo. Búsqueda + facetas OEM/Activo, imagen. **Costo último / total costo solo para JOSEG**
   (permiso por usuario, replica `fn_verifica_campo`). Backend: `db/existencia_articulos_sql.sql`.
+- **Compras Vs Ventas** (page_id 75) — dos grillas (compras `COMPRAS_ARTICULOS` sin `FCR`, ventas
+  `VENTAS_ARTICULOS`) del año elegido + KPIs de resumen (Rentabilidad / Compras / **Ganancia** =
+  rentabilidad − compras). Filtros Año/Mes (single-select, actuales por defecto) y ¿Activos/Gastos?
+  como botones Si/No, imagen por artículo. Un solo endpoint devuelve ambos datasets. Backend:
+  `db/compras_vs_ventas_sql.sql`.
+- **Saldos de Proveedores** (page_id 79) — facturas de compra (`FCR`) + pagos (UNION), con saldo
+  por factura (`pkg_compras.fn_saldo_proveedor`) y próximo pago (`fn_fecha_pago`). Búsqueda +
+  facetas Proveedor/Factura + botones ¿Saldo? y KPI de saldo total pendiente. Backend:
+  `db/saldos_proveedores_sql.sql`.
+- **Consulta de Inventarios** (page_id 80) — último inventario por artículo (`V_FICHA_EXISTENCIA`)
+  con cantidad física vs sistema y diferencia. Búsqueda + facetas Fecha/Rubro/Marca + botones
+  ¿Con diferencia?/¿Cerrado?/¿Es activo?. **Vista en tarjetas** con imagen embebida (como el APEX
+  NATIVE_CARDS). Backend: `db/consulta_inventarios_sql.sql`.
+- **Punto de Venta** (page_id 39) — POS completo (reemplaza las páginas APEX 39/40/45/47 y sus
+  `apex_collections`): panel de artículos con stock (facetas Marca/Rubro, búsqueda, lector de código
+  de barra, % descuento, imagen) + carrito en estado React (cantidad ±, total) + modal de
+  facturación con datos de la factura (cliente con buscador, vendedor, serie/talonario) y **formas de
+  cobro múltiples**. **Efectivo con vuelto:** el cajero ingresa lo recibido; se imputa `min(recibido,
+  restante)` y el excedente es el vuelto (se guardan `total`/`efectivo_recibido`/`efectivo_vuelto`).
+  Con una sola forma de cobro no se controla el total (permite vuelto); con varias, la suma debe
+  igualarlo, y nunca superarlo. **Validaciones todas en el front** (cabecera, detalle, cobros). En
+  **móvil** el carrito se abre desde un botón flotante (FAB) en un modal. Al facturar, un POST atómico
+  (`pos/registrar`) hace los 3 INSERT (`VENTAS_CABECERA/DETALLE/COBROS`) en una transacción con
+  `PKG_VENTAS.fn_id_factura()`. La grilla usa la query "POS v2" (precio de tabla, existencia
+  compras−ventas, descuento por `fn_porc_descuento`). Backend: `db/punto_venta_sql.sql`.
 
 ## Deploy
 

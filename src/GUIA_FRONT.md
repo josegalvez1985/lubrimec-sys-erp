@@ -250,6 +250,49 @@ que agrega un mes hacia atrás. Se deriva la lista de meses (`yyyy-mm`) del data
 ventana de los N más recientes (`mesesVisibles`), y las facetas/búsqueda/total operan sobre esa
 ventana (no sobre todo el histórico). El botón se oculta cuando ya se muestran todos los meses.
 
+## Filtro binario Si/No (botones)
+
+Para un facet de dos valores (S/N, Si/No) va un par de **botones toggle horizontales** en vez de
+la lista de checkboxes: `variant={sel===v ? "default":"outline"}`, single-select (reclic
+deselecciona a `null`). Modelos: `compras-vs-ventas-view` (¿Activos/Gastos?),
+`saldos-proveedores-view` (¿Saldo?), `consulta-inventarios-view` (¿Con diferencia?/¿Cerrado?/
+¿Es activo?). Facetas con muchos valores (Rubro, Marca, Proveedor) siguen usando `ui/faceta`.
+
+`ui/faceta` acepta `limite` (default 8) para cuántas opciones mostrar antes de "Mostrar todo", y
+pone los **seleccionados primero** (así el valor elegido no se esconde al colapsar). Para ocultar
+el conteo `(N)` de una faceta, pasar `n: 0` en sus valores.
+
+## Punto de Venta (POS, pág 39) — carrito en React
+
+El POS (`punto-venta-view.tsx`) reemplaza el flujo de 4 páginas APEX (39/40/45/47) con
+`apex_collections` por **una vista con estado React**: panel de artículos (facetas Marca/Rubro +
+búsqueda + lector de código de barra + % descuento + imagen con `imgArticuloUrl`) a la izquierda y
+**carrito** (array en `useState`, cantidad ±, total) a la derecha. Al facturar, un modal reúne los
+datos de la factura (cliente con `BuscadorSelect`, vendedor, serie/talonario) y **cobros múltiples**,
+y manda **todo junto** a `pos/registrar` (un POST atómico; ver `db/GUIA_ENDPOINTS.md`, "POST con body
+JSON complejo"). El descuento va al backend (afecta el precio); rubro/marca/búsqueda filtran en el front.
+
+- **Cobros y vuelto (efectivo):** en efectivo el cajero ingresa lo **recibido**; se imputa a la venta
+  el `min(recibido, restante)` (el `total` del cobro nunca supera el total de la venta), y el excedente
+  es el **vuelto** (`recibido − restante`). Se guardan los tres campos: `total` (imputado),
+  `efectivo_recibido` y `efectivo_vuelto`. Formas bancarias usan monto + banco + nro transacción.
+- **Control del total según cantidad de cobros:** con **una sola** forma de cobro NO se controla que
+  cuadre el total (el efectivo puede ser mayor → vuelto). Solo cuando hay **varias** formas se valida
+  que la suma de cobros iguale el total. La suma imputada **nunca** puede superar el total de la venta.
+- **Validaciones (todas en el front, `onSubmit`):** cabecera (cliente, vendedor, talonario),
+  detalle (≥1 artículo, cantidad y precio > 0, total > 0) y cobros (≥1 forma; suma ≤ total; con varias,
+  suma == total). El backend `pos/registrar` **no valida negocio**, solo inserta.
+- **Buscador de cliente (`BuscadorSelect` + `buscarPersonas`):** el endpoint `personas/buscar` da
+  **400** si se le manda `q=` vacío; el cliente **omite** el param `q` cuando no hay texto (así al
+  abrir trae los primeros 30). Ver "Gotcha del buscador" abajo.
+- **Responsivo (móvil):** el carrito lateral se oculta (`hidden lg:flex`) y aparece un **botón flotante
+  (FAB)** abajo-derecha con total + contador que abre el carrito en un modal; el contenido del carrito
+  (`carritoContenido`) se comparte entre la columna desktop y el modal móvil.
+
+> **Gotcha del buscador (`BuscadorSelect`):** los endpoints `*/buscar` que rechazan `q=` vacío hacen
+> que la lista "no aparezca" (400 en la primera llamada al abrir). El cliente debe construir el
+> `URLSearchParams` **sin** `q` cuando está vacío: `if (q.trim()) params.set("q", q.trim())`.
+
 ## Gotchas de UI
 
 - **Layout responsivo:** el `<main>` del shell (`home.tsx`) lleva `min-w-0` — es hijo flex, y

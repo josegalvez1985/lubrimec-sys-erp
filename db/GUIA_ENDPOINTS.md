@@ -75,6 +75,13 @@ endpoints de solo lectura sin paquete (`ORDS_MENU_PAGINAS.sql`, `ORDS_VENTAS_*.s
   filas que matcheen `q` (por descripción / código / id) para alimentar el buscador del formulario
   (modelos: `BUSCAR_ARTICULOS` en `codigos_barras_sql.sql`, `BUSCAR_PROVEEDORES` en
   `articulos_proveedores_sql.sql`; endpoints `articulos/buscar`, `proveedores/buscar`).
+  - **`q` vacío → 400:** el handler ORDS rechaza `q=` vacío. El proc debe tratar `TRIM(q) IS NULL`
+    como "sin filtro" (devuelve los primeros 30), y el **cliente** front debe omitir el param `q`
+    cuando no hay texto (ver `src/GUIA_FRONT.md`, gotcha del buscador). Modelo: `BUSCAR_PERSONAS` en
+    `numeros_vouchers_sql.sql` (endpoint `personas/buscar`, usado por el buscador de cliente del POS).
+  - **Búsqueda por RUC/CI:** normalizar guiones/espacios en ambos lados para que `4962931` matchee
+    `496293-1`: `REPLACE(REPLACE(UPPER(nro_ruc),'-'),' ') LIKE l_qn`, con `l_qn` el término también
+    sin guiones ni espacios. Modelo: `BUSCAR_PERSONAS` en `numeros_vouchers_sql.sql`.
 - **Imagen en BLOB** (modelo: `articulos_sql.sql`). Reglas para no serializar megas de más:
   - `LISTAR` **no** devuelve el blob: solo `CASE WHEN DBMS_LOB.GETLENGTH(archivo_imagen) > 0 THEN 1
     ELSE 0 END AS tiene_imagen`.
@@ -221,6 +228,22 @@ por mes en el front.
 - Permiso por usuario: si el IR oculta columnas por `fn_verifica_campo` (ej. costos solo para
   JOSEG), el handler recibe `app_user` como query param y solo escribe esas columnas si corresponde
   (modelo: `existencia_articulos_sql.sql`, misma idea que `conteo-efectivo`).
+
+## POST con body JSON complejo (arrays anidados) + registro atómico
+
+Cuando el body no es plano (arrays de objetos, ej. un carrito con detalle + cobros), ORDS **no**
+puede auto-bindear a variables (`:descripcion`, etc.). Leer el cuerpo crudo con el bind implícito
+**`:body_text`** (CLOB) en el handler `plsql/block` y parsearlo con `APEX_JSON.PARSE` /
+`APEX_JSON.GET_*` dentro del paquete. Modelo: `punto_venta_sql.sql` (`pos/registrar`).
+
+- **NO** declarar el body con `ORDS.DEFINE_PARAMETER(... p_source_type => 'BODY' ...)`: en algunas
+  versiones de ORDS eso viola `REST_PARAMS_SOURCE_TYPE_CK` y falla la creación del endpoint.
+  `:body_text` está disponible sin declararlo (solo se declara el `Authorization` HEADER).
+- Leer arrays con `APEX_JSON.GET_COUNT('detalle')` + `GET_NUMBER('detalle[%d].campo', i)` en un loop.
+- **Registro atómico multi-tabla:** el POS reemplaza las `apex_collections` del APEX (CARRITO/
+  CABECERA/FORMAPAGO) por estado en React + un único POST que hace todos los INSERT en una
+  transacción (rollback ante error). El id lo da `PKG_VENTAS.fn_id_factura()`. Modelo:
+  `PKG_PUNTO_VENTA_LUBRIMEC.REGISTRAR` (VENTAS_CABECERA + DETALLE + COBROS).
 
 ## Formularios cabecera + detalle (maestro-detalle)
 

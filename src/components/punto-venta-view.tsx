@@ -80,6 +80,8 @@ export function PuntoVentaView() {
   const [descuento, setDescuento] = useState(0);
   const [carrito, setCarrito] = useState<ItemCarrito[]>([]);
   const [modal, setModal] = useState<"cerrado" | "cobro">("cerrado");
+  // En móvil el carrito se abre en un modal desde un botón flotante (FAB).
+  const [verCarrito, setVerCarrito] = useState(false);
 
   // Se trae todo el dataset (con el descuento aplicado en el precio); rubro,
   // marca y búsqueda se filtran en el front (facetas dependientes).
@@ -168,6 +170,13 @@ export function PuntoVentaView() {
     setCarrito((prev) => prev.filter((i) => i.id_articulo !== id));
   }
 
+  // Precio unitario editable por línea (como P40 del APEX).
+  function cambiarPrecio(id: number, precio: number | null) {
+    setCarrito((prev) =>
+      prev.map((i) => (i.id_articulo === id ? { ...i, precio: precio ?? 0 } : i)),
+    );
+  }
+
   async function onBarra(e: FormEvent) {
     e.preventDefault();
     const cb = codBarra.trim();
@@ -194,6 +203,93 @@ export function PuntoVentaView() {
       toast.error("Error al buscar el código");
     }
   }
+
+  // Contenido del carrito (lista + total + Facturar). Se reutiliza en la columna
+  // lateral (desktop) y en el modal del FAB (móvil).
+  const carritoContenido = (
+    <>
+      <div className="hidden items-center gap-2 border-b border-border p-4 lg:flex">
+        <ShoppingCart className="h-5 w-5 text-primary" />
+        <h3 className="font-display text-lg font-bold">Carrito</h3>
+        <Badge variant="outline" className="ml-auto">
+          {carrito.length}
+        </Badge>
+      </div>
+
+      <div className="min-h-0 flex-1 overflow-auto p-3">
+        {carrito.length === 0 ? (
+          <p className="py-12 text-center text-sm text-muted-foreground">Carrito vacío</p>
+        ) : (
+          <ul className="space-y-2">
+            {carrito.map((i) => (
+              <li key={i.id_articulo} className="rounded-xl border border-border p-2.5">
+                <div className="flex items-start justify-between gap-2">
+                  <p className="min-w-0 flex-1 truncate text-sm font-medium">{i.descripcion}</p>
+                  <button
+                    type="button"
+                    onClick={() => quitar(i.id_articulo)}
+                    className="text-muted-foreground hover:text-destructive"
+                    aria-label="Quitar"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
+                <div className="mt-1.5 flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1">
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      className="h-8 w-8"
+                      onClick={() => cambiarCantidad(i.id_articulo, -1)}
+                    >
+                      <Minus className="h-3.5 w-3.5" />
+                    </Button>
+                    <span className="w-8 text-center font-mono text-sm">{i.cantidad}</span>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      className="h-8 w-8"
+                      onClick={() => cambiarCantidad(i.id_articulo, 1)}
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                  {/* Precio unitario editable */}
+                  <InputMonto
+                    value={i.precio}
+                    onValueChange={(v) => cambiarPrecio(i.id_articulo, v)}
+                    maxDecimals={0}
+                    className="h-8 w-24 font-mono text-xs"
+                  />
+                </div>
+                <div className="mt-1 text-right font-mono text-sm font-semibold">
+                  ₲ {fmtGs(i.precio * i.cantidad)}
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      <div className="border-t border-border p-4">
+        <div className="mb-3 flex items-center justify-between">
+          <span className="text-sm text-muted-foreground">Total</span>
+          <span className="font-display text-2xl font-bold tabular-nums">₲ {fmtGs(total)}</span>
+        </div>
+        <Button
+          disabled={carrito.length === 0}
+          onClick={() => {
+            setVerCarrito(false);
+            setModal("cobro");
+          }}
+          className="w-full bg-gradient-primary font-semibold text-primary-foreground shadow-glow hover:opacity-95"
+        >
+          <CheckCircle2 className="mr-2 h-4 w-4" />
+          Facturar
+        </Button>
+      </div>
+    </>
+  );
 
   return (
     <div className="grid gap-4 lg:grid-cols-[1fr_360px]">
@@ -298,79 +394,39 @@ export function PuntoVentaView() {
         </div>
       </div>
 
-      {/* Carrito */}
-      <div className="flex flex-col rounded-2xl border border-border bg-card shadow-elegant lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)]">
-        <div className="flex items-center gap-2 border-b border-border p-4">
-          <ShoppingCart className="h-5 w-5 text-primary" />
-          <h3 className="font-display text-lg font-bold">Carrito</h3>
-          <Badge variant="outline" className="ml-auto">
+      {/* Carrito — columna lateral en desktop, oculta en móvil (se abre por FAB). */}
+      <div className="hidden flex-col rounded-2xl border border-border bg-card shadow-elegant lg:flex lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)]">
+        {carritoContenido}
+      </div>
+
+      {/* Botón flotante (móvil): abre el carrito. */}
+      {carrito.length > 0 && (
+        <Button
+          type="button"
+          onClick={() => setVerCarrito(true)}
+          className="fixed bottom-5 right-5 z-40 h-14 rounded-full bg-gradient-primary px-5 font-semibold text-primary-foreground shadow-glow lg:hidden"
+        >
+          <ShoppingCart className="mr-2 h-5 w-5" />
+          <span className="tabular-nums">₲ {fmtGs(total)}</span>
+          <Badge className="ml-2 bg-primary-foreground/20 text-primary-foreground">
             {carrito.length}
           </Badge>
-        </div>
+        </Button>
+      )}
 
-        <div className="min-h-0 flex-1 overflow-auto p-3">
-          {carrito.length === 0 ? (
-            <p className="py-12 text-center text-sm text-muted-foreground">Carrito vacío</p>
-          ) : (
-            <ul className="space-y-2">
-              {carrito.map((i) => (
-                <li key={i.id_articulo} className="rounded-xl border border-border p-2.5">
-                  <div className="flex items-start justify-between gap-2">
-                    <p className="min-w-0 flex-1 truncate text-sm font-medium">{i.descripcion}</p>
-                    <button
-                      type="button"
-                      onClick={() => quitar(i.id_articulo)}
-                      className="text-muted-foreground hover:text-destructive"
-                      aria-label="Quitar"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  </div>
-                  <div className="mt-1.5 flex items-center justify-between">
-                    <div className="flex items-center gap-1">
-                      <Button
-                        variant="outline"
-                        size="icon"
-                        className="h-7 w-7"
-                        onClick={() => cambiarCantidad(i.id_articulo, -1)}
-                      >
-                        <Minus className="h-3.5 w-3.5" />
-                      </Button>
-                      <span className="w-8 text-center font-mono text-sm">{i.cantidad}</span>
-                      <Button
-                        variant="outline"
-                        size="icon"
-                        className="h-7 w-7"
-                        onClick={() => cambiarCantidad(i.id_articulo, 1)}
-                      >
-                        <Plus className="h-3.5 w-3.5" />
-                      </Button>
-                    </div>
-                    <span className="font-mono text-sm font-semibold">
-                      ₲ {fmtGs(i.precio * i.cantidad)}
-                    </span>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-
-        <div className="border-t border-border p-4">
-          <div className="mb-3 flex items-center justify-between">
-            <span className="text-sm text-muted-foreground">Total</span>
-            <span className="font-display text-2xl font-bold tabular-nums">₲ {fmtGs(total)}</span>
-          </div>
-          <Button
-            disabled={carrito.length === 0}
-            onClick={() => setModal("cobro")}
-            className="w-full bg-gradient-primary font-semibold text-primary-foreground shadow-glow hover:opacity-95"
-          >
-            <CheckCircle2 className="mr-2 h-4 w-4" />
-            Facturar
-          </Button>
-        </div>
-      </div>
+      {/* Carrito en modal (móvil). */}
+      {verCarrito && (
+        <Dialog open onOpenChange={(o) => !o && setVerCarrito(false)}>
+          <DialogContent className="flex max-h-[85vh] flex-col gap-0 p-0 sm:max-w-md lg:hidden">
+            <DialogHeader className="border-b border-border p-4">
+              <DialogTitle className="flex items-center gap-2">
+                <ShoppingCart className="h-5 w-5 text-primary" /> Carrito
+              </DialogTitle>
+            </DialogHeader>
+            <div className="flex min-h-0 flex-1 flex-col">{carritoContenido}</div>
+          </DialogContent>
+        </Dialog>
+      )}
 
       {modal === "cobro" && (
         <FacturarDialog
@@ -381,6 +437,7 @@ export function PuntoVentaView() {
           onDone={(idFactura) => {
             toast.success(`Venta registrada · Factura ${idFactura}`);
             setCarrito([]);
+            setVerCarrito(false);
             setModal("cerrado");
           }}
         />
@@ -415,6 +472,7 @@ function ThumbArticulo({ id }: { id: number }) {
 function FacturarDialog({
   total,
   detalle,
+  vendedorDefault,
   onClose,
   onDone,
 }: {
@@ -430,7 +488,7 @@ function FacturarDialog({
   const [codVendedor, setCodVendedor] = useState<number | null>(null);
   const [idTalonario, setIdTalonario] = useState<number | null>(null);
   const [nroTelefono, setNroTelefono] = useState("");
-  const [observacion, setObservacion] = useState("");
+  const [modeloVehiculo, setModeloVehiculo] = useState("");
   // Cobros (pág 47)
   const [cobros, setCobros] = useState<Cobro[]>([]);
   const [error, setError] = useState("");
@@ -441,6 +499,17 @@ function FacturarDialog({
     queryFn: () => listarVendedores(COD_EMPRESA),
     retry: false,
   });
+
+  // Autocarga del vendedor por usuario (pág 45, DA "Vendedor": cod_usuario =
+  // app_user). Solo una vez, al llegar los vendedores, si aún no se eligió uno.
+  const [vendedorAuto, setVendedorAuto] = useState(false);
+  if (!vendedorAuto && vendedores && codVendedor == null) {
+    setVendedorAuto(true);
+    const propio = vendedores.find(
+      (v) => (v.cod_usuario ?? "").toUpperCase() === vendedorDefault.toUpperCase(),
+    );
+    if (propio) setCodVendedor(propio.cod_vendedor);
+  }
   const { data: talonarios } = useQuery({
     queryKey: ["talonarios", COD_EMPRESA],
     queryFn: () => listarTalonarios(COD_EMPRESA),
@@ -462,11 +531,26 @@ function FacturarDialog({
 
   async function onSubmit() {
     setError("");
+    // Cabecera
     if (!codPersona) return setError("Selecciona el cliente");
     if (!codVendedor) return setError("Selecciona el vendedor");
     if (!idTalonario || !talonario) return setError("Selecciona la serie/talonario");
+    // Detalle
+    if (detalle.length === 0) return setError("Agrega al menos un artículo");
+    if (detalle.some((i) => i.cantidad <= 0))
+      return setError("La cantidad de cada artículo debe ser mayor a 0");
+    if (detalle.some((i) => i.precio <= 0))
+      return setError("El precio de cada artículo debe ser mayor a 0");
+    if (total <= 0) return setError("El total de la venta debe ser mayor a 0");
+    // Cobros
     if (cobros.length === 0) return setError("Agrega al menos una forma de cobro");
-    if (Math.abs(restante) > 0.5) return setError(`Falta cobrar ₲ ${fmtGs(restante)}`);
+    // El total imputado (suma de cobros) nunca puede superar el total de la venta.
+    if (totalCobrado - total > 0.5)
+      return setError(`El cobro no puede superar el total ₲ ${fmtGs(total)}`);
+    // Con una sola forma de cobro no se controla el faltante; solo cuando hay varias
+    // se valida que la suma de los cobros iguale el total de la venta.
+    if (cobros.length > 1 && Math.abs(restante) > 0.5)
+      return setError(`Falta cobrar ₲ ${fmtGs(restante)}`);
 
     setSaving(true);
     try {
@@ -484,8 +568,7 @@ function FacturarDialog({
           cod_vendedor: codVendedor,
           nro_voucher: null,
           nro_telefono: nroTelefono.trim() || null,
-          observacion: observacion.trim() || null,
-          modelo_vehiculo: null,
+          modelo_vehiculo: modeloVehiculo.trim() || null,
         },
         detalle: detalle.map((i) => ({
           id_articulo: i.id_articulo,
@@ -587,11 +670,11 @@ function FacturarDialog({
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="obs">Observación</Label>
+              <Label htmlFor="modelo">Modelo de vehículo</Label>
               <Input
-                id="obs"
-                value={observacion}
-                onChange={(e) => setObservacion(e.target.value)}
+                id="modelo"
+                value={modeloVehiculo}
+                onChange={(e) => setModeloVehiculo(e.target.value)}
                 placeholder="Opcional"
               />
             </div>
@@ -632,6 +715,7 @@ function FacturarDialog({
             <AgregarCobro
               formas={formas ?? []}
               restante={Math.max(restante, 0)}
+              yaHayCobros={cobros.length > 0}
               onAdd={(c) => setCobros((prev) => [...prev, c])}
             />
           </div>
@@ -664,10 +748,12 @@ function FacturarDialog({
 function AgregarCobro({
   formas,
   restante,
+  yaHayCobros,
   onAdd,
 }: {
   formas: { id_forma: number; descripcion: string | null }[];
   restante: number;
+  yaHayCobros: boolean;
   onAdd: (c: Cobro) => void;
 }) {
   const [idForma, setIdForma] = useState<number | null>(null);
@@ -675,22 +761,38 @@ function AgregarCobro({
   const [idBanco, setIdBanco] = useState<number | null>(null);
   const [nroTransaccion, setNroTransaccion] = useState("");
   const [efectivoRecibido, setEfectivoRecibido] = useState<number | null>(null);
+  const [err, setErr] = useState("");
 
   const { data: bancos } = useQuery({ queryKey: ["bancos"], queryFn: listarBancos, retry: false });
 
   const esEfectivo = idForma === FORMA_EFECTIVO;
+  // En efectivo el cajero ingresa lo recibido; se imputa a la venta el mínimo entre
+  // lo recibido y lo que falta cobrar, y el excedente es el vuelto. Así el total
+  // imputado nunca supera el total de la venta pero se guarda el efectivo real.
+  const imputadoEfectivo =
+    esEfectivo && efectivoRecibido != null
+      ? Math.min(efectivoRecibido, restante)
+      : null;
   const vuelto =
-    esEfectivo && efectivoRecibido != null && monto != null
-      ? Math.max(efectivoRecibido - monto, 0)
+    esEfectivo && efectivoRecibido != null
+      ? Math.max(efectivoRecibido - restante, 0)
       : null;
 
   function add() {
-    if (!idForma || monto == null || monto <= 0) return;
+    setErr("");
+    const totalImputado = esEfectivo ? imputadoEfectivo : monto;
+    if (!idForma || totalImputado == null || totalImputado <= 0) return;
+    // Solo se controla el monto cuando ya hay otra forma de cobro (reparto entre
+    // varias): el primer cobro puede tomar cualquier monto sin tope.
+    if (!esEfectivo && yaHayCobros && totalImputado - restante > 0.5) {
+      setErr(`Monto permitido: ₲ ${fmtGs(restante)}`);
+      return;
+    }
     const desc = formas.find((f) => f.id_forma === idForma)?.descripcion ?? "Cobro";
     onAdd({
       id_forma: idForma,
       desc_forma: desc,
-      total: monto,
+      total: totalImputado,
       id_banco: esEfectivo ? null : idBanco,
       nro_transaccion: esEfectivo ? null : nroTransaccion.trim() || null,
       efectivo_recibido: esEfectivo ? efectivoRecibido : null,
@@ -723,9 +825,10 @@ function AgregarCobro({
           ))}
         </select>
         <InputMonto
-          value={monto}
+          value={esEfectivo ? imputadoEfectivo : monto}
           onValueChange={setMonto}
           maxDecimals={0}
+          disabled={esEfectivo}
           placeholder={restante > 0 ? `Máx ${fmtGs(restante)}` : "Monto"}
           className="h-9 font-mono"
         />
@@ -768,12 +871,19 @@ function AgregarCobro({
           </div>
         ))}
 
+      {err && <p className="text-xs font-medium text-destructive">{err}</p>}
+
       <Button
         type="button"
         variant="outline"
         size="sm"
         className="w-full"
-        disabled={!idForma || monto == null || monto <= 0}
+        disabled={
+          !idForma ||
+          (esEfectivo
+            ? efectivoRecibido == null || efectivoRecibido <= 0
+            : monto == null || monto <= 0)
+        }
         onClick={add}
       >
         <Plus className="mr-2 h-4 w-4" />

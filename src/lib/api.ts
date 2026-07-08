@@ -1655,7 +1655,8 @@ export async function eliminarNumeroVoucher(id: number): Promise<void> {
 
 // Buscador de personas (todas las de la empresa) para el selector del voucher.
 export async function buscarPersonas(codEmpresa: number, q: string): Promise<ProveedorBusqueda[]> {
-  const params = new URLSearchParams({ cod_empresa: String(codEmpresa), q });
+  const params = new URLSearchParams({ cod_empresa: String(codEmpresa) });
+  if (q.trim()) params.set("q", q.trim());
   const data = await authFetch(`personas/buscar?${params}`);
   return (data.data ?? []) as ProveedorBusqueda[];
 }
@@ -2437,6 +2438,17 @@ export async function buscarArticuloPorBarra(
   } | null;
 }
 
+// Buscador de clientes (ind_cliente_proveedor='C') para el modal de facturación
+// del POS (LOV PERSONAS.CLIENTES del APEX). Mismo shape que ProveedorBusqueda.
+export async function buscarClientesPOS(
+  codEmpresa: number,
+  q: string,
+): Promise<ProveedorBusqueda[]> {
+  const p = new URLSearchParams({ cod_empresa: String(codEmpresa), q });
+  const data = await authFetch(`pos/clientes?${p}`);
+  return (data.data ?? []) as ProveedorBusqueda[];
+}
+
 export async function siguienteNroComprobante(
   codEmpresa: number,
   serTimbrado: string,
@@ -2459,7 +2471,6 @@ export type VentaPOSInput = {
     cod_vendedor: number;
     nro_voucher: number | null;
     nro_telefono: string | null;
-    observacion: string | null;
     modelo_vehiculo: string | null;
   };
   detalle: {

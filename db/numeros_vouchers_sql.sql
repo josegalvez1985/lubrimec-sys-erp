@@ -285,6 +285,8 @@ CREATE OR REPLACE PACKAGE BODY PKG_NUMEROS_VOUCHERS_LUBRIMEC AS
   PROCEDURE BUSCAR_PERSONAS(p_token IN VARCHAR2, p_cod_empresa IN NUMBER, p_q IN VARCHAR2) IS
     l_usuario VARCHAR2(255);
     l_q       VARCHAR2(400) := '%' || UPPER(TRIM(p_q)) || '%';
+    -- Term normalizado (sin guiones/espacios) para matchear RUC/CI escritos con o sin guion.
+    l_qn      VARCHAR2(400) := '%' || REPLACE(REPLACE(UPPER(TRIM(p_q)), '-'), ' ') || '%';
   BEGIN
     l_usuario := f_usuario(p_token);
     IF l_usuario IS NULL THEN
@@ -305,8 +307,8 @@ CREATE OR REPLACE PACKAGE BODY PKG_NUMEROS_VOUCHERS_LUBRIMEC AS
                  TRIM(p_q) IS NULL
                  OR UPPER(nombre) LIKE l_q
                  OR UPPER(nombre_fantasia) LIKE l_q
-                 OR UPPER(nro_ruc) LIKE l_q
-                 OR UPPER(nro_ci) LIKE l_q
+                 OR REPLACE(REPLACE(UPPER(nro_ruc), '-'), ' ') LIKE l_qn
+                 OR REPLACE(REPLACE(UPPER(nro_ci), '-'), ' ') LIKE l_qn
                  OR TO_CHAR(cod_persona) LIKE l_q
                )
          ORDER BY NVL(nombre_fantasia, nombre)
