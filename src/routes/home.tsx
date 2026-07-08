@@ -701,7 +701,10 @@ function DashboardView({
             Aquí tienes el resumen de tu negocio.
           </p>
         </div>
-        <Button className="shrink-0 bg-gradient-primary font-semibold text-primary-foreground shadow-glow hover:opacity-95">
+        <Button
+          onClick={() => onNavigate(39)}
+          className="shrink-0 bg-gradient-primary font-semibold text-primary-foreground shadow-glow hover:opacity-95"
+        >
           <Plus className="mr-2 h-4 w-4" />
           <span className="hidden sm:inline">Nueva venta</span>
           <span className="sm:hidden">Venta</span>
