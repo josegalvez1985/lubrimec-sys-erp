@@ -215,7 +215,14 @@ el bloque `BEGIN ... ORDS.DEFINE_* ... END;`.
 - **Selector de FK:** `codigos_barras_sql.sql`, `articulos_proveedores_sql.sql`.
 - **Imagen BLOB:** `articulos_sql.sql`, `monedas_sql.sql`.
 - **Reporte facetado de solo lectura (sin paquete):** `compras_articulos_sql.sql`,
-  `ficha_existencia_sql.sql`, `articulos_sin_barra_sql.sql`, `existencia_articulos_sql.sql`.
+  `ficha_existencia_sql.sql`, `articulos_sin_barra_sql.sql`, `existencia_articulos_sql.sql`,
+  `articulos_no_inventariados_sql.sql` (pág 81), `precios_mayoristas_sql.sql` (pág 82),
+  `marcas_vs_descripcion_sql.sql` (pág 93).
+- **Rango de fechas con default calculado:** `costo_inventarios_sql.sql` (pág 92) — recibe
+  `desde`/`hasta` opcionales (YYYY-MM-DD); sin ellos usa el parámetro `FECHA_INVENTARIO`
+  (inicio del inventario en curso) → hoy, y devuelve en el JSON el rango efectivo
+  (`fecha_desde`/`fecha_hasta`) + `fecha_inicio_inventario` para mostrarlos en el front.
+  (En APEX los binds NULL no traían filas; el default evita la pantalla vacía.)
 
 > Los `ORDS_*.sql` en mayúsculas son la convención vieja (quedan algunos: `ORDS_MENU_PAGINAS`,
 > `ORDS_VENTAS_*`, `ORDS_PEDIDOS_ARTICULOS`, `ORDS_ARTICULOS_MAS_VENDIDOS`, `ORDS_CIERRE_DIA`); al

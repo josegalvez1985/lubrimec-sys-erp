@@ -100,6 +100,8 @@ sus permisos. Cada usuario ve un menú distinto.
    No hay que tocar el sidebar ni el endpoint: el menú se arma solo desde la respuesta.
    Páginas ya con vista propia (referencia de `page_id`): 24 Códigos de Barras, 27
    Artículos-Proveedores, 2 Personas, 6 Marcas, 117 WhatsApp, etc. (ver el mapa completo).
+4. **Ícono:** antes de agregar el `page_id` a `ICONO_PAGINA`, verificar que no exista ya
+   (muchos están precargados); una key duplicada rompe la compilación (TS1117 — pasó con la 81).
 
 ### CRUD con FK: selector con buscador (modelos: `codigos-barras-view`, `articulos-proveedores-view`)
 
@@ -153,6 +155,13 @@ Tablas con imagen (`archivo_imagen BLOB` + `mime_type`). Dos caminos según el t
   navegador no manda `Authorization` en un `<img>`. Cliente: helper `urlImagenArticulo` en `api.ts`.
 - **Proxy y binarios:** `src/routes/api/ords.$.ts` reenvía el body como `arrayBuffer()` (no
   `res.text()`, que corrompe binarios decodificándolos como UTF-8). Sirve igual para JSON e imágenes.
+- **Dos fuentes de imagen — no confundirlas:** `ArticuloImgModal`/`imgArticuloUrl` tiran del módulo
+  ORDS `paginaweb` (`/api/img/articulosimg/:id`), que solo tiene los artículos publicados en la web;
+  `urlImagenArticulo(id, codEmpresa)` (api.ts) sirve el **BLOB de la tabla `ARTICULOS`** vía
+  `articulos/:id/imagen` — es lo que muestra el APEX. Si una vista replica una página APEX con
+  columna Imagen y sale "Sin imagen disponible", usar `urlImagenArticulo` (el modal acepta un prop
+  `src` opcional para esto). Thumbnail inline 60x60 en la grilla + click para ampliar: modelo
+  `precios-mayoristas-view` (`ImgCelda`, con fallback a ícono si el artículo no tiene imagen).
 
 ## Sin caché: todo dato se consulta en el momento
 
@@ -173,6 +182,10 @@ que hacer nada extra**, solo respetar el patrón:
    un deploy los usuarios seguirían con el bundle viejo para siempre — pasó) y cache-first solo
    para assets con hash. Si cambiás `sw.js`, subí la constante `CACHE` (`lubrimesys-vN`) para
    forzar la purga en los clientes.
+   **El SW solo se registra en producción.** En dev `__root.tsx` lo desregistra activamente:
+   los módulos de Vite no tienen hash y el cache-first servía código viejo tras cada cambio
+   (síntoma: la página nueva seguía mostrando el `PlaceholderView`). Si un navegador quedó con
+   el SW viejo en dev: DevTools → Application → Service Workers → Unregister + Clear site data.
 
 ## El componente (`src/components/marcas-view.tsx` — modelo)
 
@@ -281,6 +294,12 @@ deselecciona a `null`). Modelos: `compras-vs-ventas-view` (¿Activos/Gastos?),
 `ui/faceta` acepta `limite` (default 8) para cuántas opciones mostrar antes de "Mostrar todo", y
 pone los **seleccionados primero** (así el valor elegido no se esconde al colapsar). Para ocultar
 el conteo `(N)` de una faceta, pasar `n: 0` en sus valores.
+
+**Facetas SIN conteo (regla del proyecto):** en toda vista nueva las facetas van **sin** el
+conteo `(N)` — construir los valores con `.map((valor) => ({ valor, n: 0 }))` (basta un Set de
+valores, no hace falta contar). Pedido explícito del usuario, varias veces. No copiar el patrón
+con conteo de vistas viejas (`articulos-sin-barra-view`). Modelos: `precios-mayoristas-view`,
+`articulos-no-inventariados-view`.
 
 ## Punto de Venta (POS, pág 39) — carrito en React
 

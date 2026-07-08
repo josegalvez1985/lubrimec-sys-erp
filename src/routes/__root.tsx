@@ -126,7 +126,15 @@ function RootComponent() {
 
   useEffect(() => {
     if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`);
+      if (import.meta.env.DEV) {
+        // En dev el SW cachearía los módulos de Vite (sin hash) y serviría código
+        // viejo tras cada cambio: desregistrar cualquiera que haya quedado.
+        navigator.serviceWorker.getRegistrations().then((regs) => {
+          for (const r of regs) r.unregister();
+        });
+      } else {
+        navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`);
+      }
     }
   }, []);
 

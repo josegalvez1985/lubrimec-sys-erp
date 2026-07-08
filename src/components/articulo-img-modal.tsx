@@ -17,11 +17,15 @@ export function ArticuloImgModal({
   id,
   titulo,
   onClose,
+  src,
 }: {
   open: boolean;
   id: string | null;
   titulo?: string | null;
   onClose: () => void;
+  // URL alternativa de la imagen (default: módulo paginaweb). Ej: urlImagenArticulo
+  // de api.ts para servir el BLOB de ARTICULOS directo (pág 82).
+  src?: string;
 }) {
   const [estado, setEstado] = useState<"cargando" | "ok" | "error">("cargando");
   // Reinicia el estado al abrir/cambiar de artículo, sin useEffect (patrón lastKey).
@@ -62,7 +66,7 @@ export function ArticuloImgModal({
                 // key = id: fuerza recarga y reinicia el estado al cambiar de artículo.
                 <img
                   key={id}
-                  src={imgArticuloUrl(id)}
+                  src={src ?? imgArticuloUrl(id)}
                   alt={titulo ?? "Artículo"}
                   className="max-h-[70vh] max-w-full rounded-lg object-contain"
                   onLoad={() => setEstado("ok")}
