@@ -292,13 +292,15 @@ CREATE OR REPLACE PACKAGE BODY PKG_ARTICULOS_PROVEEDORES_LUBRIMEC AS
   END ELIMINAR;
 
   --------------------------------------------------------------------------
-  -- BUSCAR_PROVEEDORES (para el selector). Hasta 30 personas de la empresa que
+  -- BUSCAR_PROVEEDORES (para el selector). Todas las personas de la empresa que
   -- sean proveedores (ind_cliente_proveedor P o A) y matcheen por nombre /
-  -- nombre_fantasia / ruc / ci / cod_persona. Con q vacio, las primeras por nombre.
+  -- nombre_fantasia / ruc / ci / cod_persona. Con q vacio, todas ordenadas por nombre.
   --------------------------------------------------------------------------
   PROCEDURE BUSCAR_PROVEEDORES(p_token IN VARCHAR2, p_cod_empresa IN NUMBER, p_q IN VARCHAR2) IS
     l_usuario VARCHAR2(255);
     l_q       VARCHAR2(400) := '%' || UPPER(TRIM(p_q)) || '%';
+    -- Term normalizado (sin guiones/espacios) para matchear RUC/CI con o sin guion.
+    l_qn      VARCHAR2(400) := '%' || REPLACE(REPLACE(UPPER(TRIM(p_q)), '-'), ' ') || '%';
   BEGIN
     l_usuario := f_usuario(p_token);
     IF l_usuario IS NULL THEN
@@ -320,12 +322,11 @@ CREATE OR REPLACE PACKAGE BODY PKG_ARTICULOS_PROVEEDORES_LUBRIMEC AS
                  TRIM(p_q) IS NULL
                  OR UPPER(nombre) LIKE l_q
                  OR UPPER(nombre_fantasia) LIKE l_q
-                 OR UPPER(nro_ruc) LIKE l_q
-                 OR UPPER(nro_ci) LIKE l_q
+                 OR REPLACE(REPLACE(UPPER(nro_ruc), '-'), ' ') LIKE l_qn
+                 OR REPLACE(REPLACE(UPPER(nro_ci), '-'), ' ') LIKE l_qn
                  OR TO_CHAR(cod_persona) LIKE l_q
                )
          ORDER BY NVL(nombre_fantasia, nombre)
-         FETCH FIRST 30 ROWS ONLY
     ) LOOP
       APEX_JSON.OPEN_OBJECT;
       APEX_JSON.WRITE('cod_persona', r.cod_persona);
@@ -608,6 +609,10 @@ END;
   ----------------------------------------------------------------------------
   -- /proveedores/buscar  -> selector de proveedores del formulario
   ----------------------------------------------------------------------------
+  -- Limpieza: borra handler y plantilla previos por si quedo una version en
+  -- conflicto (que estaba devolviendo 400 al pasar el parametro q).
+  BEGIN ORDS.DELETE_HANDLER('lubrimec', 'proveedores/buscar', 'GET'); EXCEPTION WHEN OTHERS THEN NULL; END;
+  BEGIN ORDS.DELETE_TEMPLATE('lubrimec', 'proveedores/buscar');       EXCEPTION WHEN OTHERS THEN NULL; END;
   BEGIN
     ORDS.DEFINE_TEMPLATE(
         p_module_name => 'lubrimec',

@@ -121,6 +121,7 @@ import { CierreDiaView } from "@/components/cierre-dia-view";
 import { RendicionesCajasView } from "@/components/rendiciones-cajas-view";
 import { VentasCobrosView } from "@/components/ventas-cobros-view";
 import { VentasView } from "@/components/ventas-view";
+import { ComprasView } from "@/components/compras-view";
 import { PreciosVentasView } from "@/components/precios-ventas-view";
 import { CobrosAcreditarView } from "@/components/cobros-acreditar-view";
 import { ArticulosView } from "@/components/articulos-view";
@@ -278,6 +279,7 @@ const VISTAS: Record<number, () => ReactElement> = {
   73: () => <RendicionesCajasView />, // Rendición de Caja
   65: () => <VentasCobrosView />, // Cobros de Ventas
   60: () => <VentasView />, // Ventas
+  28: () => <ComprasView />, // Consulta de Compras
   34: () => <PreciosVentasView />, // Precios de Ventas
   111: () => <CobrosAcreditarView />, // Acreditación de Cobros
   55: () => <ComprasArticulosView />, // Compras por Artículos
