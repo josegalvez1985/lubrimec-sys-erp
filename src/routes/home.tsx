@@ -84,6 +84,14 @@ import { CobrosAcreditarCard } from "@/components/cobros-acreditar-card";
 import { ComprasArticulosView } from "@/components/compras-articulos-view";
 import { FichaArticulosView } from "@/components/ficha-articulos-view";
 import { ArticulosSinBarraView } from "@/components/articulos-sin-barra-view";
+import { ArticulosNoInventariadosView } from "@/components/articulos-no-inventariados-view";
+import { PreciosMayoristasView } from "@/components/precios-mayoristas-view";
+import { CostoInventariosView } from "@/components/costo-inventarios-view";
+import { MarcasVsDescripcionView } from "@/components/marcas-vs-descripcion-view";
+import { PagoComisionesView } from "@/components/pago-comisiones-view";
+import { PagosProveedoresVentasView } from "@/components/pagos-proveedores-ventas-view";
+import { AguinaldosView } from "@/components/aguinaldos-view";
+import { ComisionesBancoView } from "@/components/comisiones-banco-view";
 import { ConsultaPreciosView } from "@/components/consulta-precios-view";
 import { ExistenciaArticulosView } from "@/components/existencia-articulos-view";
 import { ComprasVsVentasView } from "@/components/compras-vs-ventas-view";
@@ -285,6 +293,14 @@ const VISTAS: Record<number, () => ReactElement> = {
   55: () => <ComprasArticulosView />, // Compras por Artículos
   56: () => <FichaArticulosView />, // Ficha de Artículos
   57: () => <ArticulosSinBarraView />, // Artículos sin Código de Barra
+  81: () => <ArticulosNoInventariadosView />, // Artículos no Inventariados
+  82: () => <PreciosMayoristasView />, // Precios Mayoristas
+  92: () => <CostoInventariosView />, // Costo de Inventarios
+  93: () => <MarcasVsDescripcionView />, // Marcas Vs Descripción de Articulos
+  101: () => <PagoComisionesView />, // Pago de Comisiones
+  103: () => <PagosProveedoresVentasView />, // Pagos a proveedores por ventas
+  104: () => <AguinaldosView />, // Aguinaldos
+  114: () => <ComisionesBancoView />, // Comisiones al Banco
   61: () => <ConsultaPreciosView />, // Consulta de Precios
   70: () => <ExistenciaArticulosView />, // Existencia de Artículos
   75: () => <ComprasVsVentasView />, // Compras Vs Ventas

@@ -2465,6 +2465,213 @@ export async function listarArticulosSinBarra(codEmpresa: number): Promise<Artic
   return (data.data ?? []) as ArticuloSinBarra[];
 }
 
+// ─── Artículos no Inventariados (pág 81) ─────────────────────────────────────
+// Reporte de solo lectura: artículos activos no inventariados desde FECHA_INVENTARIO.
+// Filtrado (búsqueda + facetas Marca/Rubro + ¿Activos?) 100% en el front.
+
+export type ArticuloNoInventariado = {
+  descripcion: string | null;
+  codigo_oem: string | null;
+  es_activo: string | null;
+  marca: string | null;
+  rubro: string | null;
+};
+
+export async function listarArticulosNoInventariados(
+  codEmpresa: number,
+): Promise<ArticuloNoInventariado[]> {
+  const q = new URLSearchParams({ cod_empresa: String(codEmpresa) });
+  const data = await authFetch(`articulos/no-inventariados?${q}`);
+  return (data.data ?? []) as ArticuloNoInventariado[];
+}
+
+// ─── Pago de Comisiones (pág 101) ────────────────────────────────────────────
+// Fuente: VENTAS_ARTICULOS (misma vista de la pág 54). El backend exige año
+// (default: año actual) + mes opcional; el resto de filtros (semana, rubro,
+// vendedor, búsqueda) se resuelven en el front sobre ese subconjunto.
+
+export type Comision = {
+  descripcion: string | null;
+  total: number | null;
+  fec_comprobante: string; // "DD/MM/YYYY HH24:MI"
+  fec_comprobante_filtro: string; // "DD/MM/YYYY"
+  mes_anio: string | null;
+  cantidad: number | null;
+  precio: number | null;
+  anio: string;
+  mes: string;
+  semana: string;
+  vendedor: string | null;
+  porc_comision: number;
+  comision: number | null;
+  rubro: string | null;
+};
+
+export async function listarComisiones(
+  anio: string,
+  mes: string | undefined,
+  codEmpresa = 24,
+): Promise<{ comisiones: Comision[]; anio: string }> {
+  const params: Record<string, string> = { cod_empresa: String(codEmpresa), anio };
+  if (mes) params.mes = mes;
+  const data = await authFetch(`comisiones?${qs(params)}`);
+  return { comisiones: (data.data ?? []) as Comision[], anio: data.anio ?? anio };
+}
+
+// ─── Pagos a Proveedores por Ventas (pág 103) ────────────────────────────────
+// Por artículo vendido en el mes, si viene de una factura de compra (FCR) con
+// saldo pendiente, cuánto de lo vendido corresponde pagarle al proveedor.
+// anio/mes opcionales (default: mes actual); búsqueda/facetas 100% en el front.
+
+export type PagoProveedorVenta = {
+  id_articulo: number;
+  descripcion: string | null;
+  nombre: string | null;
+  total: number | null;
+};
+
+export async function listarPagosProveedoresVentas(
+  anio: string | undefined,
+  mes: string | undefined,
+  codEmpresa = 24,
+): Promise<{ pagos: PagoProveedorVenta[]; anio: string; mes: string }> {
+  const params: Record<string, string> = { cod_empresa: String(codEmpresa) };
+  if (anio) params.anio = anio;
+  if (mes) params.mes = mes;
+  const data = await authFetch(`pagos-proveedores-ventas?${qs(params)}`);
+  return {
+    pagos: (data.data ?? []) as PagoProveedorVenta[],
+    anio: data.anio ?? anio ?? "",
+    mes: data.mes ?? mes ?? "",
+  };
+}
+
+// ─── Aguinaldos (pág 104) ────────────────────────────────────────────────────
+// Compras de los artículos 317/342 (aguinaldo) por persona; total_aguinaldo =
+// total / 12 (provisión mensual). Facetas Año/Nombre/Concepto y búsqueda en el front.
+
+export type Aguinaldo = {
+  nombre: string | null;
+  fec_comprobante: string | null; // DD/MM/YYYY
+  total: number | null;
+  descripcion: string | null;
+  anio: string | null;
+  total_aguinaldo: number | null;
+};
+
+export async function listarAguinaldos(codEmpresa: number): Promise<Aguinaldo[]> {
+  const q = new URLSearchParams({ cod_empresa: String(codEmpresa) });
+  const data = await authFetch(`aguinaldos?${q}`);
+  return (data.data ?? []) as Aguinaldo[];
+}
+
+// ─── Comisiones al Banco (pág 114) ───────────────────────────────────────────
+// Cobros de ventas con formas de pago con comisión bancaria (id_forma 41/42/21):
+// comision_banco = total - monto_acreditado. Facetas Año/Mes/Fecha/Forma de Pago
+// y búsqueda en el front. fecha viene ISO (YYYY-MM-DD) → usar fmtFecha.
+
+export type ComisionBanco = {
+  id_cobro: number;
+  fecha: string | null; // ISO
+  forma_pago: string | null;
+  total: number | null;
+  monto_acreditado: number | null;
+  comision_banco: number | null;
+  porc_comision: number | null;
+  nro_transaccion: string | null;
+  observacion: string | null;
+  anio: string | null;
+  mes: string | null;
+};
+
+export async function listarComisionesBanco(codEmpresa: number): Promise<ComisionBanco[]> {
+  const q = new URLSearchParams({ cod_empresa: String(codEmpresa) });
+  const data = await authFetch(`comisiones-banco?${q}`);
+  return (data.data ?? []) as ComisionBanco[];
+}
+
+// ─── Marcas Vs Descripción de Artículos (pág 93) ─────────────────────────────
+// Control de datos: artículos cuya descripción no contiene el nombre de su marca.
+
+export type MarcaVsDescripcion = {
+  id_articulo: number;
+  descripcion: string | null;
+  marca: string | null;
+};
+
+export async function listarMarcasVsDescripcion(
+  codEmpresa: number,
+): Promise<MarcaVsDescripcion[]> {
+  const q = new URLSearchParams({ cod_empresa: String(codEmpresa) });
+  const data = await authFetch(`articulos/marcas-vs-descripcion?${q}`);
+  return (data.data ?? []) as MarcaVsDescripcion[];
+}
+
+// ─── Costo de Inventarios (pág 92) ───────────────────────────────────────────
+// Reporte de solo lectura: registros de INVENTARIO en un rango de fechas con
+// costo último y total (costo × diferencia). desde/hasta opcionales: el backend
+// usa por defecto el parámetro FECHA_INVENTARIO (inicio del inventario) → hoy.
+
+export type CostoInventario = {
+  id_inventario: number;
+  id_articulo: number;
+  descripcion: string | null;
+  codigo_oem: string | null;
+  fecha: string | null;
+  cantidad_fisica: number | null;
+  cantidad_sistema: number | null;
+  diferencia: number | null;
+  con_diferencia: string | null;
+  cerrado: string | null;
+  costo_ultimo: number | null;
+  total: number | null;
+};
+
+export type CostoInventariosResp = {
+  fecha_inicio_inventario: string | null; // texto dd/mm/yyyy del parámetro
+  fecha_desde: string | null; // ISO, rango efectivo aplicado
+  fecha_hasta: string | null;
+  data: CostoInventario[];
+};
+
+export async function listarCostoInventarios(
+  codEmpresa: number,
+  desde?: string, // YYYY-MM-DD
+  hasta?: string,
+): Promise<CostoInventariosResp> {
+  const q = new URLSearchParams({ cod_empresa: String(codEmpresa) });
+  if (desde) q.set("desde", desde);
+  if (hasta) q.set("hasta", hasta);
+  const json = await authFetch(`inventarios/costos?${q}`);
+  return {
+    fecha_inicio_inventario: json.fecha_inicio_inventario ?? null,
+    fecha_desde: json.fecha_desde ?? null,
+    fecha_hasta: json.fecha_hasta ?? null,
+    data: (json.data ?? []) as CostoInventario[],
+  };
+}
+
+// ─── Precios Mayoristas (pág 82) ─────────────────────────────────────────────
+// Reporte de solo lectura: artículos activos con stock, precio de venta base.
+// Filtrado (búsqueda + facetas Marca/Categoría/Viscosidad) y % descuento en el front.
+
+export type PrecioMayorista = {
+  id_articulo: number;
+  articulo: string | null;
+  marca: string | null;
+  rubro: string | null;
+  viscosidad: string | null;
+  precio_venta: number | null;
+  stock: number | null;
+  cantidad_venta: number | null;
+};
+
+export async function listarPreciosMayoristas(codEmpresa: number): Promise<PrecioMayorista[]> {
+  const q = new URLSearchParams({ cod_empresa: String(codEmpresa) });
+  const data = await authFetch(`articulos/precios-mayoristas?${q}`);
+  return (data.data ?? []) as PrecioMayorista[];
+}
+
 // ─── Consulta de Precios (pág 61) ────────────────────────────────────────────
 // Busca un artículo por su código de barra (pistola lectora en mostrador) y
 // devuelve su ficha: precio de venta, existencia, marca, rubro, viscosidad.
