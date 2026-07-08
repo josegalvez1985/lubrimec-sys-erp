@@ -184,7 +184,8 @@ CREATE OR REPLACE PACKAGE BODY PKG_PUNTO_VENTA_LUBRIMEC AS
 
   --------------------------------------------------------------------------
   -- BUSCAR_CLIENTES (LOV PERSONAS.CLIENTES de la pag 45: solo clientes 'C').
-  -- Hasta 30 que matcheen por nombre / RUC / CI / cod_persona.
+  -- q vacio = lista COMPLETA (el front filtra localmente: nombre sin distinguir
+  -- mayusculas, RUC/CI con o sin guion). Con q filtra en la BD (compatibilidad).
   --------------------------------------------------------------------------
   PROCEDURE BUSCAR_CLIENTES(p_token IN VARCHAR2, p_cod_empresa IN NUMBER, p_q IN VARCHAR2) IS
     l_usuario VARCHAR2(255);
@@ -213,7 +214,6 @@ CREATE OR REPLACE PACKAGE BODY PKG_PUNTO_VENTA_LUBRIMEC AS
                 OR UPPER(nro_ci) LIKE l_q
                 OR TO_CHAR(cod_persona) LIKE l_q)
          ORDER BY nombre
-         FETCH FIRST 30 ROWS ONLY
     ) LOOP
       APEX_JSON.OPEN_OBJECT;
       APEX_JSON.WRITE('cod_persona', r.cod_persona);

@@ -189,6 +189,13 @@ accesos rápidos se arman dinámicamente desde el endpoint `menu/paginas`.
   (`pos/registrar`) hace los 3 INSERT (`VENTAS_CABECERA/DETALLE/COBROS`) en una transacción con
   `PKG_VENTAS.fn_id_factura()`. La grilla usa la query "POS v2" (precio de tabla, existencia
   compras−ventas, descuento por `fn_porc_descuento`). Backend: `db/punto_venta_sql.sql`.
+- **Compras** (page_id 28/36) — maestro-detalle de `compras_cabecera`/`compras_detalle` (réplica de
+  Ventas): grilla con filtros año/mes, alta "Nueva compra" (sugeridos de nro/timbrado), edición y
+  detalle de artículos con costo anterior por proveedor. **LOV de proveedores propio**
+  (`compras-cabecera/buscar-proveedores`): el endpoint devuelve **todos** los proveedores y el
+  front filtra flexible — nombre sin distinguir mayúsculas/minúsculas, RUC/CI con o sin guion, sin
+  tope de resultados (patrón preferido para LOVs de catálogos chicos; ver las guías). Backend:
+  `db/compras_sql.sql`.
 
 ## Deploy
 

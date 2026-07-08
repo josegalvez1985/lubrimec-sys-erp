@@ -118,6 +118,26 @@ Cuando un campo es una FK (elegir un artículo, un proveedor…), **no** cargar 
 - La grilla usa `DataTable` y muestra las columnas de solo lectura del JOIN (descripción del
   artículo, nombre del proveedor).
 
+#### Variante preferida: LOV completo + filtrado flexible en el front (modelo: `buscarProveedoresCompra`)
+
+Para catálogos chicos/medianos (personas, proveedores), **NO** buscar en el backend por cada
+tecla: el endpoint devuelve la **lista completa** (sin `q`, sin `FETCH FIRST`) y la función
+cliente filtra **localmente** de forma flexible. Es lo que pidió el usuario para el LOV de
+proveedores de Compras (costó tiempo llegar a esto; no repetir el ida y vuelta):
+
+- **Nombre sin distinguir mayúsculas/minúsculas** (`toUpperCase()` en ambos lados).
+- **RUC/CI con o sin guion/espacios:** normalizar los dos lados con `.replace(/[-\s]/g, "")`
+  para que `4962931` encuentre `496293-1`.
+- También matchea por `cod_persona`.
+- **Sin tope de resultados:** se muestran todas las coincidencias (nada de `slice(0, 30)`).
+- El JSON de ORDS **omite las claves NULL** (`APEX_JSON`): tratar los campos como opcionales
+  (`p.nro_ci ?? ""`).
+
+Modelo: `buscarProveedoresCompra` en `src/lib/api.ts` (usada por el `BuscadorSelect` del modal
+"Nueva compra" de `compras-view.tsx`). El componente `BuscadorSelect` no cambia: solo cambia la
+implementación de su prop `buscar`. Backend: ver "Selector de FK" en `db/GUIA_ENDPOINTS.md`.
+La búsqueda con `q` en la BD (≤30 filas) queda para catálogos grandes (ej. artículos).
+
 ### Imágenes en BLOB (modelos: `articulos-view`, `monedas-view`)
 
 Tablas con imagen (`archivo_imagen BLOB` + `mime_type`). Dos caminos según el tamaño esperado:

@@ -82,6 +82,14 @@ endpoints de solo lectura sin paquete (`ORDS_MENU_PAGINAS.sql`, `ORDS_VENTAS_*.s
   - **Búsqueda por RUC/CI:** normalizar guiones/espacios en ambos lados para que `4962931` matchee
     `496293-1`: `REPLACE(REPLACE(UPPER(nro_ruc),'-'),' ') LIKE l_qn`, con `l_qn` el término también
     sin guiones ni espacios. Modelo: `BUSCAR_PERSONAS` en `numeros_vouchers_sql.sql`.
+  - **Variante preferida — LOV completo, filtro en el front:** para catálogos chicos/medianos
+    (proveedores, personas) el proc devuelve **la lista completa** (sin `FETCH FIRST 30`) cuando
+    `q` viene vacío/omitido, y el **front** hace el filtrado flexible (mayúsculas/minúsculas,
+    RUC/CI con o sin guion, sin tope de resultados). Requerimiento explícito del usuario para el
+    LOV de proveedores de Compras. Modelo: `BUSCAR_PROVEEDORES` en `compras_sql.sql` (endpoint
+    `compras-cabecera/buscar-proveedores?cod_empresa=:n`) + `buscarProveedoresCompra` en
+    `src/lib/api.ts`. El filtro por `q` en la BD se mantiene solo por compatibilidad; dejar el
+    `FETCH FIRST 30` únicamente en LOVs de catálogos grandes (ej. artículos).
 - **Imagen en BLOB** (modelo: `articulos_sql.sql`). Reglas para no serializar megas de más:
   - `LISTAR` **no** devuelve el blob: solo `CASE WHEN DBMS_LOB.GETLENGTH(archivo_imagen) > 0 THEN 1
     ELSE 0 END AS tiene_imagen`.

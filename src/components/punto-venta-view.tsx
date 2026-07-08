@@ -34,7 +34,7 @@ import {
   buscarArticuloPorBarra,
   siguienteNroComprobante,
   registrarVentaPOS,
-  buscarPersonas,
+  buscarClientesPOS,
   listarVendedores,
   listarTalonarios,
   listarFormasCobroPago,
@@ -613,7 +613,7 @@ function FacturarDialog({
               emptyLabel="Sin clientes"
               value={codPersona}
               label={clienteLabel}
-              buscar={(q) => buscarPersonas(COD_EMPRESA, q)}
+              buscar={(q) => buscarClientesPOS(COD_EMPRESA, q)}
               itemKey={(p) => p.cod_persona}
               itemTitle={(p) => p.nombre ?? `Persona ${p.cod_persona}`}
               itemSub={(p) => [p.nro_ruc, p.nro_ci].filter(Boolean).join(" · ") || "—"}

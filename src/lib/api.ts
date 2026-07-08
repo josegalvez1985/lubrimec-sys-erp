@@ -2216,10 +2216,22 @@ export async function buscarProveedoresCompra(
   codEmpresa: number,
   q: string,
 ): Promise<ProveedorCompra[]> {
+  // Trae la lista completa y filtra en el front (búsqueda flexible: nombre sin
+  // distinguir mayúsculas, RUC/CI con o sin guion, o cod_persona).
   const params = new URLSearchParams({ cod_empresa: String(codEmpresa) });
-  if (q.trim()) params.set("q", q.trim());
   const data = await authFetch(`compras-cabecera/buscar-proveedores?${params}`);
-  return (data.data ?? []) as ProveedorCompra[];
+  const lista = (data.data ?? []) as ProveedorCompra[];
+  const t = q.trim().toUpperCase();
+  if (!t) return lista;
+  const tn = t.replace(/[-\s]/g, "");
+  return lista.filter(
+    (p) =>
+      (p.nombre ?? "").toUpperCase().includes(t) ||
+      (tn !== "" &&
+        ((p.nro_ruc ?? "").toUpperCase().replace(/[-\s]/g, "").includes(tn) ||
+          (p.nro_ci ?? "").toUpperCase().replace(/[-\s]/g, "").includes(tn))) ||
+      String(p.cod_persona).includes(t),
+  );
 }
 
 export type ArticuloCompra = {
@@ -2651,15 +2663,27 @@ export async function buscarArticuloPorBarra(
   } | null;
 }
 
-// Buscador de clientes (ind_cliente_proveedor='C') para el modal de facturación
-// del POS (LOV PERSONAS.CLIENTES del APEX). Mismo shape que ProveedorBusqueda.
+// Buscador de clientes (ind_cliente_proveedor='C'/'A') para el modal de facturación
+// del POS (LOV PERSONAS.CLIENTES del APEX). Trae la lista completa y filtra en el
+// front (flexible: nombre sin distinguir mayúsculas, RUC/CI con o sin guion).
 export async function buscarClientesPOS(
   codEmpresa: number,
   q: string,
 ): Promise<ProveedorBusqueda[]> {
-  const p = new URLSearchParams({ cod_empresa: String(codEmpresa), q });
+  const p = new URLSearchParams({ cod_empresa: String(codEmpresa) });
   const data = await authFetch(`pos/clientes?${p}`);
-  return (data.data ?? []) as ProveedorBusqueda[];
+  const lista = (data.data ?? []) as ProveedorBusqueda[];
+  const t = q.trim().toUpperCase();
+  if (!t) return lista;
+  const tn = t.replace(/[-\s]/g, "");
+  return lista.filter(
+    (c) =>
+      (c.nombre ?? "").toUpperCase().includes(t) ||
+      (tn !== "" &&
+        ((c.nro_ruc ?? "").toUpperCase().replace(/[-\s]/g, "").includes(tn) ||
+          (c.nro_ci ?? "").toUpperCase().replace(/[-\s]/g, "").includes(tn))) ||
+      String(c.cod_persona).includes(t),
+  );
 }
 
 export async function siguienteNroComprobante(
