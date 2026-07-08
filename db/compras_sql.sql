@@ -681,7 +681,8 @@ CREATE OR REPLACE PACKAGE BODY PKG_COMPRAS_LUBRIMEC AS
 
   --------------------------------------------------------------------------
   -- BUSCAR_PROVEEDORES (LOV propio de compras). Personas P/A de la empresa;
-  -- q vacio = primeras 30. RUC/CI normalizados (sin guion/espacio).
+  -- q vacio = lista COMPLETA (el front filtra localmente: nombre sin distinguir
+  -- mayusculas, RUC/CI con o sin guion). Con q filtra en la BD (compatibilidad).
   --------------------------------------------------------------------------
   PROCEDURE BUSCAR_PROVEEDORES(p_token IN VARCHAR2, p_cod_empresa IN NUMBER, p_q IN VARCHAR2) IS
     l_usuario VARCHAR2(255);
@@ -713,7 +714,6 @@ CREATE OR REPLACE PACKAGE BODY PKG_COMPRAS_LUBRIMEC AS
                  OR TO_CHAR(cod_persona) LIKE l_q
                )
          ORDER BY NVL(nombre_fantasia, nombre)
-         FETCH FIRST 30 ROWS ONLY
     ) LOOP
       APEX_JSON.OPEN_OBJECT;
       APEX_JSON.WRITE('cod_persona', r.cod_persona);
