@@ -24,6 +24,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { DataTable, type Column } from "@/components/ui/data-table";
+import { consumirBusquedaInicial } from "@/lib/busqueda-inicial";
 import {
   listarArticulos,
   obtenerArticulo,
@@ -198,6 +199,7 @@ export function ArticulosView() {
             columns={COLUMNAS}
             rows={filas}
             getRowId={(r) => r.id_articulo}
+            initialSearch={consumirBusquedaInicial(4) ?? undefined}
             initialSort={{ key: "id_articulo", dir: "desc" }}
             exportName="articulos"
             actions={(r) => (

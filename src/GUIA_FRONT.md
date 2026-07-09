@@ -25,6 +25,9 @@ Reenvía la petición a ORDS server-side. Detalles que costó descubrir:
 - **Body solo si existe:** únicamente setea `body` + `content-type` cuando hay payload.
   Un DELETE (o cualquier request sin cuerpo) con `content-type: application/json` y body
   vacío hace que ORDS devuelva **400** `Expected one of <<{,[>> but got EOF`.
+- **Body como `arrayBuffer` (ida y vuelta):** tanto el request body como la respuesta se
+  reenvían como bytes crudos (`arrayBuffer()`), nunca `text()` — decodificar como UTF-8
+  corrompe binarios (uploads de fotos, imágenes servidas). Para JSON da igual; no regresionarlo.
 - **Headers:** reenvía solo `authorization` (Bearer) y `content-type`. No propaga otros.
 - **Query string:** se preserva (`incoming.search`), así llegan `?cod_empresa=...` etc.
 
@@ -146,6 +149,13 @@ usuario, repetido). El filtrado local matchea **palabras sueltas en cualquier or
 `buscarArticulosInventario` en `src/lib/api.ts` (Inventario, pág 58/59). NO usar `q` +
 `FETCH FIRST 30` salvo pedido explícito.
 
+**LOVs en cascada desde UN dataset:** cuando varias LOVs dependen entre sí (Rubro → Marca →
+Viscosidad, pág 113), no hacer un endpoint por LOV: un solo endpoint devuelve las ternas
+(`id_rubro/rubro/id_marca/marca/...`) de las filas candidatas y el front deriva cada lista con
+un `uniq` filtrando por las selecciones anteriores (al cambiar un nivel se resetean los
+inferiores). Modelo: `pendientesPlanilla` (api.ts) + `CrearPlanillaDialog` en
+`planilla-inventarios-view.tsx`.
+
 ### Imágenes en BLOB (modelos: `articulos-view`, `monedas-view`)
 
 Tablas con imagen (`archivo_imagen BLOB` + `mime_type`). Dos caminos según el tamaño esperado:
@@ -168,6 +178,15 @@ Tablas con imagen (`archivo_imagen BLOB` + `mime_type`). Dos caminos según el t
   columna Imagen y sale "Sin imagen disponible", usar `urlImagenArticulo` (el modal acepta un prop
   `src` opcional para esto). Thumbnail inline 60x60 en la grilla + click para ampliar: modelo
   `precios-mayoristas-view` (`ImgCelda`, con fallback a ícono si el artículo no tiene imagen).
+- **Subir foto como binario crudo (sin base64):** para fotos que se comprimen en el front (ej. la
+  foto del conteo, pág 115), el cliente manda el `Blob` directo con `authFetch(..., { method:
+  "PUT", headers: { "Content-Type": "image/jpeg" }, body: blob })` a un endpoint con bind `:body`
+  BLOB (ver `db/GUIA_ENDPOINTS.md`, "Upload binario"). Modelo: `subirFotoInventario` (api.ts) +
+  `planilla-inventarios-view.tsx`.
+- **Cámara + compresión en el front:** botón "Tomar Foto" = `<input type="file" accept="image/*"
+  capture="environment">` oculto; la imagen se redimensiona con canvas a 600px de ancho, JPEG
+  calidad 0.7, y se rechaza si supera 100KB (réplica del JS de la pág 115 del APEX). Preview local
+  con `URL.createObjectURL(blob)`. Modelo: `procesarArchivo` en `planilla-inventarios-view.tsx`.
 
 ## Sin caché: todo dato se consulta en el momento
 

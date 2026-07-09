@@ -185,8 +185,8 @@ Gotchas de formularios:
 Gotcha de PL/SQL (paquete):
 - **Una función local del paquete NO se puede llamar dentro de una sentencia SQL** (INSERT/UPDATE):
   da `PLS-00231: la función no se puede utilizar en SQL`. Calcularla en una variable local antes del
-  SQL y usar la variable. Pasó con `f_fecha` en `PKG_PERSONAS_LUBRIMEC` (fix: `l_fecha := f_fecha(...)`
-  y luego usar `l_fecha` en el INSERT/UPDATE).
+  SQL y usar la variable. Pasó con `f_fecha` en `PKG_PERSONAS_LUBRIMEC` y de nuevo con `f_flag` en
+  `PKG_ROLES_PAG_LUBRIMEC` (fix: `l_x := f_x(...)` en el DECLARE y usar `l_x` en el INSERT/UPDATE).
 - **`APEX_JSON.WRITE('campo', NULL)` es ambiguo** (`PLS-00307: demasiadas declaraciones de WRITE`):
   el compilador no sabe qué overload usar. No existe `WRITE_NULL` en todas las versiones
   (`PLS-00302`). Fix: usar una **variable tipada** puesta a NULL (ej. `l_b64 CLOB := NULL;`
@@ -231,6 +231,16 @@ el bloque `BEGIN ... ORDS.DEFINE_* ... END;`.
   (inicio del inventario en curso) → hoy, y devuelve en el JSON el rango efectivo
   (`fecha_desde`/`fecha_hasta`) + `fecha_inicio_inventario` para mostrarlos en el front.
   (En APEX los binds NULL no traían filas; el default evita la pantalla vacía.)
+- **Módulo Inventario:** `inventario_sql.sql` (pág 58/59, CRUD + LOVs propias + código de barras),
+  `articulos_para_inventario_sql.sql` (pág 76), `ajustar_inventarios_sql.sql` (pág 87/88, ajuste
+  con comprobante AJS-E atómico + foto pública), `planilla_inventarios_sql.sql` (pág 112/113/115,
+  planilla masiva + upload de foto binario).
+- **Proceso de negocio replicado del APEX:** `ajustar_inventarios_sql.sql` — el proceso AFTER
+  SUBMIT del APEX (nro de comprobante con algoritmo de huecos + INSERT cabecera/detalle + UPDATE
+  de cierre) se replica como UN procedimiento con COMMIT único al final (atómico, ROLLBACK en
+  el EXCEPTION), en vez de los COMMIT intermedios del APEX.
+- **Otros:** `parametros_sql.sql` (pág 89/90), `sortear_sql.sql` (pág 108),
+  `roles_paginas_sql.sql` (pág 37/38/64, PK compuesta + LOVs de vistas APEX con workspace fix).
 
 > Los `ORDS_*.sql` en mayúsculas son la convención vieja (quedan algunos: `ORDS_MENU_PAGINAS`,
 > `ORDS_VENTAS_*`, `ORDS_PEDIDOS_ARTICULOS`, `ORDS_ARTICULOS_MAS_VENDIDOS`, `ORDS_CIERRE_DIA`); al
@@ -267,6 +277,22 @@ puede auto-bindear a variables (`:descripcion`, etc.). Leer el cuerpo crudo con 
   CABECERA/FORMAPAGO) por estado en React + un único POST que hace todos los INSERT en una
   transacción (rollback ante error). El id lo da `PKG_VENTAS.fn_id_factura()`. Modelo:
   `PKG_PUNTO_VENTA_LUBRIMEC.REGISTRAR` (VENTAS_CABECERA + DETALLE + COBROS).
+
+## Upload binario (imagen cruda) con `:body` BLOB
+
+Para **subir** una imagen sin base64 (ej. la foto del conteo, pág 115): el front manda el archivo
+como **body binario crudo** (`Content-Type: image/jpeg`) y el handler lo lee con el bind implícito
+**`:body`** (BLOB). Modelo: `PUT planilla-inventarios/:id/foto` en `db/planilla_inventarios_sql.sql`.
+
+- **`:body` solo puede referenciarse UNA vez** en el bloque (se lee en streaming): asignarlo a una
+  variable local al inicio (`l_foto := :body;`) antes de cualquier otra cosa.
+- Declarar `p_mimes_allowed => 'image/jpeg,image/png,application/octet-stream'` en el handler.
+- No confundir con `:body_text` (CLOB, para JSON complejo — ver sección anterior). Con `:body` el
+  cuerpo NO es JSON: los query params (`cod_empresa`) van en la URL y se leen con `get_qs`.
+- El proxy (`ords.$.ts`) reenvía el request body como **`arrayBuffer`** — con `request.text()` los
+  binarios se corrompen (se decodifican como UTF-8). Ya está arreglado; no regresionarlo.
+- Para **mostrar** la imagen después, se usa el endpoint público tipo `SERVIR_IMAGEN`
+  (ej. `GET /inventario/:id/foto`, en `db/ajustar_inventarios_sql.sql`, con MIME por magic bytes).
 
 ## Formularios cabecera + detalle (maestro-detalle)
 
@@ -325,10 +351,11 @@ Front (React):
 - `TO_NUMBER(:param)` para binds numéricos que llegan como texto (query/body).
 - El proxy reenvía solo `authorization` + `content-type`; no propaga otros headers.
 - **Vistas APEX desde ORDS:** un handler que consulta `APEX_APPLICATION_PAGES`,
-  `APEX_APPLICATION_LIST_ENTRIES`, etc. devuelve 0 filas aunque la query corra bien en
-  SQL Commands. Falta el contexto de workspace. Fijarlo antes de la query:
+  `APEX_APPLICATION_LIST_ENTRIES`, `WWV_FLOW_USERS`, etc. devuelve 0 filas aunque la query corra
+  bien en SQL Commands. Falta el contexto de workspace. Fijarlo antes de la query:
   `wwv_flow_api.set_security_group_id(p_security_group_id => 36593577189528884915);`
-  (workspace JOSEGALVEZ). Ver `db/ORDS_MENU_PAGINAS.sql`.
+  (workspace JOSEGALVEZ). Ver `db/ORDS_MENU_PAGINAS.sql` y `db/roles_paginas_sql.sql`
+  (helper `p_set_workspace`).
 - **Ordenamiento:** preferir ordenar en el front (ej. `marcas` se ordena por `id_marca`
   desc en `marcas-view.tsx`). El `ORDER BY` del paquete es solo un default.
 - El proxy soporta **GET, POST, PUT, DELETE**. Solo envía body+`content-type` si hay

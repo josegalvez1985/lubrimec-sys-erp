@@ -2815,6 +2815,139 @@ export async function subirFotoInventario(
   });
 }
 
+// ─── Roles de Páginas (pág 37 grilla + 38 modal Crear Rol) ───────────────────
+// CRUD sobre ROLES_PAGINAS (PK compuesta app_id + app_page_id + app_user_id).
+// LOVs completas (usuarios APEX y páginas de la app); filtro en el front.
+
+export type RolPagina = {
+  app_id: number;
+  app_page_id: number;
+  app_user_id: string;
+  pagina: string | null; // título de la página (APEX_APPLICATION_PAGES)
+  puede_insertar: string; // 'S' | 'N'
+  puede_actualizar: string;
+  puede_borrar: string;
+  puede_consultar: string;
+  ver_campos: string;
+};
+
+// app_id lo inyecta el cliente (DEFAULT_APP_ID).
+export type RolPaginaInput = {
+  app_page_id: number;
+  app_user_id: string;
+  puede_insertar: string;
+  puede_actualizar: string;
+  puede_borrar: string;
+  puede_consultar: string;
+  ver_campos: string;
+};
+
+export async function listarRolesPaginas(): Promise<RolPagina[]> {
+  const q = new URLSearchParams({ app_id: DEFAULT_APP_ID });
+  const data = await authFetch(`roles-paginas?${q}`);
+  return (data.data ?? []) as RolPagina[];
+}
+
+export async function crearRolPagina(input: RolPaginaInput): Promise<void> {
+  await authFetch(`roles-paginas`, {
+    method: "POST",
+    body: JSON.stringify({ app_id: Number(DEFAULT_APP_ID), ...input }),
+  });
+}
+
+// Actualiza solo los flags; la PK (app_id/página/usuario) queda fija.
+export async function actualizarRolPagina(input: RolPaginaInput): Promise<void> {
+  await authFetch(`roles-paginas`, {
+    method: "PUT",
+    body: JSON.stringify({ app_id: Number(DEFAULT_APP_ID), ...input }),
+  });
+}
+
+export async function eliminarRolPagina(appPageId: number, appUserId: string): Promise<void> {
+  const q = new URLSearchParams({
+    app_id: DEFAULT_APP_ID,
+    app_page_id: String(appPageId),
+    app_user_id: appUserId,
+  });
+  await authFetch(`roles-paginas?${q}`, { method: "DELETE" });
+}
+
+// Copia los roles del usuario inicial al final (solo los que no tiene);
+// devuelve cuántos copió. ver_campos no se copia (tal cual el APEX pág 64).
+export async function copiarRolesPaginas(
+  usuarioInicial: string,
+  usuarioFinal: string,
+): Promise<number> {
+  const data = await authFetch(`roles-paginas/copiar`, {
+    method: "POST",
+    body: JSON.stringify({
+      app_id: Number(DEFAULT_APP_ID),
+      usuario_inicial: usuarioInicial,
+      usuario_final: usuarioFinal,
+    }),
+  });
+  return (data.copiados ?? 0) as number;
+}
+
+export type UsuarioLov = { user_name: string };
+export type PaginaLov = { page_id: number; page_title: string | null };
+
+export async function lovUsuariosRoles(): Promise<UsuarioLov[]> {
+  const data = await authFetch(`roles-paginas/lov-usuarios`);
+  return (data.data ?? []) as UsuarioLov[];
+}
+
+// Todas las páginas de la app; el front excluye las ya asignadas al crear.
+export async function lovPaginasRoles(): Promise<PaginaLov[]> {
+  const q = new URLSearchParams({ app_id: DEFAULT_APP_ID });
+  const data = await authFetch(`roles-paginas/lov-paginas?${q}`);
+  return (data.data ?? []) as PaginaLov[];
+}
+
+// ─── Búsqueda global (header) ────────────────────────────────────────────────
+// LOVs completas propias del buscador del header; el filtrado flexible
+// (multi-palabra, ID parcial, RUC/CI sin guion) es 100% del front.
+
+export type ArticuloBusquedaGlobal = {
+  id_articulo: number;
+  descripcion: string | null;
+  codigo_oem: string | null;
+};
+
+export type PersonaBusquedaGlobal = {
+  cod_persona: number;
+  nombre: string | null;
+  nro_ruc?: string | null;
+  nro_ci?: string | null;
+};
+
+export async function busquedaArticulos(codEmpresa: number): Promise<ArticuloBusquedaGlobal[]> {
+  const q = new URLSearchParams({ cod_empresa: String(codEmpresa) });
+  const data = await authFetch(`busqueda/articulos?${q}`);
+  return (data.data ?? []) as ArticuloBusquedaGlobal[];
+}
+
+export async function busquedaPersonas(codEmpresa: number): Promise<PersonaBusquedaGlobal[]> {
+  const q = new URLSearchParams({ cod_empresa: String(codEmpresa) });
+  const data = await authFetch(`busqueda/personas?${q}`);
+  return (data.data ?? []) as PersonaBusquedaGlobal[];
+}
+
+// ─── Sortear (pág 108) ───────────────────────────────────────────────────────
+// Teléfonos de VENTAS_CABECERA en un rango (cada venta = una participación).
+// El sorteo (animación, ganador, enmascarado) es 100% en el front.
+
+export async function telefonosSorteo(
+  fechaDesde: string, // YYYY-MM-DD
+  fechaHasta: string, // YYYY-MM-DD
+): Promise<string[]> {
+  const q = new URLSearchParams({ fecha_desde: fechaDesde, fecha_hasta: fechaHasta });
+  const data = await authFetch(`sorteo/telefonos?${q}`);
+  return ((data.data ?? []) as { nro_telefono: string | number }[]).map((r) =>
+    String(r.nro_telefono),
+  );
+}
+
 // ─── Pago de Comisiones (pág 101) ────────────────────────────────────────────
 // Fuente: VENTAS_ARTICULOS (misma vista de la pág 54). El backend exige año
 // (default: año actual) + mes opcional; el resto de filtros (semana, rubro,
