@@ -2485,6 +2485,336 @@ export async function listarArticulosNoInventariados(
   return (data.data ?? []) as ArticuloNoInventariado[];
 }
 
+// ─── Inventario (pág 58 grilla + 59 modal) ───────────────────────────────────
+// CRUD sobre INVENTARIO. cantidad_sistema la calcula el backend (fn_existencia)
+// al crear y al cambiar de artículo; cerrado nace 'N'. LOVs propias del módulo.
+
+export type InventarioRow = {
+  id_inventario: number;
+  id_articulo: number;
+  articulo: string | null;
+  fecha: string | null; // YYYY-MM-DD
+  cantidad_fisica: number | null;
+  cantidad_sistema: number | null;
+  diferencia: number | null;
+  cerrado: string | null;
+  cod_barra: string | null;
+};
+
+export type InventarioInput = {
+  cod_empresa: number;
+  id_articulo: number;
+  fecha: string; // YYYY-MM-DD
+  cantidad_fisica: number;
+  cod_barra: string | null;
+};
+
+export async function listarInventario(codEmpresa: number): Promise<InventarioRow[]> {
+  const q = new URLSearchParams({ cod_empresa: String(codEmpresa) });
+  const data = await authFetch(`inventario?${q}`);
+  return (data.data ?? []) as InventarioRow[];
+}
+
+export async function crearInventario(input: InventarioInput): Promise<number> {
+  const data = await authFetch(`inventario`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+  return data.id_inventario as number;
+}
+
+export async function actualizarInventario(id: number, input: InventarioInput): Promise<void> {
+  await authFetch(`inventario/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(input),
+  });
+}
+
+export async function eliminarInventario(id: number, codEmpresa: number): Promise<void> {
+  const q = new URLSearchParams({ cod_empresa: String(codEmpresa) });
+  await authFetch(`inventario/${id}?${q}`, { method: "DELETE" });
+}
+
+export type RubroLov = { id_rubro: number; descripcion: string | null };
+export type MarcaLov = { id_marca: number; descripcion: string | null };
+
+// LOV completa (sin rubros 30/39); el front filtra flexible.
+export async function lovRubrosInventario(codEmpresa: number): Promise<RubroLov[]> {
+  const q = new URLSearchParams({ cod_empresa: String(codEmpresa) });
+  const data = await authFetch(`inventario/lov-rubros?${q}`);
+  return (data.data ?? []) as RubroLov[];
+}
+
+export async function lovMarcasInventario(codEmpresa: number): Promise<MarcaLov[]> {
+  const q = new URLSearchParams({ cod_empresa: String(codEmpresa) });
+  const data = await authFetch(`inventario/lov-marcas?${q}`);
+  return (data.data ?? []) as MarcaLov[];
+}
+
+export type ArticuloInventarioLov = {
+  id_articulo: number;
+  descripcion: string | null;
+  codigo_oem: string | null;
+  // El JSON de ORDS omite claves NULL: tratarlos como opcionales.
+  es_activo?: string | null;
+  id_rubro?: number | null;
+  id_marca?: number | null;
+};
+
+// LOV completa de artículos (V_PEDIDO_PROVEEDOR, más vendidos primero): el backend
+// devuelve TODO el catálogo y acá se filtra flexible — palabras sueltas en cualquier
+// orden, ID parcial, OEM, cascada es_activo/rubro/marca — sin tope de resultados
+// (patrón LOV completo + filtro front).
+export async function buscarArticulosInventario(
+  codEmpresa: number,
+  q: string,
+  filtros: { es_activo: string | null; id_rubro: number | null; id_marca: number | null },
+): Promise<ArticuloInventarioLov[]> {
+  const params = new URLSearchParams({ cod_empresa: String(codEmpresa) });
+  const data = await authFetch(`inventario/buscar-articulos?${params}`);
+  const todos = (data.data ?? []) as ArticuloInventarioLov[];
+  const tokens = q.trim().toUpperCase().split(/\s+/).filter(Boolean);
+  return todos.filter((a) => {
+    if (filtros.es_activo && (a.es_activo ?? "S") !== filtros.es_activo) return false;
+    if (filtros.id_rubro != null && a.id_rubro !== filtros.id_rubro) return false;
+    if (filtros.id_marca != null && a.id_marca !== filtros.id_marca) return false;
+    const texto =
+      `${a.descripcion ?? ""} ${a.codigo_oem ?? ""} ${a.id_articulo}`.toUpperCase();
+    return tokens.every((t) => texto.includes(t));
+  });
+}
+
+// Resuelve un código de barras a su artículo (lector de barras del modal).
+export async function articuloPorBarra(
+  codEmpresa: number,
+  codBarra: string,
+): Promise<ArticuloInventarioLov> {
+  const q = new URLSearchParams({
+    cod_empresa: String(codEmpresa),
+    cod_barra: codBarra.trim(),
+  });
+  const data = await authFetch(`inventario/articulo-por-barra?${q}`);
+  return data.data as ArticuloInventarioLov;
+}
+
+// ─── Artículos para Inventario (pág 76) ──────────────────────────────────────
+// Reporte de solo lectura: hoja de conteo físico (columna Cantidad en blanco).
+// Filtrado (búsqueda + facetas Es Activo/Rubro/Marcas) 100% en el front.
+
+export type ArticuloInventario = {
+  id_articulo: number;
+  descripcion: string | null;
+  codigo_oem: string | null;
+  es_activo: string | null;
+  marca: string | null;
+  rubro: string | null;
+};
+
+export async function listarArticulosInventario(
+  codEmpresa: number,
+): Promise<ArticuloInventario[]> {
+  const q = new URLSearchParams({ cod_empresa: String(codEmpresa) });
+  const data = await authFetch(`articulos/para-inventario?${q}`);
+  return (data.data ?? []) as ArticuloInventario[];
+}
+
+// ─── Parámetros (pág 89 grilla + 90 modal Crear/Editar) ──────────────────────
+// CRUD simple sobre PARAMETROS. parametro y valor se guardan en MAYÚSCULAS (lo
+// hace el backend). Los tres campos son obligatorios. Filtrado 100% en el front.
+
+export type Parametro = {
+  id_parametro: number;
+  parametro: string | null;
+  valor: string | null;
+  observacion: string | null;
+};
+
+export type ParametroInput = {
+  cod_empresa: number;
+  parametro: string;
+  valor: string;
+  observacion: string;
+};
+
+export async function listarParametros(codEmpresa: number): Promise<Parametro[]> {
+  const q = new URLSearchParams({ cod_empresa: String(codEmpresa) });
+  const data = await authFetch(`parametros?${q}`);
+  return (data.data ?? []) as Parametro[];
+}
+
+export async function crearParametro(input: ParametroInput): Promise<number> {
+  const data = await authFetch(`parametros`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+  return data.id_parametro as number;
+}
+
+export async function actualizarParametro(id: number, input: ParametroInput): Promise<void> {
+  await authFetch(`parametros/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(input),
+  });
+}
+
+export async function eliminarParametro(id: number, codEmpresa: number): Promise<void> {
+  const q = new URLSearchParams({ cod_empresa: String(codEmpresa) });
+  await authFetch(`parametros/${id}?${q}`, { method: "DELETE" });
+}
+
+// ─── Ajustar Inventarios (pág 87 grilla facetada + 88 modal Aplicar) ─────────
+// Listado del último conteo por artículo (con costo/diferencia); el ajuste
+// genera un comprobante AJS-E y cierra el conteo. Filtrado 100% en el front.
+
+export type InventarioAjuste = {
+  id_inventario: number;
+  id_articulo: number;
+  descripcion: string | null;
+  codigo_oem: string | null;
+  fecha: string | null; // YYYY-MM-DD
+  cantidad_fisica: number;
+  cantidad_sistema: number;
+  cant_diferencia: number;
+  cerrado: string; // 'S' | 'N'
+  rubro: string | null;
+  marca: string | null;
+  es_activo: string | null;
+  cod_iva: number;
+  costo_ultimo: number;
+  fec_ultima_compra: string | null; // YYYY-MM-DD
+  tiene_foto: number; // 1 | 0
+};
+
+export async function listarInventarioAjustes(
+  codEmpresa: number,
+): Promise<InventarioAjuste[]> {
+  const q = new URLSearchParams({ cod_empresa: String(codEmpresa) });
+  const data = await authFetch(`inventario-ajustes?${q}`);
+  return (data.data ?? []) as InventarioAjuste[];
+}
+
+export type AplicarAjusteInput = {
+  cod_empresa: number;
+  id_inventario: number;
+  id_articulo: number;
+  cantidad: number;
+  precio: number;
+  cod_iva: number;
+};
+
+export async function aplicarAjusteInventario(input: AplicarAjusteInput): Promise<void> {
+  await authFetch(`inventario-ajustes/aplicar`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+// Cierra todos los conteos con diferencia 0 (botón "Ajustar Diferencias 0").
+export async function ajustarDiferenciasCero(codEmpresa: number): Promise<number> {
+  const data = await authFetch(`inventario-ajustes/dif-cero`, {
+    method: "POST",
+    body: JSON.stringify({ cod_empresa: codEmpresa }),
+  });
+  return (data.cerrados ?? 0) as number;
+}
+
+// URL pública del BLOB INVENTARIO.FOTO (endpoint sin Authorization: el <img> no
+// manda header). No pasa por authFetch.
+export function urlFotoInventario(idInventario: number, codEmpresa: number): string {
+  const q = new URLSearchParams({ cod_empresa: String(codEmpresa) });
+  return url(`inventario/${idInventario}/foto?${q}`);
+}
+
+// ─── Planilla para Inventarios (pág 112 grilla + 113 Crear Planilla + 115) ───
+// Conteos ABIERTOS de INVENTARIO. Crear Planilla genera conteos masivos por
+// rubro/marca/viscosidad; el modal Cantidad (115) edita cantidad física y foto.
+
+export type PlanillaInventario = {
+  id_inventario: number;
+  id_articulo: number;
+  articulo: string | null;
+  cantidad_fisica: number | null;
+  fecha: string | null; // YYYY-MM-DD
+  observacion: string | null;
+  cod_barra: string | null;
+  fecha_ultima_compra: string | null; // YYYY-MM-DD
+  tiene_foto: number; // 1 | 0
+};
+
+export async function listarPlanillaInventarios(
+  codEmpresa: number,
+): Promise<PlanillaInventario[]> {
+  const q = new URLSearchParams({ cod_empresa: String(codEmpresa) });
+  const data = await authFetch(`planilla-inventarios?${q}`);
+  return (data.data ?? []) as PlanillaInventario[];
+}
+
+// Terna rubro/marca/viscosidad de un artículo pendiente de inventariar; el
+// front deriva las 3 LOVs en cascada. ORDS omite claves NULL: opcionales.
+export type ArticuloPendiente = {
+  id_rubro?: number | null;
+  rubro?: string | null;
+  id_marca?: number | null;
+  marca?: string | null;
+  id_viscosidad?: number | null;
+  viscosidad?: string | null;
+};
+
+// fecha dd/mm/yyyy opcional; sin ella el backend usa el parámetro
+// FECHA_INVENTARIO. Devuelve la fecha usada + las ternas.
+export async function pendientesPlanilla(
+  codEmpresa: number,
+  fecha: string | null,
+): Promise<{ fecha: string | null; data: ArticuloPendiente[] }> {
+  const params = new URLSearchParams({ cod_empresa: String(codEmpresa) });
+  if (fecha) params.set("fecha", fecha);
+  const data = await authFetch(`planilla-inventarios/pendientes?${params}`);
+  return {
+    fecha: (data.fecha ?? null) as string | null,
+    data: (data.data ?? []) as ArticuloPendiente[],
+  };
+}
+
+// Genera la planilla (INSERT masivo en INVENTARIO); devuelve cuántos insertó.
+export async function crearPlanillaInventario(input: {
+  cod_empresa: number;
+  id_rubro: number | null;
+  id_marca: number | null;
+  id_viscosidad: number | null;
+}): Promise<number> {
+  const data = await authFetch(`planilla-inventarios/crear`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+  return (data.insertados ?? 0) as number;
+}
+
+export async function actualizarCantidadPlanilla(
+  id: number,
+  codEmpresa: number,
+  cantidadFisica: number,
+): Promise<void> {
+  await authFetch(`planilla-inventarios/${id}/cantidad`, {
+    method: "PUT",
+    body: JSON.stringify({ cod_empresa: codEmpresa, cantidad_fisica: cantidadFisica }),
+  });
+}
+
+// Sube el JPEG comprimido (≤100KB, lo garantiza el front) a INVENTARIO.FOTO.
+// Body binario crudo (no JSON); para mostrarla se usa urlFotoInventario.
+export async function subirFotoInventario(
+  id: number,
+  codEmpresa: number,
+  foto: Blob,
+): Promise<void> {
+  const q = new URLSearchParams({ cod_empresa: String(codEmpresa) });
+  await authFetch(`planilla-inventarios/${id}/foto?${q}`, {
+    method: "PUT",
+    headers: { "Content-Type": "image/jpeg" },
+    body: foto,
+  });
+}
+
 // ─── Pago de Comisiones (pág 101) ────────────────────────────────────────────
 // Fuente: VENTAS_ARTICULOS (misma vista de la pág 54). El backend exige año
 // (default: año actual) + mes opcional; el resto de filtros (semana, rubro,

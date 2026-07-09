@@ -17,10 +17,12 @@ async function forward(request: Request, splat: string): Promise<Response> {
 
   const init: RequestInit = { method: request.method, headers };
   if (request.method !== "GET" && request.method !== "HEAD") {
-    const body = await request.text();
+    // ArrayBuffer y no text(): los uploads binarios (foto de inventario) se
+    // corrompen si se decodifican como UTF-8; para JSON da igual.
+    const body = await request.arrayBuffer();
     // Solo reenvía cuerpo + content-type si realmente hay payload; un DELETE sin
     // body con content-type JSON hace que ORDS responda 400 ("Expected {,[ but got EOF").
-    if (body.length > 0) {
+    if (body.byteLength > 0) {
       init.body = body;
       headers.set("content-type", request.headers.get("content-type") ?? "application/json");
     }
