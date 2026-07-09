@@ -27,6 +27,11 @@ establecido y gotchas que costó descubrir; no reinventar nada que ya esté resu
 - **Sin caché en ningún nivel:** no poner `staleTime` en `useQuery`; los defaults
   globales ya fuerzan consulta al servidor siempre.
 - Contrato JSON uniforme: `{ success, message?, data? }`.
+- **LOVs (listas de valores): SIEMPRE lista completa + filtro en el front, sin excepciones**
+  (también artículos). El endpoint devuelve todo el catálogo (sin `q`, sin `FETCH FIRST 30`);
+  el front filtra multi-palabra en cualquier orden, ID parcial y sin tope de resultados.
+  Modelos: `PKG_INVENTARIO_LUBRIMEC.BUSCAR_ARTICULOS` (`db/inventario_sql.sql`) +
+  `buscarArticulosInventario` (`src/lib/api.ts`). Regla cerrada: no volver a preguntarla.
 - El APK es WebView remota: los cambios web llegan con `git push` (Pages), sin
   regenerar el APK.
 - Gestor de paquetes: **npm**. Deploy: push a `main` dispara GitHub Pages

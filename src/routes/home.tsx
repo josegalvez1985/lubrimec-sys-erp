@@ -85,6 +85,11 @@ import { ComprasArticulosView } from "@/components/compras-articulos-view";
 import { FichaArticulosView } from "@/components/ficha-articulos-view";
 import { ArticulosSinBarraView } from "@/components/articulos-sin-barra-view";
 import { ArticulosNoInventariadosView } from "@/components/articulos-no-inventariados-view";
+import { ArticulosInventarioView } from "@/components/articulos-inventario-view";
+import { InventarioView } from "@/components/inventario-view";
+import { AjustarInventariosView } from "@/components/ajustar-inventarios-view";
+import { ParametrosView } from "@/components/parametros-view";
+import { PlanillaInventariosView } from "@/components/planilla-inventarios-view";
 import { PreciosMayoristasView } from "@/components/precios-mayoristas-view";
 import { CostoInventariosView } from "@/components/costo-inventarios-view";
 import { MarcasVsDescripcionView } from "@/components/marcas-vs-descripcion-view";
@@ -294,6 +299,11 @@ const VISTAS: Record<number, () => ReactElement> = {
   56: () => <FichaArticulosView />, // Ficha de Artículos
   57: () => <ArticulosSinBarraView />, // Artículos sin Código de Barra
   81: () => <ArticulosNoInventariadosView />, // Artículos no Inventariados
+  76: () => <ArticulosInventarioView />, // Artículos para Inventario
+  58: () => <InventarioView />, // Inventario (modal Crear Inventario = pág 59)
+  87: () => <AjustarInventariosView />, // Ajustar Inventarios (modal Aplicar = pág 88)
+  89: () => <ParametrosView />, // Parámetros (modal Crear/Editar = pág 90)
+  112: () => <PlanillaInventariosView />, // Planilla para inventarios (113 Crear + 115 Cantidad)
   82: () => <PreciosMayoristasView />, // Precios Mayoristas
   92: () => <CostoInventariosView />, // Costo de Inventarios
   93: () => <MarcasVsDescripcionView />, // Marcas Vs Descripción de Articulos

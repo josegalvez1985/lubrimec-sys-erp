@@ -71,10 +71,13 @@ endpoints de solo lectura sin paquete (`ORDS_MENU_PAGINAS.sql`, `ORDS_VENTAS_*.s
 - **FK a otra tabla** (ej. `id_articulo`): capturar `-2291` (FK padre no existe) → 400 con mensaje
   claro. En LISTAR/OBTENER hacer `LEFT JOIN` a la tabla padre para devolver su descripción como
   campo de solo lectura (modelos: `codigos_barras_sql.sql`, `articulos_proveedores_sql.sql`).
-- **Selector de FK:** añadir un `PROCEDURE BUSCAR_*(token, cod_empresa, q)` que devuelva hasta 30
-  filas que matcheen `q` (por descripción / código / id) para alimentar el buscador del formulario
-  (modelos: `BUSCAR_ARTICULOS` en `codigos_barras_sql.sql`, `BUSCAR_PROVEEDORES` en
-  `articulos_proveedores_sql.sql`; endpoints `articulos/buscar`, `proveedores/buscar`).
+- **Selector de FK (LOV):** añadir un `PROCEDURE BUSCAR_*(token, cod_empresa)` que devuelva la
+  **lista completa** del catálogo, con los atributos que el front necesite para filtrar o para
+  una cascada (`es_activo`, `id_rubro`, `id_marca`, etc.); el filtrado es **100% del front**
+  (ver la REGLA más abajo). Modelo: `BUSCAR_ARTICULOS` en `inventario_sql.sql`.
+  Los `BUSCAR_*` viejos con `q` + `FETCH FIRST 30` (`codigos_barras_sql.sql`,
+  `articulos_proveedores_sql.sql`, `numeros_vouchers_sql.sql`) son **legado**: no copiarlos en
+  páginas nuevas.
   - **`q` vacío → 400:** el handler ORDS rechaza `q=` vacío. El proc debe tratar `TRIM(q) IS NULL`
     como "sin filtro" (devuelve los primeros 30), y el **cliente** front debe omitir el param `q`
     cuando no hay texto (ver `src/GUIA_FRONT.md`, gotcha del buscador). Modelo: `BUSCAR_PERSONAS` en
@@ -82,14 +85,19 @@ endpoints de solo lectura sin paquete (`ORDS_MENU_PAGINAS.sql`, `ORDS_VENTAS_*.s
   - **Búsqueda por RUC/CI:** normalizar guiones/espacios en ambos lados para que `4962931` matchee
     `496293-1`: `REPLACE(REPLACE(UPPER(nro_ruc),'-'),' ') LIKE l_qn`, con `l_qn` el término también
     sin guiones ni espacios. Modelo: `BUSCAR_PERSONAS` en `numeros_vouchers_sql.sql`.
-  - **Variante preferida — LOV completo, filtro en el front:** para catálogos chicos/medianos
-    (proveedores, personas) el proc devuelve **la lista completa** (sin `FETCH FIRST 30`) cuando
-    `q` viene vacío/omitido, y el **front** hace el filtrado flexible (mayúsculas/minúsculas,
-    RUC/CI con o sin guion, sin tope de resultados). Requerimiento explícito del usuario para el
+  - **REGLA — LOV completa, filtro en el front (TODA LOV, sin excepciones):** el proc devuelve
+    **la lista completa** (sin `q`, sin `FETCH FIRST 30`),
+    y el **front** hace el filtrado flexible (mayúsculas/minúsculas, multi-palabra en cualquier
+    orden, ID parcial, RUC/CI con o sin guion, sin tope de resultados). Requerimiento explícito del usuario para el
     LOV de proveedores de Compras. Modelo: `BUSCAR_PROVEEDORES` en `compras_sql.sql` (endpoint
     `compras-cabecera/buscar-proveedores?cod_empresa=:n`) + `buscarProveedoresCompra` en
-    `src/lib/api.ts`. El filtro por `q` en la BD se mantiene solo por compatibilidad; dejar el
-    `FETCH FIRST 30` únicamente en LOVs de catálogos grandes (ej. artículos).
+    `src/lib/api.ts`.
+    **Esta variante es LA regla para TODA LOV nueva, incluidas las de artículos** (pedido
+    explícito del usuario, repetido; costó varias iteraciones). NO volver al patrón `q` +
+    `FETCH FIRST 30` en la BD salvo pedido explícito. Modelo con artículos:
+    `PKG_INVENTARIO_LUBRIMEC.BUSCAR_ARTICULOS` (`inventario_sql.sql`): devuelve el catálogo
+    completo con sus atributos de cascada (`es_activo`, `id_rubro`, `id_marca`) y el front
+    filtra todo (multi-palabra en cualquier orden, ID parcial, cascada), sin tope.
 - **Imagen en BLOB** (modelo: `articulos_sql.sql`). Reglas para no serializar megas de más:
   - `LISTAR` **no** devuelve el blob: solo `CASE WHEN DBMS_LOB.GETLENGTH(archivo_imagen) > 0 THEN 1
     ELSE 0 END AS tiene_imagen`.
