@@ -62,6 +62,7 @@ export function DataTable<T>({
   searchPlaceholder = "Buscar...",
   toolbarExtra,
   emptyText = "Sin registros.",
+  initialSearch,
   initialSort,
   dense: denseProp,
   exportName,
@@ -75,12 +76,14 @@ export function DataTable<T>({
   searchPlaceholder?: string;
   toolbarExtra?: ReactNode;
   emptyText?: string;
+  // Valor inicial del search global (ej. desde el buscador del header).
+  initialSearch?: string;
   initialSort?: Orden;
   dense?: boolean;
   // Nombre base del archivo Excel. Si se omite, no se muestra el botón de export.
   exportName?: string;
 }) {
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(initialSearch ?? "");
   const [orden, setOrden] = useState<Orden>(initialSort ?? null);
   const [filtros, setFiltros] = useState<Record<string, string>>({});
   const [ocultas, setOcultas] = useState<Set<string>>(new Set());

@@ -196,6 +196,37 @@ accesos rápidos se arman dinámicamente desde el endpoint `menu/paginas`.
   front filtra flexible — nombre sin distinguir mayúsculas/minúsculas, RUC/CI con o sin guion, sin
   tope de resultados (patrón preferido para LOVs de catálogos chicos; ver las guías). Backend:
   `db/compras_sql.sql`.
+- **Inventario** (page_id 58/59) — CRUD de conteos de `INVENTARIO`. El modal Crear (pág 59) filtra
+  el artículo por ¿Es Activo?/Categoría/Marca, resuelve códigos de barra
+  (`inventario/articulo-por-barra`) y el backend calcula `cantidad_sistema` con
+  `pkg_stock.fn_existencia`. LOVs propias del módulo (lista completa + filtro front). Backend:
+  `db/inventario_sql.sql`.
+- **Artículos para Inventario** (page_id 76) — hoja de conteo físico de solo lectura (columna
+  Cantidad en blanco para llenar a mano). Búsqueda + facetas Es Activo/Rubro/Marcas 100% en el
+  front. Backend: `db/articulos_para_inventario_sql.sql`.
+- **Ajustar Inventarios** (page_id 87/88) — último conteo por artículo con costo último y
+  diferencia; facetas Cerrado/Diferencia/Rubro/Marca + Total Costo. El modal Aplicar (pág 88)
+  genera un **comprobante de ajuste AJS-E** (`COMPRAS_CABECERA`+`DETALLE`) en una transacción
+  atómica, cierra el conteo y marca `fecha_ultimo_inventario`; botón "Ajustar Diferencias 0"
+  cierra en lote los conteos sin diferencia. Muestra la foto del conteo (endpoint público
+  `inventario/:id/foto`). Backend: `db/ajustar_inventarios_sql.sql`.
+- **Parámetros** (page_id 89/90) — CRUD de `PARAMETROS` (parámetro/valor/observación);
+  parámetro y valor se guardan en MAYÚSCULAS. Backend: `db/parametros_sql.sql`.
+- **Planilla para inventarios** (page_id 112/113/115) — conteos **abiertos** de `INVENTARIO`.
+  "Crear Planilla" (pág 113) genera conteos masivos por Rubro/Marca/Viscosidad (LOVs en cascada
+  derivadas de los artículos pendientes según la fecha del parámetro `FECHA_INVENTARIO`). El modal
+  Cantidad (pág 115) edita la cantidad física y permite **tomar una foto** (cámara trasera,
+  compresión a 600px JPEG ≤100KB) que se sube como **binario crudo** (`PUT
+  planilla-inventarios/:id/foto`, bind `:body` BLOB); muestra además la imagen del artículo.
+  Backend: `db/planilla_inventarios_sql.sql`.
+- **Sortear** (page_id 108) — sorteo de teléfonos de `VENTAS_CABECERA` en un rango de fechas
+  (cada venta = una participación). Animación de 10 s con números enmascarados (`••••9999`) y
+  botón "Mostrar Ganador" que revela el número completo. Backend: `db/sortear_sql.sql`.
+- **Roles de Páginas** (page_id 37/38/64) — CRUD de `ROLES_PAGINAS` (PK compuesta
+  app_id+página+usuario; 5 permisos S/N). LOVs de usuarios (`WWV_FLOW_USERS`) y páginas
+  (`APEX_APPLICATION_PAGES`, requiere el fix de workspace); al crear se excluyen las páginas ya
+  asignadas al usuario. "Copiar Roles" (pág 64) copia los roles de un usuario a otro (solo los
+  que no tiene). Backend: `db/roles_paginas_sql.sql`.
 
 ## Deploy
 

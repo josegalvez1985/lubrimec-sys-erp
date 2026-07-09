@@ -90,6 +90,8 @@ import { InventarioView } from "@/components/inventario-view";
 import { AjustarInventariosView } from "@/components/ajustar-inventarios-view";
 import { ParametrosView } from "@/components/parametros-view";
 import { PlanillaInventariosView } from "@/components/planilla-inventarios-view";
+import { SortearView } from "@/components/sortear-view";
+import { RolesPaginasView } from "@/components/roles-paginas-view";
 import { PreciosMayoristasView } from "@/components/precios-mayoristas-view";
 import { CostoInventariosView } from "@/components/costo-inventarios-view";
 import { MarcasVsDescripcionView } from "@/components/marcas-vs-descripcion-view";
@@ -140,6 +142,16 @@ import { CobrosAcreditarView } from "@/components/cobros-acreditar-view";
 import { ArticulosView } from "@/components/articulos-view";
 import { LogsWhatsappView } from "@/components/logs-whatsapp-view";
 import { PerfilModal } from "@/components/perfil-modal";
+import { BusquedaGlobal } from "@/components/busqueda-global";
+
+// Categorías del menú APEX que no se usan por ahora: se ocultan del sidebar,
+// accesos rápidos y dashboard. Comparación sin tildes ni mayúsculas.
+const CATEGORIAS_OCULTAS = ["retencion", "retenciones", "importaciones", "importacion"];
+const normalizarCategoria = (s: string) =>
+  s
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
 
 // Icono por page_id (APEX). Tiene prioridad sobre el match por palabra clave.
 const ICONO_PAGINA: Record<number, LucideIcon> = {
@@ -304,6 +316,8 @@ const VISTAS: Record<number, () => ReactElement> = {
   87: () => <AjustarInventariosView />, // Ajustar Inventarios (modal Aplicar = pág 88)
   89: () => <ParametrosView />, // Parámetros (modal Crear/Editar = pág 90)
   112: () => <PlanillaInventariosView />, // Planilla para inventarios (113 Crear + 115 Cantidad)
+  108: () => <SortearView />, // Sortear
+  37: () => <RolesPaginasView />, // Roles de Páginas (modal Crear Rol = pág 38)
   82: () => <PreciosMayoristasView />, // Precios Mayoristas
   92: () => <CostoInventariosView />, // Costo de Inventarios
   93: () => <MarcasVsDescripcionView />, // Marcas Vs Descripción de Articulos
@@ -348,7 +362,11 @@ function HomePage() {
     queryFn: getMenuPaginas,
     retry: false,
   });
-  const paginas = paginasQuery.data ?? [];
+  // Categorías del menú APEX que no se usan por ahora (afecta sidebar, accesos
+  // rápidos y dashboard). Se comparan sin tildes ni mayúsculas.
+  const paginas = (paginasQuery.data ?? []).filter(
+    (p) => !CATEGORIAS_OCULTAS.includes(normalizarCategoria(p.parent_entry_text ?? "")),
+  );
 
   // Redirige al login si no hay sesión
   const sesion = getSesion();
@@ -491,10 +509,7 @@ function HomePage() {
             )}
           </Button>
 
-          <div className="relative hidden flex-1 max-w-md sm:block">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input placeholder="Buscar productos, clientes..." className="h-10 pl-10" />
-          </div>
+          <BusquedaGlobal onNavigate={handleNav} />
 
           <div className="flex-1 sm:hidden" />
 
@@ -579,6 +594,7 @@ function SidebarContent({
 }) {
   // Agrupa por categoría padre (nivel 2). El back ya viene ordenado por seq_categoria +
   // seq_pagina, así que conservar el orden de llegada respeta la jerarquía de APEX.
+  // (Las categorías ocultas ya vienen filtradas desde HomePage.)
   const grupos: { titulo: string; paginas: PaginaMenu[] }[] = [];
   for (const p of paginas) {
     const titulo = p.parent_entry_text ?? "General";

@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { DataTable, type Column } from "@/components/ui/data-table";
+import { consumirBusquedaInicial } from "@/lib/busqueda-inicial";
 import {
   Dialog,
   DialogContent,
@@ -169,6 +170,7 @@ export function PersonasView() {
             columns={COLUMNAS}
             rows={personas}
             getRowId={(p) => p.cod_persona}
+            initialSearch={consumirBusquedaInicial(2) ?? undefined}
             searchPlaceholder="Buscar por nombre, CI, RUC..."
             exportName="personas"
             initialSort={{ key: "nombre", dir: "asc" }}
