@@ -142,8 +142,8 @@ async function recodificarJpeg(file: File): Promise<string> {
 const LS_MENSAJE = "wsp_draft_mensaje";
 const LS_IMAGEN = "wsp_draft_imagen";
 // Tope de números por corrida al enviar "De la base" (debe coincidir con
-// v_max_registros en db/PROC_ENVIAR_MENSAJES_WHATSAPP.sql).
-const MAX_LOTE_BASE = 60;
+// v_max_registros en db/whatsapp_sql.sql).
+const MAX_LOTE_BASE = 100;
 
 function leerBorradorMensaje(): string {
   if (typeof window === "undefined") return "";
