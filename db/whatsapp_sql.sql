@@ -57,7 +57,7 @@ END;
 --   * Nuevo parametro p_imagen_url.
 --   * Si hay imagen, el JSON incluye "imageUrl"; el texto va como caption ("text").
 --   * El resto (reintentos, logs, mensajeado) se mantiene igual.
---   * Anti-bloqueo: lote de 60 numeros, pausa de 20s entre numeros y cada
+--   * Anti-bloqueo: lote de 100 numeros, pausa de 20s entre numeros y cada
 --     20 numeros una pausa larga de 90s (simula descansos entre tandas).
 --   * Variantes de texto: si el mensaje trae lineas separadoras "---", cada una
 --     de las partes es una VARIANTE del mismo mensaje. Para cada numero se elige
@@ -83,7 +83,7 @@ CREATE OR REPLACE PROCEDURE ENVIAR_MENSAJES_WHATSAPP (
     v_pausa_segs        NUMBER         := 20;  -- pausa entre numeros
     v_tanda_numeros     NUMBER         := 20;  -- cada tantos numeros, pausa larga
     v_pausa_tanda_segs  NUMBER         := 90;  -- duracion de la pausa larga
-    v_max_registros     NUMBER         := 60;
+    v_max_registros     NUMBER         := 100;
     v_numero_aviso      VARCHAR2(20)   := '0972111745';  -- avisar aqui al terminar
 
     v_request_body      CLOB;
@@ -456,7 +456,7 @@ END ENVIAR_MENSAJES_WHATSAPP_JOB;
 --   BORRAR_NUMEROS(token)                   -> borra todos los numeros
 --
 -- El envio real corre en background (DBMS_SCHEDULER) porque hay pausas entre numeros
--- (20s, y 90s cada 20): un request HTTP no puede quedarse esperando ~25 min. El job invoca
+-- (20s, y 90s cada 20): un request HTTP no puede quedarse esperando ~40 min. El job invoca
 -- ENVIAR_MENSAJES_WHATSAPP_JOB (seccion 2), que a su vez llama a ENVIAR_MENSAJES_WHATSAPP.
 --------------------------------------------------------------------------------
 
