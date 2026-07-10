@@ -34,7 +34,7 @@ import {
   sugerirPrecio,
   articulosParaPrecio,
   buscarArticulos,
-  buscarCompras,
+  buscarComprasPrecios,
   type PrecioVenta,
   type PrecioVentaInput,
 } from "@/lib/api";
@@ -488,7 +488,7 @@ function PrecioVentaDialog({
                 emptyLabel="Sin facturas"
                 value={idFactura}
                 label={facturaLabel}
-                buscar={(q) => buscarCompras(COD_EMPRESA, q)}
+                buscar={(q) => buscarComprasPrecios(COD_EMPRESA, q)}
                 itemKey={(c) => c.id_factura}
                 itemTitle={(c) => c.nombre_proveedor ?? `Factura ${c.id_factura}`}
                 itemSub={(c) =>

@@ -36,10 +36,15 @@ CREATE OR REPLACE PACKAGE PKG_PRECIOS_VENTAS_LUBRIMEC AS
   PROCEDURE SUGERIR(
       p_token IN VARCHAR2, p_cod_empresa IN NUMBER,
       p_id_factura IN NUMBER, p_id_articulo IN NUMBER);
-  -- LOV cascada de articulos de la pagina 35: si hay factura, los articulos de
-  -- su COMPRAS_DETALLE aun sin precio cargado; si no, los articulos activos.
+  -- LOV cascada de articulos de la pagina 35 (P35_ID_ARTICULO): si hay factura,
+  -- los articulos INACTIVOS (es_activo='N') de su COMPRAS_DETALLE aun sin precio
+  -- cargado; si no, todos los articulos inactivos. Lista completa, filtro en el front.
   PROCEDURE ARTICULOS_FACTURA(
-      p_token IN VARCHAR2, p_cod_empresa IN NUMBER, p_id_factura IN NUMBER, p_q IN VARCHAR2);
+      p_token IN VARCHAR2, p_cod_empresa IN NUMBER, p_id_factura IN NUMBER);
+  -- LOV de facturas de compra de la pagina 35 (P35_ID_FACTURA, LOV
+  -- COMPRAS_CABECERA.ID_FACTURA): todas las facturas de la empresa, sin filtro
+  -- de saldo ni tipo. Lista completa, filtro en el front.
+  PROCEDURE BUSCAR_COMPRAS(p_token IN VARCHAR2, p_cod_empresa IN NUMBER);
   PROCEDURE INSERTAR(
       p_token IN VARCHAR2, p_id_articulo IN NUMBER, p_porc_recargo IN NUMBER,
       p_precio_compra IN NUMBER, p_precio_venta IN NUMBER, p_cod_empresa IN NUMBER,
@@ -314,14 +319,14 @@ CREATE OR REPLACE PACKAGE BODY PKG_PRECIOS_VENTAS_LUBRIMEC AS
   END SUGERIR;
 
   --------------------------------------------------------------------------
-  -- ARTICULOS_FACTURA (LOV cascada de la pag 35).
-  -- Con factura: articulos de su COMPRAS_DETALLE (precio<>0) que aun no tengan
-  -- precio cargado para esa linea. Sin factura: todos los articulos activos.
+  -- ARTICULOS_FACTURA (LOV de P35_ID_ARTICULO, replica exacta del APEX).
+  -- Con factura: articulos INACTIVOS (es_activo='N') de su COMPRAS_DETALLE
+  -- (precio<>0) que aun no tengan precio cargado para esa linea. Sin factura:
+  -- todos los articulos inactivos. Lista completa (sin q ni tope): filtra el front.
   --------------------------------------------------------------------------
   PROCEDURE ARTICULOS_FACTURA(
-      p_token IN VARCHAR2, p_cod_empresa IN NUMBER, p_id_factura IN NUMBER, p_q IN VARCHAR2) IS
+      p_token IN VARCHAR2, p_cod_empresa IN NUMBER, p_id_factura IN NUMBER) IS
     l_usuario VARCHAR2(255);
-    l_q       VARCHAR2(400) := '%' || UPPER(TRIM(p_q)) || '%';
   BEGIN
     l_usuario := f_usuario(p_token);
     IF l_usuario IS NULL THEN
@@ -341,27 +346,19 @@ CREATE OR REPLACE PACKAGE BODY PKG_PRECIOS_VENTAS_LUBRIMEC AS
            AND a.cod_empresa = p_cod_empresa
            AND a.id_factura = p_id_factura
            AND NVL(a.precio, 0) <> 0
+           AND NVL(b.es_activo, 'S') = 'N'
            AND NOT EXISTS (
                  SELECT 1 FROM precios_ventas c
                   WHERE a.cod_empresa = c.cod_empresa
                     AND a.id_factura = c.id_factura
                     AND a.nro_linea = c.nro_linea)
-           AND (TRIM(p_q) IS NULL
-                OR UPPER(b.descripcion) LIKE l_q
-                OR UPPER(b.codigo_oem) LIKE l_q
-                OR TO_CHAR(b.id_articulo) LIKE l_q)
         UNION ALL
         SELECT a.id_articulo, a.descripcion, a.codigo_oem
           FROM articulos a
          WHERE p_id_factura IS NULL
            AND a.cod_empresa = p_cod_empresa
-           AND NVL(a.es_activo, 'S') = 'S'
-           AND (TRIM(p_q) IS NULL
-                OR UPPER(a.descripcion) LIKE l_q
-                OR UPPER(a.codigo_oem) LIKE l_q
-                OR TO_CHAR(a.id_articulo) LIKE l_q)
+           AND NVL(a.es_activo, 'S') = 'N'
         ORDER BY 2
-        FETCH FIRST 30 ROWS ONLY
     ) LOOP
       APEX_JSON.OPEN_OBJECT;
       APEX_JSON.WRITE('id_articulo', r.id_articulo);
@@ -375,6 +372,50 @@ CREATE OR REPLACE PACKAGE BODY PKG_PRECIOS_VENTAS_LUBRIMEC AS
     WHEN OTHERS THEN
       p_error(500, 'Internal Server Error', 'Error: ' || SQLERRM);
   END ARTICULOS_FACTURA;
+
+  --------------------------------------------------------------------------
+  -- BUSCAR_COMPRAS (LOV de P35_ID_FACTURA). Todas las facturas de compra de
+  -- la empresa, sin filtro de saldo ni de tipo (la LOV de Pagos NO sirve aca:
+  -- excluye pagadas y corta en 30). Lista completa: filtra el front.
+  --------------------------------------------------------------------------
+  PROCEDURE BUSCAR_COMPRAS(p_token IN VARCHAR2, p_cod_empresa IN NUMBER) IS
+    l_usuario VARCHAR2(255);
+  BEGIN
+    l_usuario := f_usuario(p_token);
+    IF l_usuario IS NULL THEN
+      p_error(401, 'Unauthorized', 'Token invalido o expirado');
+      RETURN;
+    END IF;
+
+    APEX_JSON.OPEN_OBJECT;
+    APEX_JSON.WRITE('success', TRUE);
+    APEX_JSON.OPEN_ARRAY('data');
+    FOR r IN (
+        SELECT cc.id_factura, cc.nro_comprobante, cc.ser_timbrado, cc.tip_comprobante,
+               cc.fec_comprobante,
+               NVL(pe.nombre_fantasia, pe.nombre) AS nombre_proveedor
+          FROM compras_cabecera cc
+          LEFT JOIN personas pe
+                 ON pe.cod_persona = cc.cod_persona
+                AND pe.cod_empresa = cc.cod_empresa
+         WHERE cc.cod_empresa = p_cod_empresa
+         ORDER BY cc.id_factura DESC
+    ) LOOP
+      APEX_JSON.OPEN_OBJECT;
+      APEX_JSON.WRITE('id_factura', r.id_factura);
+      APEX_JSON.WRITE('nro_comprobante', r.nro_comprobante);
+      APEX_JSON.WRITE('ser_timbrado', r.ser_timbrado);
+      APEX_JSON.WRITE('tip_comprobante', r.tip_comprobante);
+      APEX_JSON.WRITE('fec_comprobante', TO_CHAR(r.fec_comprobante, 'YYYY-MM-DD'));
+      APEX_JSON.WRITE('nombre_proveedor', r.nombre_proveedor);
+      APEX_JSON.CLOSE_OBJECT;
+    END LOOP;
+    APEX_JSON.CLOSE_ARRAY;
+    APEX_JSON.CLOSE_OBJECT;
+  EXCEPTION
+    WHEN OTHERS THEN
+      p_error(500, 'Internal Server Error', 'Error: ' || SQLERRM);
+  END BUSCAR_COMPRAS;
 
   --------------------------------------------------------------------------
   -- INSERTAR (id por IDENTITY; fecha la fija el trigger TR_INSERT_FECHA;
@@ -556,7 +597,8 @@ END PKG_PRECIOS_VENTAS_LUBRIMEC;
 --
 --   GET    /lubrimec/precios-ventas?cod_empresa=:n[&id_articulo=:n]  -> listar
 --   GET    /lubrimec/precios-ventas/sugerir?cod_empresa&id_articulo[&id_factura] -> sugeridos
---   GET    /lubrimec/precios-ventas/articulos?cod_empresa[&id_factura&q] -> LOV articulos
+--   GET    /lubrimec/precios-ventas/articulos?cod_empresa[&id_factura] -> LOV articulos
+--   GET    /lubrimec/precios-ventas/compras?cod_empresa=:n            -> LOV facturas
 --   GET    /lubrimec/precios-ventas/:id?cod_empresa=:n               -> obtener
 --   POST   /lubrimec/precios-ventas                                  -> insertar
 --   PUT    /lubrimec/precios-ventas/:id                               -> actualizar
@@ -572,6 +614,7 @@ BEGIN
   BEGIN ORDS.DELETE_HANDLER('lubrimec', 'precios-ventas', 'POST');           EXCEPTION WHEN OTHERS THEN NULL; END;
   BEGIN ORDS.DELETE_HANDLER('lubrimec', 'precios-ventas/sugerir', 'GET');    EXCEPTION WHEN OTHERS THEN NULL; END;
   BEGIN ORDS.DELETE_HANDLER('lubrimec', 'precios-ventas/articulos', 'GET');  EXCEPTION WHEN OTHERS THEN NULL; END;
+  BEGIN ORDS.DELETE_HANDLER('lubrimec', 'precios-ventas/compras', 'GET');    EXCEPTION WHEN OTHERS THEN NULL; END;
   BEGIN ORDS.DELETE_HANDLER('lubrimec', 'precios-ventas/:id', 'GET');    EXCEPTION WHEN OTHERS THEN NULL; END;
   BEGIN ORDS.DELETE_HANDLER('lubrimec', 'precios-ventas/:id', 'PUT');    EXCEPTION WHEN OTHERS THEN NULL; END;
   BEGIN ORDS.DELETE_HANDLER('lubrimec', 'precios-ventas/:id', 'DELETE'); EXCEPTION WHEN OTHERS THEN NULL; END;
@@ -719,7 +762,7 @@ END;
       p_source      => q'~
 DECLARE
     l_token VARCHAR2(256); l_pos PLS_INTEGER;
-    l_qs VARCHAR2(4000); l_cod_empresa VARCHAR2(20); l_id_factura VARCHAR2(20); l_q VARCHAR2(400);
+    l_qs VARCHAR2(4000); l_cod_empresa VARCHAR2(20); l_id_factura VARCHAR2(20);
     FUNCTION get_qs(p_qs IN VARCHAR2, p_key IN VARCHAR2) RETURN VARCHAR2 IS
         l_p PLS_INTEGER; l_e PLS_INTEGER; l_v VARCHAR2(4000);
     BEGIN
@@ -745,13 +788,59 @@ BEGIN
     l_qs := OWA_UTIL.GET_CGI_ENV('QUERY_STRING');
     l_cod_empresa := get_qs(l_qs, 'cod_empresa');
     l_id_factura  := get_qs(l_qs, 'id_factura');
-    l_q           := get_qs(l_qs, 'q');
     PKG_PRECIOS_VENTAS_LUBRIMEC.ARTICULOS_FACTURA(
         p_token => l_token, p_cod_empresa => TO_NUMBER(l_cod_empresa),
-        p_id_factura => TO_NUMBER(l_id_factura), p_q => l_q);
+        p_id_factura => TO_NUMBER(l_id_factura));
 END;
 ~');
   ORDS.DEFINE_PARAMETER(p_module_name => 'lubrimec', p_pattern => 'precios-ventas/articulos', p_method => 'GET',
+      p_name => 'Authorization', p_bind_variable_name => 'authorization',
+      p_source_type => 'HEADER', p_param_type => 'STRING', p_access_method => 'IN');
+
+  ----------------------------------------------------------------------------
+  -- /precios-ventas/compras  (LOV de facturas, prioridad 1)
+  ----------------------------------------------------------------------------
+  BEGIN
+    ORDS.DEFINE_TEMPLATE(p_module_name => 'lubrimec', p_pattern => 'precios-ventas/compras',
+        p_priority => 1, p_etag_type => 'HASH', p_comments => NULL);
+  EXCEPTION WHEN OTHERS THEN NULL; END;
+
+  ORDS.DEFINE_HANDLER(
+      p_module_name => 'lubrimec', p_pattern => 'precios-ventas/compras', p_method => 'GET',
+      p_source_type => 'plsql/block',
+      p_source      => q'~
+DECLARE
+    l_token VARCHAR2(256); l_pos PLS_INTEGER;
+    l_qs VARCHAR2(4000); l_cod_empresa VARCHAR2(20);
+    FUNCTION get_qs(p_qs IN VARCHAR2, p_key IN VARCHAR2) RETURN VARCHAR2 IS
+        l_p PLS_INTEGER; l_e PLS_INTEGER; l_v VARCHAR2(4000);
+    BEGIN
+        l_p := INSTR('&' || p_qs, '&' || p_key || '=');
+        IF l_p = 0 THEN RETURN NULL; END IF;
+        l_p := l_p + LENGTH(p_key) + 1;
+        l_e := INSTR(p_qs || '&', '&', l_p);
+        l_v := SUBSTR(p_qs, l_p, l_e - l_p);
+        l_v := REPLACE(l_v, '+', ' ');
+        RETURN UTL_URL.UNESCAPE(l_v);
+    END;
+BEGIN
+    OWA_UTIL.MIME_HEADER('application/json', FALSE);
+    HTP.P('Access-Control-Allow-Origin: *');
+    HTP.P('Access-Control-Allow-Methods: GET, OPTIONS');
+    HTP.P('Access-Control-Allow-Headers: Authorization, Content-Type');
+    OWA_UTIL.HTTP_HEADER_CLOSE;
+    l_token := :authorization;
+    IF l_token IS NOT NULL THEN
+        l_pos := INSTR(UPPER(l_token), 'BEARER ');
+        IF l_pos > 0 THEN l_token := TRIM(SUBSTR(l_token, l_pos + 7)); END IF;
+    END IF;
+    l_qs := OWA_UTIL.GET_CGI_ENV('QUERY_STRING');
+    l_cod_empresa := get_qs(l_qs, 'cod_empresa');
+    PKG_PRECIOS_VENTAS_LUBRIMEC.BUSCAR_COMPRAS(
+        p_token => l_token, p_cod_empresa => TO_NUMBER(l_cod_empresa));
+END;
+~');
+  ORDS.DEFINE_PARAMETER(p_module_name => 'lubrimec', p_pattern => 'precios-ventas/compras', p_method => 'GET',
       p_name => 'Authorization', p_bind_variable_name => 'authorization',
       p_source_type => 'HEADER', p_param_type => 'STRING', p_access_method => 'IN');
 
