@@ -2356,17 +2356,43 @@ export async function sugerirPrecio(
   }) as PrecioSugerido;
 }
 
-// LOV cascada de artículos: si hay factura, los de esa compra sin precio aún;
-// si no, los artículos activos. Alimenta el BuscadorSelect del formulario.
+// LOV completa (réplica del P35_ID_ARTICULO del APEX: solo artículos inactivos,
+// con factura los de su detalle aún sin precio): el backend devuelve todo y acá
+// se filtra multi-palabra en cualquier orden + ID parcial, sin tope.
 export async function articulosParaPrecio(
   codEmpresa: number,
   q: string,
   idFactura?: number | null,
 ): Promise<ArticuloPrecioLov[]> {
-  const params = new URLSearchParams({ cod_empresa: String(codEmpresa), q });
+  const params = new URLSearchParams({ cod_empresa: String(codEmpresa) });
   if (idFactura != null) params.set("id_factura", String(idFactura));
   const data = await authFetch(`precios-ventas/articulos?${params}`);
-  return (data.data ?? []) as ArticuloPrecioLov[];
+  const todos = (data.data ?? []) as ArticuloPrecioLov[];
+  const tokens = q.trim().toUpperCase().split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return todos;
+  return todos.filter((a) => {
+    const texto = `${a.descripcion ?? ""} ${a.codigo_oem ?? ""} ${a.id_articulo}`.toUpperCase();
+    return tokens.every((t) => texto.includes(t));
+  });
+}
+
+// LOV completa de facturas de compra para Precios de Ventas (P35_ID_FACTURA del
+// APEX: todas las facturas, sin filtro de saldo ni tipo — la LOV de Pagos no
+// sirve acá: excluye pagadas y corta en 30). Filtro multi-palabra en el front.
+export async function buscarComprasPrecios(
+  codEmpresa: number,
+  q: string,
+): Promise<CompraBusqueda[]> {
+  const params = new URLSearchParams({ cod_empresa: String(codEmpresa) });
+  const data = await authFetch(`precios-ventas/compras?${params}`);
+  const todas = (data.data ?? []) as CompraBusqueda[];
+  const tokens = q.trim().toUpperCase().split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return todas;
+  return todas.filter((c) => {
+    const texto =
+      `${c.id_factura} ${c.nro_comprobante ?? ""} ${c.ser_timbrado ?? ""} ${c.tip_comprobante ?? ""} ${c.nombre_proveedor ?? ""} ${c.fec_comprobante ?? ""}`.toUpperCase();
+    return tokens.every((t) => texto.includes(t));
+  });
 }
 
 // ─── Acreditación de cobros (pág 111) ────────────────────────────────────────
