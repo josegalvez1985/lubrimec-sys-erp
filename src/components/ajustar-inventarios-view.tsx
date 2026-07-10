@@ -180,6 +180,7 @@ export function AjustarInventariosView() {
       accessor: (r) => r.fecha ?? "",
       render: (r) => fmtFecha(r.fecha),
       className: "w-28",
+      footer: () => "Totales",
     },
     {
       key: "cantidad_fisica",
@@ -187,6 +188,7 @@ export function AjustarInventariosView() {
       num: true,
       accessor: (r) => r.cantidad_fisica,
       render: (r) => fmtNum(r.cantidad_fisica),
+      footer: (rows) => fmtNum(rows.reduce((a, r) => a + (r.cantidad_fisica ?? 0), 0)),
     },
     {
       key: "cantidad_sistema",
@@ -194,6 +196,7 @@ export function AjustarInventariosView() {
       num: true,
       accessor: (r) => r.cantidad_sistema,
       render: (r) => fmtNum(r.cantidad_sistema),
+      footer: (rows) => fmtNum(rows.reduce((a, r) => a + (r.cantidad_sistema ?? 0), 0)),
     },
     {
       key: "cant_diferencia",
@@ -205,6 +208,7 @@ export function AjustarInventariosView() {
           {fmtNum(r.cant_diferencia)}
         </span>
       ),
+      footer: (rows) => fmtNum(rows.reduce((a, r) => a + (r.cant_diferencia ?? 0), 0)),
     },
     {
       key: "costo_ultimo",
@@ -219,6 +223,8 @@ export function AjustarInventariosView() {
       num: true,
       accessor: (r) => r.costo_ultimo * r.cant_diferencia,
       render: (r) => fmtMiles(r.costo_ultimo * r.cant_diferencia),
+      footer: (rows) =>
+        fmtMiles(rows.reduce((a, r) => a + r.costo_ultimo * r.cant_diferencia, 0)),
     },
     {
       key: "cerrado",
