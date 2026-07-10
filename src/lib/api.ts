@@ -2518,6 +2518,7 @@ export async function listarInventario(codEmpresa: number): Promise<InventarioRo
 export async function crearInventario(input: InventarioInput): Promise<number> {
   const data = await authFetch(`inventario`, {
     method: "POST",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
   });
   return data.id_inventario as number;
@@ -2526,6 +2527,7 @@ export async function crearInventario(input: InventarioInput): Promise<number> {
 export async function actualizarInventario(id: number, input: InventarioInput): Promise<void> {
   await authFetch(`inventario/${id}`, {
     method: "PUT",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
   });
 }
@@ -2645,6 +2647,7 @@ export async function listarParametros(codEmpresa: number): Promise<Parametro[]>
 export async function crearParametro(input: ParametroInput): Promise<number> {
   const data = await authFetch(`parametros`, {
     method: "POST",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
   });
   return data.id_parametro as number;
@@ -2653,6 +2656,7 @@ export async function crearParametro(input: ParametroInput): Promise<number> {
 export async function actualizarParametro(id: number, input: ParametroInput): Promise<void> {
   await authFetch(`parametros/${id}`, {
     method: "PUT",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
   });
 }
@@ -2705,6 +2709,7 @@ export type AplicarAjusteInput = {
 export async function aplicarAjusteInventario(input: AplicarAjusteInput): Promise<void> {
   await authFetch(`inventario-ajustes/aplicar`, {
     method: "POST",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
   });
 }
@@ -2713,6 +2718,7 @@ export async function aplicarAjusteInventario(input: AplicarAjusteInput): Promis
 export async function ajustarDiferenciasCero(codEmpresa: number): Promise<number> {
   const data = await authFetch(`inventario-ajustes/dif-cero`, {
     method: "POST",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ cod_empresa: codEmpresa }),
   });
   return (data.cerrados ?? 0) as number;
@@ -2784,6 +2790,7 @@ export async function crearPlanillaInventario(input: {
 }): Promise<number> {
   const data = await authFetch(`planilla-inventarios/crear`, {
     method: "POST",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
   });
   return (data.insertados ?? 0) as number;
@@ -2796,6 +2803,7 @@ export async function actualizarCantidadPlanilla(
 ): Promise<void> {
   await authFetch(`planilla-inventarios/${id}/cantidad`, {
     method: "PUT",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ cod_empresa: codEmpresa, cantidad_fisica: cantidadFisica }),
   });
 }
@@ -2851,6 +2859,7 @@ export async function listarRolesPaginas(): Promise<RolPagina[]> {
 export async function crearRolPagina(input: RolPaginaInput): Promise<void> {
   await authFetch(`roles-paginas`, {
     method: "POST",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ app_id: Number(DEFAULT_APP_ID), ...input }),
   });
 }
@@ -2859,6 +2868,7 @@ export async function crearRolPagina(input: RolPaginaInput): Promise<void> {
 export async function actualizarRolPagina(input: RolPaginaInput): Promise<void> {
   await authFetch(`roles-paginas`, {
     method: "PUT",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ app_id: Number(DEFAULT_APP_ID), ...input }),
   });
 }
@@ -2880,6 +2890,7 @@ export async function copiarRolesPaginas(
 ): Promise<number> {
   const data = await authFetch(`roles-paginas/copiar`, {
     method: "POST",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       app_id: Number(DEFAULT_APP_ID),
       usuario_inicial: usuarioInicial,
