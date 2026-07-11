@@ -41,9 +41,11 @@ CREATE OR REPLACE PACKAGE PKG_PRECIOS_VENTAS_LUBRIMEC AS
   -- cargado; si no, todos los articulos inactivos. Lista completa, filtro en el front.
   PROCEDURE ARTICULOS_FACTURA(
       p_token IN VARCHAR2, p_cod_empresa IN NUMBER, p_id_factura IN NUMBER);
-  -- LOV de facturas de compra de la pagina 35 (P35_ID_FACTURA, LOV
-  -- COMPRAS_CABECERA.ID_FACTURA): todas las facturas de la empresa, sin filtro
-  -- de saldo ni tipo. Lista completa, filtro en el front.
+  -- LOV de facturas de compra de la pagina 35 (P35_ID_FACTURA, LOV compartida
+  -- COMPRAS_CABECERA.ID_FACTURA): solo facturas con lineas PENDIENTES de cargar
+  -- precio: tip_comprobante <> 'AJS', alguna linea con precio<>0 sin registro en
+  -- PRECIOS_VENTAS (por factura+nro_linea) y cuyo articulo este inactivo
+  -- (es_activo='N'). Lista completa, filtro en el front.
   PROCEDURE BUSCAR_COMPRAS(p_token IN VARCHAR2, p_cod_empresa IN NUMBER);
   PROCEDURE INSERTAR(
       p_token IN VARCHAR2, p_id_articulo IN NUMBER, p_porc_recargo IN NUMBER,
@@ -242,10 +244,19 @@ CREATE OR REPLACE PACKAGE BODY PKG_PRECIOS_VENTAS_LUBRIMEC AS
       RETURN;
     END IF;
 
-    -- Precio de venta anterior (vigente) del articulo
+    -- Precio de venta anterior (vigente) del articulo. Si la funcion falla o
+    -- devuelve NULL, cae al precio_venta de ARTICULOS (el trigger
+    -- TRG_PRECIOS_VENTAS_AIU lo mantiene como precio vigente).
     BEGIN
       l_anterior := PKG_VENTAS.FN_PRECIO_VENTA(p_cod_empresa, p_id_articulo);
     EXCEPTION WHEN OTHERS THEN l_anterior := NULL; END;
+    IF l_anterior IS NULL THEN
+      BEGIN
+        SELECT precio_venta INTO l_anterior
+          FROM articulos
+         WHERE cod_empresa = p_cod_empresa AND id_articulo = p_id_articulo;
+      EXCEPTION WHEN OTHERS THEN l_anterior := NULL; END;
+    END IF;
 
     -- Delivery de la factura y cantidad total (solo si hay factura)
     IF p_id_factura IS NOT NULL THEN
@@ -374,9 +385,11 @@ CREATE OR REPLACE PACKAGE BODY PKG_PRECIOS_VENTAS_LUBRIMEC AS
   END ARTICULOS_FACTURA;
 
   --------------------------------------------------------------------------
-  -- BUSCAR_COMPRAS (LOV de P35_ID_FACTURA). Todas las facturas de compra de
-  -- la empresa, sin filtro de saldo ni de tipo (la LOV de Pagos NO sirve aca:
-  -- excluye pagadas y corta en 30). Lista completa: filtra el front.
+  -- BUSCAR_COMPRAS (LOV de P35_ID_FACTURA, replica de la LOV compartida
+  -- COMPRAS_CABECERA.ID_FACTURA del APEX): solo facturas con lineas
+  -- PENDIENTES de cargar precio — no AJS, linea con precio<>0 sin registro
+  -- en PRECIOS_VENTAS (factura+nro_linea) y articulo inactivo (es_activo='N').
+  -- Lista completa: filtra el front.
   --------------------------------------------------------------------------
   PROCEDURE BUSCAR_COMPRAS(p_token IN VARCHAR2, p_cod_empresa IN NUMBER) IS
     l_usuario VARCHAR2(255);
@@ -399,6 +412,23 @@ CREATE OR REPLACE PACKAGE BODY PKG_PRECIOS_VENTAS_LUBRIMEC AS
                  ON pe.cod_persona = cc.cod_persona
                 AND pe.cod_empresa = cc.cod_empresa
          WHERE cc.cod_empresa = p_cod_empresa
+           AND cc.tip_comprobante NOT IN ('AJS') -- ajuste de stock
+           AND EXISTS (
+                 SELECT 1
+                   FROM compras_detalle a
+                  WHERE a.cod_empresa = cc.cod_empresa
+                    AND a.id_factura = cc.id_factura
+                    AND NVL(a.precio, 0) <> 0
+                    AND NOT EXISTS (
+                          SELECT 1 FROM precios_ventas c
+                           WHERE c.cod_empresa = a.cod_empresa
+                             AND c.id_factura = a.id_factura
+                             AND c.nro_linea = a.nro_linea)
+                    AND EXISTS (
+                          SELECT 1 FROM articulos ar
+                           WHERE ar.cod_empresa = a.cod_empresa
+                             AND ar.id_articulo = a.id_articulo
+                             AND NVL(ar.es_activo, 'S') = 'N'))
          ORDER BY cc.id_factura DESC
     ) LOOP
       APEX_JSON.OPEN_OBJECT;

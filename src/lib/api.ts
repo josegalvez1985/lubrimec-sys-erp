@@ -2376,9 +2376,10 @@ export async function articulosParaPrecio(
   });
 }
 
-// LOV completa de facturas de compra para Precios de Ventas (P35_ID_FACTURA del
-// APEX: todas las facturas, sin filtro de saldo ni tipo — la LOV de Pagos no
-// sirve acá: excluye pagadas y corta en 30). Filtro multi-palabra en el front.
+// LOV de facturas de compra para Precios de Ventas (réplica de la LOV compartida
+// COMPRAS_CABECERA.ID_FACTURA del APEX): solo facturas con líneas pendientes de
+// cargar precio (no AJS, línea con precio<>0 sin registro en PRECIOS_VENTAS y
+// artículo inactivo). Ese filtro es del backend; acá filtro multi-palabra.
 export async function buscarComprasPrecios(
   codEmpresa: number,
   q: string,
