@@ -167,7 +167,23 @@ Front (React):
   `l_x IS NULL OR ...`) y **default calculado** (sin filtros de fecha carga el último día con
   ventas y lo informa en `fecha_default`). Funciones costosas (`fn_precio_venta`,
   `fn_existencia_oem`) en CTEs sobre las filas ya filtradas, una vez por artículo.
+- `db/cobros_tarjeta_sql.sql` — solo endpoints ORDS (sin paquete): GET listar sobre una **vista**
+  (`v_cobros_clientes`, cobros con tarjeta pendientes de acreditar) + PUT que hace `UPDATE` sobre
+  `ventas_cobros` (marca `ind_acreditado='S'` y guarda `monto_acreditado`). Modelo de "GET a vista
+  + PUT que muta otra tabla". Panel en el dashboard (`cobros-tarjeta-view.tsx`), no una página del
+  menú. `cod_empresa` opcional con default 24.
 - `src/lib/api.ts` (sección `Marcas`) — cliente frontend modelo.
+
+## Envío de WhatsApp (proceso en background, no un endpoint CRUD)
+
+`ENVIAR_MENSAJES_WHATSAPP` (`db/PROC_ENVIAR_MENSAJES_WHATSAPP.sql`) corre en background vía
+DBMS_SCHEDULER (lo lanza `PKG_WHATSAPP_LUBRIMEC.ENVIAR`, que devuelve un `job_id`; el front hace
+polling de `LOG_WHATSAPP`). No puede ser síncrono: hay pausas entre números. **Ritmo anti-bloqueo
+actual:** lote de **60** números por corrida (`v_max_registros`), **20s** entre números
+(`v_pausa_segs`), y cada **20** números (`v_tanda_numeros`) una pausa larga de **90s**
+(`v_pausa_tanda_segs`). Tras el último número no se duerme. Si cambiás estos valores, actualizá
+también `MAX_LOTE_BASE` en `whatsapp-view.tsx` (debe coincidir con `v_max_registros`) y los textos
+de la UI que describen el ritmo.
 
 ## Notas / gotchas
 

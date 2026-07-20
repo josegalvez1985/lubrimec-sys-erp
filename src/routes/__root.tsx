@@ -125,9 +125,31 @@ function RootComponent() {
   const { queryClient } = Route.useRouteContext();
 
   useEffect(() => {
-    if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`);
+    if (!("serviceWorker" in navigator)) return;
+    // En dev el SW rompe los imports dinámicos de Vite y el HMR: cachea módulos
+    // (/src/..., deps ?v=hash) y hasta el WebSocket, que cambian al reiniciar el
+    // server. Un SW viejo intercepta todo y sirve respuestas rotas (404, "Failed
+    // to fetch"). No basta con desregistrar: el SW activo sigue controlando la
+    // página hasta recargar. Por eso, si hay uno controlando, lo damos de baja,
+    // limpiamos su caché y RECARGAMOS una vez para que la carga siguiente entre
+    // limpia sin depender de que el usuario cierre todas las pestañas.
+    if (import.meta.env.DEV) {
+      (async () => {
+        const regs = await navigator.serviceWorker.getRegistrations();
+        if ("caches" in window) {
+          const keys = await caches.keys();
+          await Promise.all(keys.map((k) => caches.delete(k)));
+        }
+        await Promise.all(regs.map((r) => r.unregister()));
+        // Solo recargar si el SW estaba efectivamente controlando esta página
+        // (si no, no hay nada roto y recargar sería un loop innecesario).
+        if (navigator.serviceWorker.controller) {
+          window.location.reload();
+        }
+      })();
+      return;
     }
+    navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`);
   }, []);
 
   return (

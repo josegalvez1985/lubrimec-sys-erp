@@ -23,7 +23,8 @@ establecido y gotchas que costó descubrir; no reinventar nada que ya esté resu
 
 - El front **nunca** llama a `oracleapex.com` directo: siempre `src/lib/api.ts` →
   `/api/ords/` (proxy en `src/routes/api/ords.$.ts`). Toda llamada protegida usa
-  `authFetch`, nunca `fetch` directo.
+  `authFetch`, nunca `fetch` directo. Imágenes binarias (módulo ORDS `paginaweb`) van
+  por otro proxy: `/api/img/` (`src/routes/api/img.$.ts`, público, con timeout + reintentos).
 - **Sin caché en ningún nivel:** no poner `staleTime` en `useQuery`; los defaults
   globales ya fuerzan consulta al servidor siempre.
 - Contrato JSON uniforme: `{ success, message?, data? }`.

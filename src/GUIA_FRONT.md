@@ -28,6 +28,21 @@ Reenvía la petición a ORDS server-side. Detalles que costó descubrir:
 - **Headers:** reenvía solo `authorization` (Bearer) y `content-type`. No propaga otros.
 - **Query string:** se preserva (`incoming.search`), así llegan `?cod_empresa=...` etc.
 
+## El proxy de imágenes (`src/routes/api/img.$.ts`)
+
+Proxy aparte para imágenes **binarias** del módulo ORDS `paginaweb` (no `lubrimec`): reenvía
+el binario tal cual, sin forzar JSON. Es **público** (sin token). Endpoint:
+`GET /api/img/<ruta>` → `.../ords/josegalvez/paginaweb/<ruta>`. Uso vivo:
+`imgArticuloUrl(id)` en `articulo-img-modal.tsx` → `/api/img/articulosimg/:id`.
+
+- **ORDS es inestable:** el mismo endpoint responde 200 y al rato 404/timeout para una imagen
+  que SÍ existe. Por eso el proxy tiene **timeout de 15s** (`AbortController`) y **hasta 3
+  reintentos** ante fallo transitorio: timeout, error de red, `5xx` y **también 404** (el 404 de
+  este endpoint es mayormente espurio bajo carga). Si tras los reintentos sigue 404, se asume que
+  el artículo no tiene imagen y se devuelve tal cual; si es timeout/red, responde **504** para que
+  el `<img>` falle rápido y muestre "Sin imagen disponible" en vez de girar para siempre.
+- **`cache-control: no-store`** en la respuesta (regla sin caché) y el SW no intercepta `/api/img/`.
+
 ## `VITE_API_URL` por entorno
 
 `src/lib/api.ts` lee `import.meta.env.VITE_API_URL` como base. Debe valer `/api/ords/`
@@ -84,6 +99,12 @@ sus permisos. Cada usuario ve un menú distinto.
 - **Resolver la vista:** el mapa `VISTAS: Record<number, () => ReactElement>` relaciona
   `page_id` → componente. Si la página activa está en `VISTAS`, se renderiza; si no,
   muestra `PlaceholderView` con su `page_title`.
+- **Orden de "Accesos rápidos" por uso local:** `QuickActions` ordena por los más usados en
+  ESTE dispositivo. El conteo se guarda en `localStorage` (`src/lib/uso-accesos.ts`, clave
+  `quick_actions_uso`, mapa `{ "application_id-page_id": veces }`): cada clic incrementa y
+  persiste antes de navegar. Orden: uso local desc → `estadistica_user` (backend) como desempate
+  → título alfabético (estable). Es por dispositivo, no se sincroniza. El conteo es histórico
+  total (no decae): un acceso muy usado queda arriba aunque dejes de abrirlo.
 
 ### Registrar una página nueva en el menú
 
@@ -112,12 +133,21 @@ que hacer nada extra**, solo respetar el patrón:
 2. **HTTP (global):** `authFetch` (y `login`, `getMenuPaginas`) mandan `cache: "no-store"`. Toda
    función nueva que use `authFetch` ya queda cubierta. Si hacés un `fetch` directo (raro), agregá
    `cache: "no-store"`.
-3. **Service Worker (`public/sw.js`):** NO cachea la API (rutas `/api/ords/`, `/ords/`,
-   `oracleapex.com` pasan directo a la red) ni `apk-version.json` ni `.apk`. Estrategia:
+3. **Service Worker (`public/sw.js`):** NO cachea la API (rutas `/api/ords/`, `/api/img/`,
+   `/ords/`, `oracleapex.com` pasan directo a la red) ni `apk-version.json` ni `.apk`. Estrategia:
    **network-first para HTML/navegaciones** (imprescindible: si el HTML fuera cache-first, tras
    un deploy los usuarios seguirían con el bundle viejo para siempre — pasó) y cache-first solo
    para assets con hash. Si cambiás `sw.js`, subí la constante `CACHE` (`lubrimesys-vN`) para
    forzar la purga en los clientes.
+   - **El SW NO se registra en dev** (`__root.tsx`): en desarrollo cachea módulos de Vite
+     (`/src/...`, deps `?v=hash`) y el WebSocket de HMR, que cambian al reiniciar el server; un SW
+     viejo intercepta todo y sirve respuestas rotas (404 espurios, "Failed to fetch dynamically
+     imported module", HMR con token `400`). Por eso, si `import.meta.env.DEV`, el efecto del
+     `__root.tsx` **desregistra** cualquier SW residual, borra sus cachés y, si había uno
+     controlando la página, **recarga una vez** para entrar limpio. En prod se registra normal.
+     Síntoma de SW viejo pegado en un dispositivo (móvil incluido): `sw.js:NN Failed to fetch`.
+     Fix manual una sola vez: DevTools → Application → Clear site data (unregister SW) + cerrar
+     TODAS las pestañas del origen y reabrir con Ctrl+Shift+R.
 
 ## El componente (`src/components/marcas-view.tsx` — modelo)
 
