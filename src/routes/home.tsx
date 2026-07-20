@@ -77,8 +77,15 @@ import {
 import { ThemeToggle } from "@/components/theme-toggle";
 import { cn } from "@/lib/utils";
 import { getSesion, cerrarSesion, getMenuPaginas, ventasPorDia, type PaginaMenu } from "@/lib/api";
+import {
+  leerUsoAccesos,
+  registrarUsoAcceso,
+  claveAcceso,
+  type UsoAccesos,
+} from "@/lib/uso-accesos";
 import { MarcasView } from "@/components/marcas-view";
 import { VentasDashboardChart } from "@/components/ventas-dashboard-chart";
+import { CobrosTarjetaView } from "@/components/cobros-tarjeta-view";
 import { VentasArticulosView } from "@/components/ventas-articulos-view";
 import { ArticulosMasVendidosView } from "@/components/articulos-mas-vendidos-view";
 import { PedidosArticulosView } from "@/components/pedidos-articulos-view";
@@ -88,6 +95,8 @@ import { UnidadesMedidasView } from "@/components/unidades-medidas-view";
 import { IvaView } from "@/components/iva-view";
 import { MonedasView } from "@/components/monedas-view";
 import { RubrosView } from "@/components/rubros-view";
+import { CodigosBarrasView } from "@/components/codigos-barras-view";
+import { ArticulosProveedoresView } from "@/components/articulos-proveedores-view";
 import { CondicionesFacturasView } from "@/components/condiciones-facturas-view";
 import { TalonariosView } from "@/components/talonarios-view";
 import { FormasCobroPagoView } from "@/components/formas-cobro-pago-view";
@@ -219,6 +228,8 @@ const VISTAS: Record<number, () => ReactElement> = {
   12: () => <EmpresasView />, // Empresas
   18: () => <MonedasView />, // Monedas
   20: () => <RubrosView />, // Rubros
+  24: () => <CodigosBarrasView />, // Códigos de Barras
+  27: () => <ArticulosProveedoresView />, // Artículos por Proveedor
   42: () => <CondicionesFacturasView />, // Condiciones de Facturas
   44: () => <TalonariosView />, // Talonarios
   48: () => <FormasCobroPagoView />, // Formas de Cobro/Pago
@@ -726,6 +737,9 @@ function DashboardView({
       {/* Gráfico de ventas por día */}
       <VentasDashboardChart />
 
+      {/* Cobros con tarjeta pendientes de acreditar */}
+      <CobrosTarjetaView />
+
       {/* Stats */}
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {stats.map((s) => {
@@ -771,13 +785,29 @@ function QuickActions({
   onNavigate: (k: NavKey) => void;
 }) {
   const [filtro, setFiltro] = useState("");
+  // Conteo LOCAL de uso por página (localStorage). Se lee una vez al montar; el
+  // clic lo incrementa y persiste. Ordena los accesos por más usados en ESTE
+  // dispositivo, con la estadística del backend como desempate.
+  const [uso, setUso] = useState<UsoAccesos>(() => leerUsoAccesos());
+
+  function abrir(p: PaginaMenu) {
+    setUso(registrarUsoAcceso(p.application_id, p.page_id));
+    onNavigate(p.page_id);
+  }
 
   if (paginas.length === 0) {
     return <p className="mt-4 text-sm text-muted-foreground">No hay páginas disponibles.</p>;
   }
 
-  // Accesos rápidos: más usados primero (el menú lateral va por jerarquía).
-  const ordenadas = [...paginas].sort((a, b) => b.estadistica_user - a.estadistica_user);
+  // Accesos rápidos: más usados localmente primero; ante empate, la estadística
+  // del backend; y como último desempate el título (orden estable).
+  const usos = (p: PaginaMenu) => uso[claveAcceso(p.application_id, p.page_id)] ?? 0;
+  const ordenadas = [...paginas].sort(
+    (a, b) =>
+      usos(b) - usos(a) ||
+      b.estadistica_user - a.estadistica_user ||
+      a.page_title.localeCompare(b.page_title),
+  );
   const q = filtro.trim().toLowerCase();
   const filtradas = q ? ordenadas.filter((p) => p.page_title.toLowerCase().includes(q)) : ordenadas;
 
@@ -802,7 +832,7 @@ function QuickActions({
             return (
               <button
                 key={`${p.application_id}-${p.page_id}`}
-                onClick={() => onNavigate(p.page_id)}
+                onClick={() => abrir(p)}
                 className="flex flex-col items-start gap-2 rounded-xl border border-border bg-background p-4 text-left transition-all hover:-translate-y-0.5 hover:border-primary hover:shadow-glow"
               >
                 <div className="grid h-9 w-9 place-items-center rounded-lg bg-primary/10 text-primary">

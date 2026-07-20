@@ -454,6 +454,145 @@ export async function eliminarRubro(idRubro: number, codEmpresa: number): Promis
   await authFetch(`rubros/${idRubro}?${q}`, { method: "DELETE" });
 }
 
+// ─── Códigos de barras (página 24) ───────────────────────────────────────────
+// CRUD de CODIGOS_BARRAS. PK id_barra por trigger; multiempresa; FK a articulos;
+// UK (cod_empresa, cod_barra). El listar hace JOIN a articulos (descripcion + oem).
+// Incluye buscarArticulos para el selector del formulario. Ver db/codigos_barras_sql.sql.
+
+export type CodigoBarra = {
+  id_barra: number;
+  id_articulo: number;
+  cod_barra: string;
+  cod_empresa: number;
+  descripcion_articulo: string | null; // del JOIN
+  codigo_oem: string | null; // del JOIN
+};
+
+export type CodigoBarraInput = {
+  id_articulo: number;
+  cod_barra: string;
+  cod_empresa: number;
+};
+
+export type ArticuloBusqueda = {
+  id_articulo: number;
+  descripcion: string | null;
+  codigo_oem: string | null;
+};
+
+export async function listarCodigosBarras(codEmpresa: number): Promise<CodigoBarra[]> {
+  const q = new URLSearchParams({ cod_empresa: String(codEmpresa) });
+  const data = await authFetch(`codigos-barras?${q}`);
+  return (data.data ?? []) as CodigoBarra[];
+}
+
+export async function crearCodigoBarra(input: CodigoBarraInput): Promise<number> {
+  const data = await authFetch("codigos-barras", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  return data.id_barra as number;
+}
+
+export async function actualizarCodigoBarra(
+  idBarra: number,
+  input: CodigoBarraInput,
+): Promise<void> {
+  await authFetch(`codigos-barras/${idBarra}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+}
+
+export async function eliminarCodigoBarra(idBarra: number, codEmpresa: number): Promise<void> {
+  const q = new URLSearchParams({ cod_empresa: String(codEmpresa) });
+  await authFetch(`codigos-barras/${idBarra}?${q}`, { method: "DELETE" });
+}
+
+// Busca artículos activos de la empresa (por descripción/oem/id) para el selector.
+export async function buscarArticulos(
+  texto: string,
+  codEmpresa: number,
+): Promise<ArticuloBusqueda[]> {
+  const q = new URLSearchParams({ cod_empresa: String(codEmpresa), q: texto });
+  const data = await authFetch(`articulos/buscar?${q}`);
+  return (data.data ?? []) as ArticuloBusqueda[];
+}
+
+// ─── Artículos-Proveedores (página 27) ───────────────────────────────────────
+// CRUD de ARTICULOS_PROVEEDORES: relaciona un artículo con un proveedor (persona)
+// y guarda el código con que ese proveedor identifica al artículo. PK IDENTITY;
+// multiempresa; FK a articulos/personas; UK de 4 columnas. El listar hace JOIN
+// (descripción del artículo + nombre del proveedor). Ver db/articulos_proveedores_sql.sql.
+
+export type ArticuloProveedor = {
+  id_articulo_proveedor: number;
+  id_articulo: number;
+  cod_persona: number;
+  id_cod_proveedor: string;
+  cod_empresa: number;
+  descripcion_articulo: string | null; // del JOIN
+  codigo_oem: string | null; // del JOIN
+  nombre_proveedor: string | null; // del JOIN
+};
+
+export type ArticuloProveedorInput = {
+  id_articulo: number;
+  cod_persona: number;
+  id_cod_proveedor: string;
+  cod_empresa: number;
+};
+
+export type ProveedorBusqueda = {
+  cod_persona: number;
+  nombre: string | null;
+  nro_ruc: string | null;
+  nro_ci: string | null;
+};
+
+export async function listarArticulosProveedores(codEmpresa: number): Promise<ArticuloProveedor[]> {
+  const q = new URLSearchParams({ cod_empresa: String(codEmpresa) });
+  const data = await authFetch(`articulos-proveedores?${q}`);
+  return (data.data ?? []) as ArticuloProveedor[];
+}
+
+export async function crearArticuloProveedor(input: ArticuloProveedorInput): Promise<number> {
+  const data = await authFetch("articulos-proveedores", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  return data.id_articulo_proveedor as number;
+}
+
+export async function actualizarArticuloProveedor(
+  id: number,
+  input: ArticuloProveedorInput,
+): Promise<void> {
+  await authFetch(`articulos-proveedores/${id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+}
+
+export async function eliminarArticuloProveedor(id: number, codEmpresa: number): Promise<void> {
+  const q = new URLSearchParams({ cod_empresa: String(codEmpresa) });
+  await authFetch(`articulos-proveedores/${id}?${q}`, { method: "DELETE" });
+}
+
+// Busca proveedores (personas P/A) de la empresa para el selector.
+export async function buscarProveedores(
+  texto: string,
+  codEmpresa: number,
+): Promise<ProveedorBusqueda[]> {
+  const q = new URLSearchParams({ cod_empresa: String(codEmpresa), q: texto });
+  const data = await authFetch(`proveedores/buscar?${q}`);
+  return (data.data ?? []) as ProveedorBusqueda[];
+}
+
 // ─── Monedas (página 18) — maestro-detalle ───────────────────────────────────
 // Cabecera MONEDAS + detalle MONEDAS_DETALLE (denominaciones con imagen). La
 // imagen viaja como base64 en el JSON. El detalle usa upsert por (cod_moneda, valor).
@@ -807,6 +946,35 @@ export async function ventasPorDia(
   const q = new URLSearchParams({ cod_empresa: String(codEmpresa), anio, mes });
   const data = await authFetch(`ventas/por-dia?${q}`);
   return (data.data ?? []) as VentaDia[];
+}
+
+// ─── Cobros con tarjeta pendientes de acreditar (dashboard) ──────────────────
+// Cobros con tarjeta/transferencia (id_forma 41/42/21) que el banco aún no acreditó,
+// más el PUT para cargar el monto acreditado (db/cobros_tarjeta_sql.sql). cod_empresa
+// por defecto: 24.
+
+export type CobroTarjeta = {
+  id_cobro: number;
+  fecha_cobro: string; // ISO "YYYY-MM-DD"
+  desc_forma: string;
+  total: number;
+};
+
+export async function listarCobrosTarjeta(codEmpresa = 24): Promise<CobroTarjeta[]> {
+  const q = new URLSearchParams({ cod_empresa: String(codEmpresa) });
+  const data = await authFetch(`cobros-tarjeta?${q}`);
+  return (data.data ?? []) as CobroTarjeta[];
+}
+
+export async function acreditarCobroTarjeta(
+  idCobro: number,
+  montoAcreditado: number,
+): Promise<void> {
+  await authFetch(`cobros-tarjeta/${idCobro}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ monto_acreditado: montoAcreditado }),
+  });
 }
 
 // ─── Ventas Por Artículos (página 54) ────────────────────────────────────────
