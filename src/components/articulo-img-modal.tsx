@@ -7,8 +7,14 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 
-// URL de la imagen del artículo vía proxy (módulo ORDS "paginaweb", binario público).
-export const imgArticuloUrl = (id: string) => `/api/img/articulosimg/${encodeURIComponent(id)}`;
+// URL de la imagen del artículo (módulo ORDS "paginaweb", binario público).
+// Con servidor Node (dev/Nitro) va por el proxy /api/img; en el build estático de
+// GitHub Pages (VITE_API_URL absoluta a ORDS) no existe el proxy → URL directa a ORDS.
+const API_BASE = import.meta.env.VITE_API_URL ?? "";
+export const imgArticuloUrl = (id: string) =>
+  API_BASE.startsWith("http")
+    ? `${API_BASE.replace(/lubrimec\/?$/, "paginaweb/")}articulosimg/${encodeURIComponent(id)}`
+    : `/api/img/articulosimg/${encodeURIComponent(id)}`;
 
 // Modal que muestra la imagen de un artículo. `open` controla la apertura; si el
 // artículo no tiene id (backend sin id_articulo) igual abre y muestra "Sin imagen".
@@ -17,11 +23,15 @@ export function ArticuloImgModal({
   id,
   titulo,
   onClose,
+  src,
 }: {
   open: boolean;
   id: string | null;
   titulo?: string | null;
   onClose: () => void;
+  // URL alternativa de la imagen (default: módulo paginaweb). Ej: urlImagenArticulo
+  // de api.ts para servir el BLOB de ARTICULOS directo (pág 82).
+  src?: string;
 }) {
   const [estado, setEstado] = useState<"cargando" | "ok" | "error">("cargando");
   // Reinicia el estado al abrir/cambiar de artículo, sin useEffect (patrón lastKey).
@@ -62,7 +72,7 @@ export function ArticuloImgModal({
                 // key = id: fuerza recarga y reinicia el estado al cambiar de artículo.
                 <img
                   key={id}
-                  src={imgArticuloUrl(id)}
+                  src={src ?? imgArticuloUrl(id)}
                   alt={titulo ?? "Artículo"}
                   className="max-h-[70vh] max-w-full rounded-lg object-contain"
                   onLoad={() => setEstado("ok")}

@@ -17,21 +17,26 @@ async function forward(request: Request, splat: string): Promise<Response> {
 
   const init: RequestInit = { method: request.method, headers };
   if (request.method !== "GET" && request.method !== "HEAD") {
-    const body = await request.text();
+    // ArrayBuffer y no text(): los uploads binarios (foto de inventario) se
+    // corrompen si se decodifican como UTF-8; para JSON da igual.
+    const body = await request.arrayBuffer();
     // Solo reenvía cuerpo + content-type si realmente hay payload; un DELETE sin
     // body con content-type JSON hace que ORDS responda 400 ("Expected {,[ but got EOF").
-    if (body.length > 0) {
+    if (body.byteLength > 0) {
       init.body = body;
       headers.set("content-type", request.headers.get("content-type") ?? "application/json");
     }
   }
 
   const res = await fetch(target, init);
-  const body = await res.text();
-  return new Response(body, {
-    status: res.status,
-    headers: { "content-type": res.headers.get("content-type") ?? "application/json" },
-  });
+  const contentType = res.headers.get("content-type") ?? "application/json";
+  // Binarios (imágenes, etc.): reenviar los bytes crudos. Usar res.text() los corrompe
+  // (decodifica como UTF-8). El JSON de la API sí es texto, pero ArrayBuffer sirve para ambos.
+  const body = await res.arrayBuffer();
+  const outHeaders: Record<string, string> = { "content-type": contentType };
+  const cacheControl = res.headers.get("cache-control");
+  if (cacheControl) outHeaders["cache-control"] = cacheControl;
+  return new Response(body, { status: res.status, headers: outHeaders });
 }
 
 export const Route = createFileRoute("/api/ords/$")({

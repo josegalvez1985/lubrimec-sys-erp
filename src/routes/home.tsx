@@ -76,16 +76,42 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { cn } from "@/lib/utils";
-import { getSesion, cerrarSesion, getMenuPaginas, ventasPorDia, type PaginaMenu } from "@/lib/api";
+import { getSesion, cerrarSesion, getMenuPaginas, type PaginaMenu } from "@/lib/api";
 import {
   leerUsoAccesos,
   registrarUsoAcceso,
   claveAcceso,
   type UsoAccesos,
 } from "@/lib/uso-accesos";
+import { CobrosTarjetaView } from "@/components/cobros-tarjeta-view";
 import { MarcasView } from "@/components/marcas-view";
 import { VentasDashboardChart } from "@/components/ventas-dashboard-chart";
-import { CobrosTarjetaView } from "@/components/cobros-tarjeta-view";
+import { CobrosHoyChart } from "@/components/cobros-hoy-chart";
+import { CobrosAcreditarCard } from "@/components/cobros-acreditar-card";
+import { ComprasArticulosView } from "@/components/compras-articulos-view";
+import { FichaArticulosView } from "@/components/ficha-articulos-view";
+import { ArticulosSinBarraView } from "@/components/articulos-sin-barra-view";
+import { ArticulosNoInventariadosView } from "@/components/articulos-no-inventariados-view";
+import { ArticulosInventarioView } from "@/components/articulos-inventario-view";
+import { InventarioView } from "@/components/inventario-view";
+import { AjustarInventariosView } from "@/components/ajustar-inventarios-view";
+import { ParametrosView } from "@/components/parametros-view";
+import { PlanillaInventariosView } from "@/components/planilla-inventarios-view";
+import { SortearView } from "@/components/sortear-view";
+import { RolesPaginasView } from "@/components/roles-paginas-view";
+import { PreciosMayoristasView } from "@/components/precios-mayoristas-view";
+import { CostoInventariosView } from "@/components/costo-inventarios-view";
+import { MarcasVsDescripcionView } from "@/components/marcas-vs-descripcion-view";
+import { PagoComisionesView } from "@/components/pago-comisiones-view";
+import { PagosProveedoresVentasView } from "@/components/pagos-proveedores-ventas-view";
+import { AguinaldosView } from "@/components/aguinaldos-view";
+import { ComisionesBancoView } from "@/components/comisiones-banco-view";
+import { ConsultaPreciosView } from "@/components/consulta-precios-view";
+import { ExistenciaArticulosView } from "@/components/existencia-articulos-view";
+import { ComprasVsVentasView } from "@/components/compras-vs-ventas-view";
+import { SaldosProveedoresView } from "@/components/saldos-proveedores-view";
+import { ConsultaInventariosView } from "@/components/consulta-inventarios-view";
+import { PuntoVentaView } from "@/components/punto-venta-view";
 import { VentasArticulosView } from "@/components/ventas-articulos-view";
 import { ArticulosMasVendidosView } from "@/components/articulos-mas-vendidos-view";
 import { PedidosArticulosView } from "@/components/pedidos-articulos-view";
@@ -103,7 +129,36 @@ import { FormasCobroPagoView } from "@/components/formas-cobro-pago-view";
 import { BancosView } from "@/components/bancos-view";
 import { ViscosidadView } from "@/components/viscosidad-view";
 import { WhatsappView } from "@/components/whatsapp-view";
+import { MonedasDetalleView } from "@/components/monedas-detalle-view";
+import { VehiculosRepuestosView } from "@/components/vehiculos-repuestos-view";
+import { ComprasPagosView } from "@/components/compras-pagos-view";
+import { VendedoresView } from "@/components/vendedores-view";
+import { DescuentosEscalonadosView } from "@/components/descuentos-escalonados-view";
+import { PostVentaView } from "@/components/post-venta-view";
+import { SubaPreciosView } from "@/components/suba-precios-view";
+import { ConteoEfectivoView } from "@/components/conteo-efectivo-view";
+import { DescuentosView } from "@/components/descuentos-view";
+import { NumerosVouchersView } from "@/components/numeros-vouchers-view";
+import { CierreDiaView } from "@/components/cierre-dia-view";
+import { RendicionesCajasView } from "@/components/rendiciones-cajas-view";
+import { VentasCobrosView } from "@/components/ventas-cobros-view";
+import { VentasView } from "@/components/ventas-view";
+import { ComprasView } from "@/components/compras-view";
+import { PreciosVentasView } from "@/components/precios-ventas-view";
+import { CobrosAcreditarView } from "@/components/cobros-acreditar-view";
+import { ArticulosView } from "@/components/articulos-view";
+import { LogsWhatsappView } from "@/components/logs-whatsapp-view";
 import { PerfilModal } from "@/components/perfil-modal";
+import { BusquedaGlobal } from "@/components/busqueda-global";
+
+// Categorías del menú APEX que no se usan por ahora: se ocultan del sidebar,
+// accesos rápidos y dashboard. Comparación sin tildes ni mayúsculas.
+const CATEGORIAS_OCULTAS = ["retencion", "retenciones", "importaciones", "importacion"];
+const normalizarCategoria = (s: string) =>
+  s
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
 
 // Icono por page_id (APEX). Tiene prioridad sobre el match por palabra clave.
 const ICONO_PAGINA: Record<number, LucideIcon> = {
@@ -223,6 +278,7 @@ type NavKey = "dashboard" | number;
 // Las páginas del menú sin entrada aquí muestran un Placeholder con su título.
 const VISTAS: Record<number, () => ReactElement> = {
   2: () => <PersonasView />, // Personas
+  4: () => <ArticulosView />, // Artículos
   6: () => <MarcasView />, // Marcas
   10: () => <IvaView />, // IVA
   12: () => <EmpresasView />, // Empresas
@@ -240,6 +296,48 @@ const VISTAS: Record<number, () => ReactElement> = {
   102: () => <ArticulosMasVendidosView />, // Artículos Más Vendidos
   63: () => <PedidosArticulosView />, // Pedidos de Artículos
   117: () => <WhatsappView />, // Mensajes a Whatsapp
+  83: () => <MonedasDetalleView />, // Detalle de Monedas
+  94: () => <VehiculosRepuestosView />, // Vehículos-Repuestos
+  120: () => <LogsWhatsappView />, // Logs de WhatsApp
+  77: () => <ComprasPagosView />, // Pagos de Compras
+  30: () => <VendedoresView />, // Vendedores
+  106: () => <DescuentosEscalonadosView />, // Descuentos Escalonados
+  105: () => <PostVentaView />, // Post Venta
+  100: () => <SubaPreciosView />, // Suba de Precios
+  85: () => <ConteoEfectivoView />, // Conteo de Efectivo
+  67: () => <DescuentosView />, // Descuentos
+  71: () => <NumerosVouchersView />, // Números de Vouchers
+  62: () => <CierreDiaView />, // Cierre del Día
+  73: () => <RendicionesCajasView />, // Rendición de Caja
+  65: () => <VentasCobrosView />, // Cobros de Ventas
+  60: () => <VentasView />, // Ventas
+  28: () => <ComprasView />, // Consulta de Compras
+  34: () => <PreciosVentasView />, // Precios de Ventas
+  111: () => <CobrosAcreditarView />, // Acreditación de Cobros
+  55: () => <ComprasArticulosView />, // Compras por Artículos
+  56: () => <FichaArticulosView />, // Ficha de Artículos
+  57: () => <ArticulosSinBarraView />, // Artículos sin Código de Barra
+  81: () => <ArticulosNoInventariadosView />, // Artículos no Inventariados
+  76: () => <ArticulosInventarioView />, // Artículos para Inventario
+  58: () => <InventarioView />, // Inventario (modal Crear Inventario = pág 59)
+  87: () => <AjustarInventariosView />, // Ajustar Inventarios (modal Aplicar = pág 88)
+  89: () => <ParametrosView />, // Parámetros (modal Crear/Editar = pág 90)
+  112: () => <PlanillaInventariosView />, // Planilla para inventarios (113 Crear + 115 Cantidad)
+  108: () => <SortearView />, // Sortear
+  37: () => <RolesPaginasView />, // Roles de Páginas (modal Crear Rol = pág 38)
+  82: () => <PreciosMayoristasView />, // Precios Mayoristas
+  92: () => <CostoInventariosView />, // Costo de Inventarios
+  93: () => <MarcasVsDescripcionView />, // Marcas Vs Descripción de Articulos
+  101: () => <PagoComisionesView />, // Pago de Comisiones
+  103: () => <PagosProveedoresVentasView />, // Pagos a proveedores por ventas
+  104: () => <AguinaldosView />, // Aguinaldos
+  114: () => <ComisionesBancoView />, // Comisiones al Banco
+  61: () => <ConsultaPreciosView />, // Consulta de Precios
+  70: () => <ExistenciaArticulosView />, // Existencia de Artículos
+  75: () => <ComprasVsVentasView />, // Compras Vs Ventas
+  79: () => <SaldosProveedoresView />, // Saldos de Proveedores
+  80: () => <ConsultaInventariosView />, // Consulta de Inventarios
+  39: () => <PuntoVentaView />, // Punto de Venta
 };
 
 // page_id que ya tienen algo implementado (vista propia o acción especial como el
@@ -271,7 +369,11 @@ function HomePage() {
     queryFn: getMenuPaginas,
     retry: false,
   });
-  const paginas = paginasQuery.data ?? [];
+  // Categorías del menú APEX que no se usan por ahora (afecta sidebar, accesos
+  // rápidos y dashboard). Se comparan sin tildes ni mayúsculas.
+  const paginas = (paginasQuery.data ?? []).filter(
+    (p) => !CATEGORIAS_OCULTAS.includes(normalizarCategoria(p.parent_entry_text ?? "")),
+  );
 
   // Redirige al login si no hay sesión
   const sesion = getSesion();
@@ -414,10 +516,7 @@ function HomePage() {
             )}
           </Button>
 
-          <div className="relative hidden flex-1 max-w-md sm:block">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input placeholder="Buscar productos, clientes..." className="h-10 pl-10" />
-          </div>
+          <BusquedaGlobal onNavigate={handleNav} />
 
           <div className="flex-1 sm:hidden" />
 
@@ -502,6 +601,7 @@ function SidebarContent({
 }) {
   // Agrupa por categoría padre (nivel 2). El back ya viene ordenado por seq_categoria +
   // seq_pagina, así que conservar el orden de llegada respeta la jerarquía de APEX.
+  // (Las categorías ocultas ya vienen filtradas desde HomePage.)
   const grupos: { titulo: string; paginas: PaginaMenu[] }[] = [];
   for (const p of paginas) {
     const titulo = p.parent_entry_text ?? "General";
@@ -640,81 +740,6 @@ function DashboardView({
   paginas: PaginaMenu[];
   onNavigate: (k: NavKey) => void;
 }) {
-  // Ventas de hoy (real, desde ventas/por-dia del mes actual). Comparte queryKey
-  // con el gráfico del dashboard, así react-query hace una sola consulta.
-  const hoy = new Date();
-  const anioHoy = String(hoy.getFullYear());
-  const mesHoy = String(hoy.getMonth() + 1).padStart(2, "0");
-  const ddmmHoy = `${String(hoy.getDate()).padStart(2, "0")}/${mesHoy}`;
-  const ventasMesQuery = useQuery({
-    queryKey: ["ventas-por-dia", 24, anioHoy, mesHoy],
-    queryFn: () => ventasPorDia(anioHoy, mesHoy, 24),
-    retry: false,
-  });
-  const montoHoy = ventasMesQuery.data?.find((d) => d.fecha === ddmmHoy)?.monto ?? 0;
-  // Variación vs. ayer. Si ayer cae en el mes anterior (día 1), se consulta ese mes.
-  const ayer = new Date(hoy);
-  ayer.setDate(hoy.getDate() - 1);
-  const anioAyer = String(ayer.getFullYear());
-  const mesAyer = String(ayer.getMonth() + 1).padStart(2, "0");
-  const ddmmAyer = `${String(ayer.getDate()).padStart(2, "0")}/${mesAyer}`;
-  const ayerEnOtroMes = mesAyer !== mesHoy || anioAyer !== anioHoy;
-  const ventasMesAyerQuery = useQuery({
-    queryKey: ["ventas-por-dia", 24, anioAyer, mesAyer],
-    queryFn: () => ventasPorDia(anioAyer, mesAyer, 24),
-    enabled: ayerEnOtroMes,
-    retry: false,
-  });
-  const datosAyer = ayerEnOtroMes ? ventasMesAyerQuery.data : ventasMesQuery.data;
-  const montoAyer = datosAyer ? (datosAyer.find((d) => d.fecha === ddmmAyer)?.monto ?? 0) : null;
-  const cambioHoy =
-    montoAyer != null && montoAyer > 0
-      ? `${montoHoy >= montoAyer ? "+" : ""}${(((montoHoy - montoAyer) / montoAyer) * 100).toLocaleString("es-PY", { maximumFractionDigits: 1 })}%`
-      : null;
-
-  // Crecimiento: acumulado del mes actual (hasta hoy) vs. mismo período del mes
-  // anterior (día 1 al día de hoy). Reusa el query del mes actual y agrega el previo.
-  const mesPrev = new Date(hoy.getFullYear(), hoy.getMonth() - 1, 1);
-  const anioPrev = String(mesPrev.getFullYear());
-  const mesPrevMM = String(mesPrev.getMonth() + 1).padStart(2, "0");
-  const ventasMesPrevQuery = useQuery({
-    queryKey: ["ventas-por-dia", 24, anioPrev, mesPrevMM],
-    queryFn: () => ventasPorDia(anioPrev, mesPrevMM, 24),
-    retry: false,
-  });
-  const diaHoy = hoy.getDate();
-  const acumHasta = (datos: { fecha: string; monto: number }[] | undefined) =>
-    (datos ?? []).reduce(
-      (t, d) => (Number(d.fecha.slice(0, 2)) <= diaHoy ? t + d.monto : t),
-      0,
-    );
-  const acumMes = acumHasta(ventasMesQuery.data);
-  const acumMesPrev = acumHasta(ventasMesPrevQuery.data);
-  const crecimiento =
-    acumMesPrev > 0 ? ((acumMes - acumMesPrev) / acumMesPrev) * 100 : null;
-
-  const stats = [
-    {
-      label: "Ventas hoy",
-      value: ventasMesQuery.isLoading
-        ? "..."
-        : `₲ ${Math.round(montoHoy).toLocaleString("es-PY", { maximumFractionDigits: 0 })}`,
-      change: cambioHoy,
-      icon: DollarSign,
-    },
-    {
-      label: "Crecimiento",
-      value:
-        ventasMesQuery.isLoading || ventasMesPrevQuery.isLoading
-          ? "..."
-          : crecimiento != null
-            ? `${crecimiento >= 0 ? "+" : ""}${crecimiento.toLocaleString("es-PY", { maximumFractionDigits: 1 })}%`
-            : "—",
-      change: null,
-      icon: TrendingUp,
-    },
-  ];
-
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -727,46 +752,27 @@ function DashboardView({
             Aquí tienes el resumen de tu negocio.
           </p>
         </div>
-        <Button className="shrink-0 bg-gradient-primary font-semibold text-primary-foreground shadow-glow hover:opacity-95">
+        <Button
+          onClick={() => onNavigate(39)}
+          className="shrink-0 bg-gradient-primary font-semibold text-primary-foreground shadow-glow hover:opacity-95"
+        >
           <Plus className="mr-2 h-4 w-4" />
           <span className="hidden sm:inline">Nueva venta</span>
           <span className="sm:hidden">Venta</span>
         </Button>
       </div>
 
+      {/* Cobros pendientes de acreditar (link al modal de la página 111) */}
+      <CobrosAcreditarCard />
+
+      {/* Cobranza de hoy por forma de cobro */}
+      <CobrosHoyChart />
+
       {/* Gráfico de ventas por día */}
       <VentasDashboardChart />
 
       {/* Cobros con tarjeta pendientes de acreditar */}
       <CobrosTarjetaView />
-
-      {/* Stats */}
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {stats.map((s) => {
-          const Icon = s.icon;
-          return (
-            <div
-              key={s.label}
-              className="group relative overflow-hidden rounded-2xl border border-border bg-card p-5 shadow-elegant transition-all hover:-translate-y-0.5 hover:shadow-glow"
-            >
-              <div className="flex items-start justify-between">
-                <div>
-                  <p className="text-xs uppercase tracking-wider text-muted-foreground">
-                    {s.label}
-                  </p>
-                  <p className="mt-2 font-display text-2xl font-bold">{s.value}</p>
-                </div>
-                <div className="grid h-10 w-10 place-items-center rounded-xl bg-primary/10 text-primary">
-                  <Icon className="h-5 w-5" />
-                </div>
-              </div>
-              {s.change && (
-                <p className="mt-3 text-xs font-medium text-primary">{s.change} vs. ayer</p>
-              )}
-            </div>
-          );
-        })}
-      </div>
 
       {/* Quick actions */}
       <div className="rounded-2xl border border-border bg-card p-5 shadow-elegant">

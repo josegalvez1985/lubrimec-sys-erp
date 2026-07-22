@@ -1,13 +1,10 @@
-import { useState, useEffect, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, Eye, Pencil, Trash2, Loader2, Truck, Search, Check } from "lucide-react";
+import { Plus, Eye, Pencil, Trash2, Loader2, Link2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Skeleton } from "@/components/ui/skeleton";
-import { DataTable, type Column } from "@/components/ui/data-table";
-import { cn } from "@/lib/utils";
 import {
   Dialog,
   DialogContent,
@@ -26,68 +23,27 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { SelectorArticulo } from "@/components/codigos-barras-view";
+import { DataTable, type Column } from "@/components/ui/data-table";
+import { BuscadorSelect } from "@/components/ui/buscador-select";
 import {
   listarArticulosProveedores,
   crearArticuloProveedor,
   actualizarArticuloProveedor,
   eliminarArticuloProveedor,
+  buscarArticulos,
   buscarProveedores,
   type ArticuloProveedor,
   type ArticuloProveedorInput,
-  type ArticuloBusqueda,
-  type ProveedorBusqueda,
 } from "@/lib/api";
 
+// TODO: cod_empresa fijo; reemplazar cuando venga de la sesión.
 const COD_EMPRESA = 24;
 
 type ModalState =
   | { mode: "closed" }
   | { mode: "create" }
-  | { mode: "edit"; fila: ArticuloProveedor }
-  | { mode: "view"; fila: ArticuloProveedor };
-
-const COLUMNAS: Column<ArticuloProveedor>[] = [
-  {
-    key: "id_articulo_proveedor",
-    header: "ID",
-    num: true,
-    accessor: (r) => r.id_articulo_proveedor,
-    render: (r) => (
-      <Badge variant="outline" className="font-mono">
-        {r.id_articulo_proveedor}
-      </Badge>
-    ),
-    className: "w-16",
-  },
-  {
-    key: "descripcion_articulo",
-    header: "Artículo",
-    accessor: (r) => r.descripcion_articulo ?? "",
-    render: (r) =>
-      r.descripcion_articulo || <span className="text-muted-foreground">—</span>,
-    className: "font-medium",
-    hideable: false,
-  },
-  {
-    key: "nombre_proveedor",
-    header: "Proveedor",
-    accessor: (r) => r.nombre_proveedor ?? "",
-    render: (r) => r.nombre_proveedor || <span className="text-muted-foreground">—</span>,
-  },
-  {
-    key: "id_cod_proveedor",
-    header: "Cód. proveedor",
-    accessor: (r) => r.id_cod_proveedor,
-    render: (r) => <span className="font-mono">{r.id_cod_proveedor}</span>,
-  },
-  {
-    key: "codigo_oem",
-    header: "Cód. OEM",
-    accessor: (r) => r.codigo_oem ?? "",
-    render: (r) => r.codigo_oem || <span className="text-muted-foreground">—</span>,
-  },
-];
+  | { mode: "edit"; item: ArticuloProveedor }
+  | { mode: "view"; item: ArticuloProveedor };
 
 export function ArticulosProveedoresView() {
   const qc = useQueryClient();
@@ -108,7 +64,47 @@ export function ArticulosProveedoresView() {
     },
   });
 
-  const filas = data ?? [];
+  const filas = (data ?? [])
+    .slice()
+    .sort((a, b) => b.id_articulo_proveedor - a.id_articulo_proveedor);
+
+  const COLUMNAS: Column<ArticuloProveedor>[] = [
+    {
+      key: "id_articulo_proveedor",
+      header: "ID",
+      num: true,
+      accessor: (r) => r.id_articulo_proveedor,
+      render: (r) => (
+        <Badge variant="outline" className="font-mono">
+          {r.id_articulo_proveedor}
+        </Badge>
+      ),
+      className: "w-16",
+    },
+    {
+      key: "descripcion_articulo",
+      header: "Artículo",
+      accessor: (r) => r.descripcion_articulo ?? "",
+      hideable: false,
+    },
+    {
+      key: "codigo_oem",
+      header: "Código OEM",
+      accessor: (r) => r.codigo_oem ?? "",
+      render: (r) => (r.codigo_oem ? <span className="font-mono">{r.codigo_oem}</span> : "—"),
+    },
+    {
+      key: "nombre_proveedor",
+      header: "Proveedor",
+      accessor: (r) => r.nombre_proveedor ?? "",
+    },
+    {
+      key: "id_cod_proveedor",
+      header: "Cód. proveedor",
+      accessor: (r) => r.id_cod_proveedor ?? "",
+      render: (r) => <span className="font-mono">{r.id_cod_proveedor}</span>,
+    },
+  ];
 
   return (
     <div className="rounded-2xl border border-border bg-card shadow-elegant">
@@ -116,7 +112,7 @@ export function ArticulosProveedoresView() {
         <div>
           <h2 className="font-display text-xl font-bold">Artículos por proveedor</h2>
           <p className="text-sm text-muted-foreground">
-            Código con que cada proveedor identifica un artículo
+            {filas.length} {filas.length === 1 ? "relación" : "relaciones"} registradas
           </p>
         </div>
         <Button
@@ -129,42 +125,35 @@ export function ArticulosProveedoresView() {
         </Button>
       </div>
 
-      <div className="p-4 sm:p-5">
-        {isLoading ? (
-          <div className="space-y-3">
-            {Array.from({ length: 5 }).map((_, i) => (
-              <Skeleton key={i} className="h-12 w-full" />
-            ))}
+      {isError ? (
+        <p className="p-8 text-center text-sm text-destructive">
+          {error instanceof Error ? error.message : "No se pudieron cargar las relaciones"}
+        </p>
+      ) : filas.length === 0 && !isLoading ? (
+        <div className="grid place-items-center py-16 text-center">
+          <div className="grid h-14 w-14 place-items-center rounded-2xl bg-primary/10 text-primary">
+            <Link2 className="h-6 w-6" />
           </div>
-        ) : isError ? (
-          <p className="p-8 text-center text-sm text-destructive">
-            {error instanceof Error ? error.message : "No se pudieron cargar los datos"}
+          <p className="mt-4 font-medium">Aún no hay relaciones artículo-proveedor</p>
+          <p className="mt-1 max-w-xs text-sm text-muted-foreground">
+            Crea la primera con el botón “Nueva relación”.
           </p>
-        ) : filas.length === 0 ? (
-          <div className="grid place-items-center py-16 text-center">
-            <div className="grid h-14 w-14 place-items-center rounded-2xl bg-primary/10 text-primary">
-              <Truck className="h-6 w-6" />
-            </div>
-            <p className="mt-4 font-medium">Aún no hay artículos por proveedor</p>
-            <p className="mt-1 max-w-xs text-sm text-muted-foreground">
-              Crea la primera relación con el botón “Nueva relación”.
-            </p>
-          </div>
-        ) : (
+        </div>
+      ) : (
+        <div className="p-4 sm:p-5">
           <DataTable
             columns={COLUMNAS}
             rows={filas}
             getRowId={(r) => r.id_articulo_proveedor}
-            searchPlaceholder="Buscar artículo, proveedor o código..."
-            exportName="articulos-proveedores"
             initialSort={{ key: "id_articulo_proveedor", dir: "desc" }}
+            exportName="articulos-proveedores"
             actions={(r) => (
               <div className="flex items-center justify-end gap-1">
                 <Button
                   variant="ghost"
                   size="icon"
                   className="h-8 w-8 text-muted-foreground hover:text-primary"
-                  onClick={() => setModal({ mode: "view", fila: r })}
+                  onClick={() => setModal({ mode: "view", item: r })}
                   aria-label="Ver"
                 >
                   <Eye className="h-4 w-4" />
@@ -173,7 +162,7 @@ export function ArticulosProveedoresView() {
                   variant="ghost"
                   size="icon"
                   className="h-8 w-8 text-muted-foreground hover:text-primary"
-                  onClick={() => setModal({ mode: "edit", fila: r })}
+                  onClick={() => setModal({ mode: "edit", item: r })}
                   aria-label="Editar"
                 >
                   <Pencil className="h-4 w-4" />
@@ -190,8 +179,8 @@ export function ArticulosProveedoresView() {
               </div>
             )}
           />
-        )}
-      </div>
+        </div>
+      )}
 
       <ArticuloProveedorDialog
         state={modal}
@@ -208,14 +197,9 @@ export function ArticulosProveedoresView() {
             <AlertDialogTitle>¿Eliminar relación?</AlertDialogTitle>
             <AlertDialogDescription>
               Se eliminará la relación de{" "}
-              <span className="font-semibold">
-                {aEliminar?.descripcion_articulo ?? `artículo ${aEliminar?.id_articulo}`}
-              </span>{" "}
-              con{" "}
-              <span className="font-semibold">
-                {aEliminar?.nombre_proveedor ?? `proveedor ${aEliminar?.cod_persona}`}
-              </span>
-              . Esta acción no se puede deshacer.
+              <span className="font-semibold">{aEliminar?.descripcion_articulo}</span> con{" "}
+              <span className="font-semibold">{aEliminar?.nombre_proveedor}</span>. Esta acción no se
+              puede deshacer.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -238,7 +222,7 @@ export function ArticulosProveedoresView() {
   );
 }
 
-// ─── Dialog de formulario (buscador de artículo + de proveedor) ──────────────
+// ─── Dialog de formulario ────────────────────────────────────────────────────
 
 function ArticuloProveedorDialog({
   state,
@@ -251,61 +235,51 @@ function ArticuloProveedorDialog({
 }) {
   const open = state.mode !== "closed";
   const isView = state.mode === "view";
-  const fila = state.mode === "edit" || state.mode === "view" ? state.fila : null;
+  const item = state.mode === "edit" || state.mode === "view" ? state.item : null;
 
-  const [articulo, setArticulo] = useState<ArticuloBusqueda | null>(null);
-  const [proveedor, setProveedor] = useState<ProveedorBusqueda | null>(null);
-  const [codProveedor, setCodProveedor] = useState("");
+  const [idArticulo, setIdArticulo] = useState<number | null>(null);
+  const [articuloLabel, setArticuloLabel] = useState("");
+  const [codPersona, setCodPersona] = useState<number | null>(null);
+  const [proveedorLabel, setProveedorLabel] = useState("");
+  const [idCodProveedor, setIdCodProveedor] = useState("");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
 
   const [lastKey, setLastKey] = useState("");
-  const key = `${state.mode}:${fila?.id_articulo_proveedor ?? "new"}`;
+  const key = `${state.mode}:${item?.id_articulo_proveedor ?? "new"}`;
   if (open && key !== lastKey) {
     setLastKey(key);
-    setArticulo(
-      fila
-        ? {
-            id_articulo: fila.id_articulo,
-            descripcion: fila.descripcion_articulo,
-            codigo_oem: fila.codigo_oem,
-          }
-        : null,
+    setIdArticulo(item?.id_articulo ?? null);
+    setArticuloLabel(
+      item ? `${item.descripcion_articulo ?? ""}${item.codigo_oem ? ` (${item.codigo_oem})` : ""}` : "",
     );
-    setProveedor(
-      fila
-        ? { cod_persona: fila.cod_persona, nombre: fila.nombre_proveedor, nro_ruc: null, nro_ci: null }
-        : null,
-    );
-    setCodProveedor(fila?.id_cod_proveedor ?? "");
+    setCodPersona(item?.cod_persona ?? null);
+    setProveedorLabel(item?.nombre_proveedor ?? "");
+    setIdCodProveedor(item?.id_cod_proveedor ?? "");
     setError("");
   }
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setError("");
-    if (!articulo) {
-      setError("Seleccioná un artículo");
+    if (!idArticulo) {
+      setError("Selecciona un artículo");
       return;
     }
-    if (!proveedor) {
-      setError("Seleccioná un proveedor");
-      return;
-    }
-    if (!codProveedor.trim()) {
-      setError("Ingresá el código del proveedor");
+    if (!codPersona) {
+      setError("Selecciona un proveedor");
       return;
     }
     setSaving(true);
     try {
       const input: ArticuloProveedorInput = {
-        id_articulo: articulo.id_articulo,
-        cod_persona: proveedor.cod_persona,
-        id_cod_proveedor: codProveedor.trim(),
+        id_articulo: idArticulo,
+        cod_persona: codPersona,
+        id_cod_proveedor: idCodProveedor.trim(),
         cod_empresa: COD_EMPRESA,
       };
       if (state.mode === "edit") {
-        await actualizarArticuloProveedor(state.fila.id_articulo_proveedor, input);
+        await actualizarArticuloProveedor(state.item.id_articulo_proveedor, input);
       } else {
         await crearArticuloProveedor(input);
       }
@@ -323,7 +297,6 @@ function ArticuloProveedorDialog({
       : state.mode === "edit"
         ? "Editar relación"
         : "Detalle de la relación";
-  const dis = isView || saving;
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
@@ -332,37 +305,65 @@ function ArticuloProveedorDialog({
           <DialogTitle>{titulo}</DialogTitle>
           {!isView && (
             <DialogDescription>
-              Elegí el artículo, el proveedor y el código con que ese proveedor lo identifica.
+              Vincula un artículo con un proveedor y su código.
             </DialogDescription>
           )}
         </DialogHeader>
 
         <form onSubmit={onSubmit} className="space-y-4">
-          {isView && fila && (
+          {isView && item && (
             <div className="text-sm text-muted-foreground">
-              ID: <span className="font-mono text-foreground">{fila.id_articulo_proveedor}</span>
+              ID: <span className="font-mono text-foreground">{item.id_articulo_proveedor}</span>
             </div>
           )}
 
           <div className="space-y-2">
             <Label>Artículo</Label>
             {isView ? (
-              <div className="rounded-md border border-input bg-muted/40 px-3 py-2 text-sm">
-                {articulo?.descripcion || `Artículo ${articulo?.id_articulo ?? "—"}`}
-              </div>
+              <Input value={articuloLabel} disabled />
             ) : (
-              <SelectorArticulo seleccionado={articulo} onSelect={setArticulo} disabled={dis} />
+              <BuscadorSelect
+                placeholder="Buscar artículo por descripción, OEM o ID..."
+                emptyLabel="Sin artículos"
+                value={idArticulo}
+                label={articuloLabel}
+                buscar={(q) => buscarArticulos(COD_EMPRESA, q)}
+                itemKey={(a) => a.id_articulo}
+                itemTitle={(a) => a.descripcion ?? "—"}
+                itemSub={(a) => `ID ${a.id_articulo}${a.codigo_oem ? ` · OEM ${a.codigo_oem}` : ""}`}
+                onSelect={(a) => {
+                  setIdArticulo(a.id_articulo);
+                  setArticuloLabel(
+                    `${a.descripcion ?? ""}${a.codigo_oem ? ` (${a.codigo_oem})` : ""}`,
+                  );
+                }}
+                disabled={saving}
+              />
             )}
           </div>
 
           <div className="space-y-2">
             <Label>Proveedor</Label>
             {isView ? (
-              <div className="rounded-md border border-input bg-muted/40 px-3 py-2 text-sm">
-                {proveedor?.nombre || `Proveedor ${proveedor?.cod_persona ?? "—"}`}
-              </div>
+              <Input value={proveedorLabel} disabled />
             ) : (
-              <SelectorProveedor seleccionado={proveedor} onSelect={setProveedor} disabled={dis} />
+              <BuscadorSelect
+                placeholder="Buscar proveedor por nombre, RUC o CI..."
+                emptyLabel="Sin proveedores"
+                value={codPersona}
+                label={proveedorLabel}
+                buscar={(q) => buscarProveedores(COD_EMPRESA, q)}
+                itemKey={(p) => p.cod_persona}
+                itemTitle={(p) => p.nombre ?? "—"}
+                itemSub={(p) =>
+                  `ID ${p.cod_persona}${p.nro_ruc ? ` · RUC ${p.nro_ruc}` : p.nro_ci ? ` · CI ${p.nro_ci}` : ""}`
+                }
+                onSelect={(p) => {
+                  setCodPersona(p.cod_persona);
+                  setProveedorLabel(p.nombre ?? "");
+                }}
+                disabled={saving}
+              />
             )}
           </div>
 
@@ -370,10 +371,10 @@ function ArticuloProveedorDialog({
             <Label htmlFor="id_cod_proveedor">Código del proveedor</Label>
             <Input
               id="id_cod_proveedor"
-              value={codProveedor}
-              onChange={(e) => setCodProveedor(e.target.value)}
+              value={idCodProveedor}
+              onChange={(e) => setIdCodProveedor(e.target.value)}
               placeholder="Código con que el proveedor identifica el artículo"
-              disabled={dis}
+              disabled={isView || saving}
               required={!isView}
               className="font-mono"
             />
@@ -409,112 +410,5 @@ function ArticuloProveedorDialog({
         </form>
       </DialogContent>
     </Dialog>
-  );
-}
-
-// ─── Selector de proveedor con búsqueda ──────────────────────────────────────
-
-function SelectorProveedor({
-  seleccionado,
-  onSelect,
-  disabled,
-}: {
-  seleccionado: ProveedorBusqueda | null;
-  onSelect: (p: ProveedorBusqueda) => void;
-  disabled?: boolean;
-}) {
-  const [texto, setTexto] = useState("");
-  const [debounced, setDebounced] = useState("");
-  const [abierto, setAbierto] = useState(false);
-
-  useEffect(() => {
-    const t = setTimeout(() => setDebounced(texto.trim()), 300);
-    return () => clearTimeout(t);
-  }, [texto]);
-
-  const resultadosQuery = useQuery({
-    queryKey: ["proveedores-buscar", COD_EMPRESA, debounced],
-    queryFn: () => buscarProveedores(debounced, COD_EMPRESA),
-    enabled: abierto && debounced.length > 0,
-    retry: false,
-  });
-  const resultados = resultadosQuery.data ?? [];
-
-  return (
-    <div className="space-y-2">
-      {seleccionado && (
-        <div className="flex items-center justify-between gap-2 rounded-md border border-primary/40 bg-primary/5 px-3 py-2 text-sm">
-          <span className="min-w-0 truncate">
-            <span className="font-medium">
-              {seleccionado.nombre || `Proveedor ${seleccionado.cod_persona}`}
-            </span>
-            <span className="ml-2 font-mono text-xs text-muted-foreground">
-              #{seleccionado.cod_persona}
-              {seleccionado.nro_ruc ? ` · RUC ${seleccionado.nro_ruc}` : ""}
-            </span>
-          </span>
-          <Check className="h-4 w-4 shrink-0 text-primary" />
-        </div>
-      )}
-
-      {!disabled && (
-        <>
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={texto}
-              onChange={(e) => {
-                setTexto(e.target.value);
-                setAbierto(true);
-              }}
-              onFocus={() => setAbierto(true)}
-              placeholder={seleccionado ? "Cambiar proveedor..." : "Buscar proveedor..."}
-              className="pl-10"
-            />
-          </div>
-
-          {abierto && debounced.length > 0 && (
-            <div className="max-h-56 overflow-y-auto rounded-md border border-border">
-              {resultadosQuery.isLoading ? (
-                <div className="grid place-items-center py-6 text-muted-foreground">
-                  <Loader2 className="h-5 w-5 animate-spin" />
-                </div>
-              ) : resultados.length === 0 ? (
-                <p className="px-3 py-4 text-center text-sm text-muted-foreground">
-                  Sin resultados.
-                </p>
-              ) : (
-                <ul className="divide-y divide-border">
-                  {resultados.map((p) => (
-                    <li key={p.cod_persona}>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          onSelect(p);
-                          setTexto("");
-                          setAbierto(false);
-                        }}
-                        className={cn(
-                          "flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left text-sm hover:bg-accent",
-                          seleccionado?.cod_persona === p.cod_persona && "bg-primary/5",
-                        )}
-                      >
-                        <span className="font-medium">
-                          {p.nombre || `Proveedor ${p.cod_persona}`}
-                        </span>
-                        <span className="font-mono text-xs text-muted-foreground">
-                          #{p.cod_persona}
-                          {p.nro_ruc ? ` · RUC ${p.nro_ruc}` : p.nro_ci ? ` · CI ${p.nro_ci}` : ""}
-                        </span>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          )}
-        </>
-      )}
-    </div>
   );
 }

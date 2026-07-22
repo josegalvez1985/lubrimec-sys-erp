@@ -1,4 +1,4 @@
-const CACHE = "lubrimesys-v5";
+const CACHE = "lubrimesys-v6";
 
 self.addEventListener("install", (e) => {
   self.skipWaiting();
@@ -62,7 +62,7 @@ self.addEventListener("fetch", (e) => {
           caches.open(CACHE).then((c) => c.put(e.request, clone));
         }
         return res;
-      })
+      }).catch(() => Response.error())
     )
   );
 });

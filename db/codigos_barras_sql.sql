@@ -1,13 +1,11 @@
 --------------------------------------------------------------------------------
--- CODIGOS DE BARRAS (pagina APEX 24) — paquete CRUD + endpoints ORDS en un archivo.
+-- CODIGOS DE BARRAS (pagina APEX 24) — paquete CRUD + endpoints ORDS.
 -- Ejecutar completo como el esquema JOSEGALVEZ. Requiere PKG_AUTH_LUBRIMEC.
 --
--- PK id_barra por trigger TRG_RENUMERAR_CODIGOS_BARRAS (no incluir en el INSERT;
--- devolver con RETURNING). Multiempresa (cod_empresa). FK id_articulo -> articulos.
--- UK (cod_empresa, cod_barra): un codigo no se repite dentro de la empresa.
---
--- Ademas del CRUD, expone GET /articulos/buscar (busqueda de articulos para el
--- selector del formulario): la tabla ARTICULOS no tenia endpoint consultable.
+-- PK id_barra por trigger. Multiempresa (cod_empresa). UK (cod_barra, cod_empresa).
+-- FK id_articulo -> articulos. LISTAR/OBTENER hacen JOIN a articulos para traer
+-- descripcion_articulo + codigo_oem (solo lectura). BUSCAR_ARTICULOS alimenta el
+-- selector del formulario (endpoint articulos/buscar).
 --
 -- === 1) PAQUETE PKG_CODIGOS_BARRAS_LUBRIMEC ================================
 --------------------------------------------------------------------------------
@@ -23,8 +21,6 @@ CREATE OR REPLACE PACKAGE PKG_CODIGOS_BARRAS_LUBRIMEC AS
       p_token IN VARCHAR2, p_id_barra IN NUMBER, p_id_articulo IN NUMBER,
       p_cod_barra IN VARCHAR2, p_cod_empresa IN NUMBER);
   PROCEDURE ELIMINAR(p_token IN VARCHAR2, p_id_barra IN NUMBER, p_cod_empresa IN NUMBER);
-
-  -- Busqueda de articulos activos para el selector (por descripcion / codigo_oem / id).
   PROCEDURE BUSCAR_ARTICULOS(p_token IN VARCHAR2, p_cod_empresa IN NUMBER, p_q IN VARCHAR2);
 
 END PKG_CODIGOS_BARRAS_LUBRIMEC;
@@ -289,7 +285,7 @@ CREATE OR REPLACE PACKAGE BODY PKG_CODIGOS_BARRAS_LUBRIMEC AS
     APEX_JSON.WRITE('success', TRUE);
     APEX_JSON.OPEN_ARRAY('data');
     FOR r IN (
-        SELECT id_articulo, descripcion, codigo_oem
+        SELECT id_articulo, descripcion, codigo_oem, precio_venta, costo_ultima_compra
           FROM articulos
          WHERE cod_empresa = p_cod_empresa
            AND NVL(es_activo, 'S') = 'S'
@@ -306,6 +302,8 @@ CREATE OR REPLACE PACKAGE BODY PKG_CODIGOS_BARRAS_LUBRIMEC AS
       APEX_JSON.WRITE('id_articulo', r.id_articulo);
       APEX_JSON.WRITE('descripcion', r.descripcion);
       APEX_JSON.WRITE('codigo_oem', r.codigo_oem);
+      APEX_JSON.WRITE('precio_venta', r.precio_venta);
+      APEX_JSON.WRITE('costo_ultima_compra', r.costo_ultima_compra);
       APEX_JSON.CLOSE_OBJECT;
     END LOOP;
     APEX_JSON.CLOSE_ARRAY;
@@ -326,7 +324,7 @@ END PKG_CODIGOS_BARRAS_LUBRIMEC;
 --   POST   /lubrimec/codigos-barras                  -> insertar
 --   PUT    /lubrimec/codigos-barras/:id              -> actualizar
 --   DELETE /lubrimec/codigos-barras/:id              -> eliminar
---   GET    /lubrimec/articulos/buscar?cod_empresa=:n&q=<texto> -> buscar articulos
+--   GET    /lubrimec/articulos/buscar?cod_empresa=:n&q=:q -> selector de articulos
 --------------------------------------------------------------------------------
 
 BEGIN
@@ -338,15 +336,22 @@ BEGIN
   BEGIN ORDS.DELETE_HANDLER('lubrimec', 'articulos/buscar', 'GET');      EXCEPTION WHEN OTHERS THEN NULL; END;
 
   ----------------------------------------------------------------------------
-  -- /codigos-barras
+  -- Plantilla coleccion: /codigos-barras
   ----------------------------------------------------------------------------
   BEGIN
-    ORDS.DEFINE_TEMPLATE(p_module_name => 'lubrimec', p_pattern => 'codigos-barras',
-        p_priority => 0, p_etag_type => 'HASH', p_comments => NULL);
+    ORDS.DEFINE_TEMPLATE(
+        p_module_name => 'lubrimec',
+        p_pattern     => 'codigos-barras',
+        p_priority    => 0,
+        p_etag_type   => 'HASH',
+        p_comments    => NULL);
   EXCEPTION WHEN OTHERS THEN NULL; END;
 
+  -- GET /codigos-barras?cod_empresa=:n  -> listar
   ORDS.DEFINE_HANDLER(
-      p_module_name => 'lubrimec', p_pattern => 'codigos-barras', p_method => 'GET',
+      p_module_name => 'lubrimec',
+      p_pattern     => 'codigos-barras',
+      p_method      => 'GET',
       p_source_type => 'plsql/block',
       p_source      => q'~
 DECLARE
@@ -379,12 +384,22 @@ BEGIN
     PKG_CODIGOS_BARRAS_LUBRIMEC.LISTAR(p_token => l_token, p_cod_empresa => TO_NUMBER(l_cod_empresa));
 END;
 ~');
-  ORDS.DEFINE_PARAMETER(p_module_name => 'lubrimec', p_pattern => 'codigos-barras', p_method => 'GET',
-      p_name => 'Authorization', p_bind_variable_name => 'authorization',
-      p_source_type => 'HEADER', p_param_type => 'STRING', p_access_method => 'IN');
 
+  ORDS.DEFINE_PARAMETER(
+      p_module_name        => 'lubrimec',
+      p_pattern            => 'codigos-barras',
+      p_method             => 'GET',
+      p_name               => 'Authorization',
+      p_bind_variable_name => 'authorization',
+      p_source_type        => 'HEADER',
+      p_param_type         => 'STRING',
+      p_access_method      => 'IN');
+
+  -- POST /codigos-barras  -> insertar
   ORDS.DEFINE_HANDLER(
-      p_module_name => 'lubrimec', p_pattern => 'codigos-barras', p_method => 'POST',
+      p_module_name => 'lubrimec',
+      p_pattern     => 'codigos-barras',
+      p_method      => 'POST',
       p_source_type => 'plsql/block',
       p_source      => q'~
 DECLARE l_token VARCHAR2(256); l_pos PLS_INTEGER;
@@ -404,20 +419,34 @@ BEGIN
         p_cod_barra => :cod_barra, p_cod_empresa => TO_NUMBER(:cod_empresa));
 END;
 ~');
-  ORDS.DEFINE_PARAMETER(p_module_name => 'lubrimec', p_pattern => 'codigos-barras', p_method => 'POST',
-      p_name => 'Authorization', p_bind_variable_name => 'authorization',
-      p_source_type => 'HEADER', p_param_type => 'STRING', p_access_method => 'IN');
+
+  ORDS.DEFINE_PARAMETER(
+      p_module_name        => 'lubrimec',
+      p_pattern            => 'codigos-barras',
+      p_method             => 'POST',
+      p_name               => 'Authorization',
+      p_bind_variable_name => 'authorization',
+      p_source_type        => 'HEADER',
+      p_param_type         => 'STRING',
+      p_access_method      => 'IN');
 
   ----------------------------------------------------------------------------
-  -- /codigos-barras/:id
+  -- Plantilla item: /codigos-barras/:id
   ----------------------------------------------------------------------------
   BEGIN
-    ORDS.DEFINE_TEMPLATE(p_module_name => 'lubrimec', p_pattern => 'codigos-barras/:id',
-        p_priority => 0, p_etag_type => 'HASH', p_comments => NULL);
+    ORDS.DEFINE_TEMPLATE(
+        p_module_name => 'lubrimec',
+        p_pattern     => 'codigos-barras/:id',
+        p_priority    => 0,
+        p_etag_type   => 'HASH',
+        p_comments    => NULL);
   EXCEPTION WHEN OTHERS THEN NULL; END;
 
+  -- GET /codigos-barras/:id  -> obtener
   ORDS.DEFINE_HANDLER(
-      p_module_name => 'lubrimec', p_pattern => 'codigos-barras/:id', p_method => 'GET',
+      p_module_name => 'lubrimec',
+      p_pattern     => 'codigos-barras/:id',
+      p_method      => 'GET',
       p_source_type => 'plsql/block',
       p_source      => q'~
 DECLARE
@@ -452,12 +481,22 @@ BEGIN
         p_cod_empresa => TO_NUMBER(l_cod_empresa));
 END;
 ~');
-  ORDS.DEFINE_PARAMETER(p_module_name => 'lubrimec', p_pattern => 'codigos-barras/:id', p_method => 'GET',
-      p_name => 'Authorization', p_bind_variable_name => 'authorization',
-      p_source_type => 'HEADER', p_param_type => 'STRING', p_access_method => 'IN');
 
+  ORDS.DEFINE_PARAMETER(
+      p_module_name        => 'lubrimec',
+      p_pattern            => 'codigos-barras/:id',
+      p_method             => 'GET',
+      p_name               => 'Authorization',
+      p_bind_variable_name => 'authorization',
+      p_source_type        => 'HEADER',
+      p_param_type         => 'STRING',
+      p_access_method      => 'IN');
+
+  -- PUT /codigos-barras/:id  -> actualizar
   ORDS.DEFINE_HANDLER(
-      p_module_name => 'lubrimec', p_pattern => 'codigos-barras/:id', p_method => 'PUT',
+      p_module_name => 'lubrimec',
+      p_pattern     => 'codigos-barras/:id',
+      p_method      => 'PUT',
       p_source_type => 'plsql/block',
       p_source      => q'~
 DECLARE l_token VARCHAR2(256); l_pos PLS_INTEGER;
@@ -478,12 +517,22 @@ BEGIN
         p_cod_barra => :cod_barra, p_cod_empresa => TO_NUMBER(:cod_empresa));
 END;
 ~');
-  ORDS.DEFINE_PARAMETER(p_module_name => 'lubrimec', p_pattern => 'codigos-barras/:id', p_method => 'PUT',
-      p_name => 'Authorization', p_bind_variable_name => 'authorization',
-      p_source_type => 'HEADER', p_param_type => 'STRING', p_access_method => 'IN');
 
+  ORDS.DEFINE_PARAMETER(
+      p_module_name        => 'lubrimec',
+      p_pattern            => 'codigos-barras/:id',
+      p_method             => 'PUT',
+      p_name               => 'Authorization',
+      p_bind_variable_name => 'authorization',
+      p_source_type        => 'HEADER',
+      p_param_type         => 'STRING',
+      p_access_method      => 'IN');
+
+  -- DELETE /codigos-barras/:id  -> eliminar
   ORDS.DEFINE_HANDLER(
-      p_module_name => 'lubrimec', p_pattern => 'codigos-barras/:id', p_method => 'DELETE',
+      p_module_name => 'lubrimec',
+      p_pattern     => 'codigos-barras/:id',
+      p_method      => 'DELETE',
       p_source_type => 'plsql/block',
       p_source      => q'~
 DECLARE
@@ -518,20 +567,33 @@ BEGIN
         p_cod_empresa => TO_NUMBER(l_cod_empresa));
 END;
 ~');
-  ORDS.DEFINE_PARAMETER(p_module_name => 'lubrimec', p_pattern => 'codigos-barras/:id', p_method => 'DELETE',
-      p_name => 'Authorization', p_bind_variable_name => 'authorization',
-      p_source_type => 'HEADER', p_param_type => 'STRING', p_access_method => 'IN');
+
+  ORDS.DEFINE_PARAMETER(
+      p_module_name        => 'lubrimec',
+      p_pattern            => 'codigos-barras/:id',
+      p_method             => 'DELETE',
+      p_name               => 'Authorization',
+      p_bind_variable_name => 'authorization',
+      p_source_type        => 'HEADER',
+      p_param_type         => 'STRING',
+      p_access_method      => 'IN');
 
   ----------------------------------------------------------------------------
-  -- /articulos/buscar  (selector del formulario)
+  -- /articulos/buscar  -> selector de articulos del formulario
   ----------------------------------------------------------------------------
   BEGIN
-    ORDS.DEFINE_TEMPLATE(p_module_name => 'lubrimec', p_pattern => 'articulos/buscar',
-        p_priority => 0, p_etag_type => 'HASH', p_comments => NULL);
+    ORDS.DEFINE_TEMPLATE(
+        p_module_name => 'lubrimec',
+        p_pattern     => 'articulos/buscar',
+        p_priority    => 0,
+        p_etag_type   => 'HASH',
+        p_comments    => NULL);
   EXCEPTION WHEN OTHERS THEN NULL; END;
 
   ORDS.DEFINE_HANDLER(
-      p_module_name => 'lubrimec', p_pattern => 'articulos/buscar', p_method => 'GET',
+      p_module_name => 'lubrimec',
+      p_pattern     => 'articulos/buscar',
+      p_method      => 'GET',
       p_source_type => 'plsql/block',
       p_source      => q'~
 DECLARE
@@ -566,9 +628,16 @@ BEGIN
         p_token => l_token, p_cod_empresa => TO_NUMBER(l_cod_empresa), p_q => l_q);
 END;
 ~');
-  ORDS.DEFINE_PARAMETER(p_module_name => 'lubrimec', p_pattern => 'articulos/buscar', p_method => 'GET',
-      p_name => 'Authorization', p_bind_variable_name => 'authorization',
-      p_source_type => 'HEADER', p_param_type => 'STRING', p_access_method => 'IN');
+
+  ORDS.DEFINE_PARAMETER(
+      p_module_name        => 'lubrimec',
+      p_pattern            => 'articulos/buscar',
+      p_method             => 'GET',
+      p_name               => 'Authorization',
+      p_bind_variable_name => 'authorization',
+      p_source_type        => 'HEADER',
+      p_param_type         => 'STRING',
+      p_access_method      => 'IN');
 
   COMMIT;
 EXCEPTION
