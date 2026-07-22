@@ -25,6 +25,9 @@ Reenvía la petición a ORDS server-side. Detalles que costó descubrir:
 - **Body solo si existe:** únicamente setea `body` + `content-type` cuando hay payload.
   Un DELETE (o cualquier request sin cuerpo) con `content-type: application/json` y body
   vacío hace que ORDS devuelva **400** `Expected one of <<{,[>> but got EOF`.
+- **Body como `arrayBuffer` (ida y vuelta):** tanto el request body como la respuesta se
+  reenvían como bytes crudos (`arrayBuffer()`), nunca `text()` — decodificar como UTF-8
+  corrompe binarios (uploads de fotos, imágenes servidas). Para JSON da igual; no regresionarlo.
 - **Headers:** reenvía solo `authorization` (Bearer) y `content-type`. No propaga otros.
 - **Query string:** se preserva (`incoming.search`), así llegan `?cod_empresa=...` etc.
 
@@ -110,7 +113,7 @@ sus permisos. Cada usuario ve un menú distinto.
 
 1. Implementar el componente (ej. `src/components/<tabla>-view.tsx`).
 2. Conocer el `page_id` de esa página en APEX (app 86972).
-3. Agregar una línea al mapa `VISTAS` en `home.tsx`:
+3. Agregar el import y una línea al mapa `VISTAS` en `home.tsx`:
    ```tsx
    const VISTAS: Record<number, () => ReactElement> = {
      6: () => <MarcasView />, // Marcas
@@ -119,6 +122,92 @@ sus permisos. Cada usuario ve un menú distinto.
    ```
    Con eso la entrada del menú y su acceso rápido abren el componente automáticamente.
    No hay que tocar el sidebar ni el endpoint: el menú se arma solo desde la respuesta.
+   Páginas ya con vista propia (referencia de `page_id`): 24 Códigos de Barras, 27
+   Artículos-Proveedores, 2 Personas, 6 Marcas, 117 WhatsApp, etc. (ver el mapa completo).
+4. **Ícono:** antes de agregar el `page_id` a `ICONO_PAGINA`, verificar que no exista ya
+   (muchos están precargados); una key duplicada rompe la compilación (TS1117 — pasó con la 81).
+
+### CRUD con FK: selector con buscador (modelos: `codigos-barras-view`, `articulos-proveedores-view`)
+
+Cuando un campo es una FK (elegir un artículo, un proveedor…), **no** cargar toda la tabla en un
+`<select>`: usar un buscador con debounce (`BuscadorSelect`). El endpoint `*/buscar` devuelve la
+**lista completa** y el front filtra (ver la REGLA abajo); los endpoints viejos con ≤30 filas en
+la BD son legado — no copiarlos en páginas nuevas.
+
+- El backend expone `articulos/buscar?cod_empresa=&q=` y `proveedores/buscar?...` (ver
+  `db/GUIA_ENDPOINTS.md`, sección "Selector de FK"). Cliente: `buscarArticulos` / `buscarProveedores`.
+- Componente compartido **`src/components/ui/buscador-select.tsx`** (`BuscadorSelect`): input con
+  debounce de 300ms → `useQuery({ enabled: abierto })` → dropdown de resultados; al elegir llama
+  `onSelect(item)`. Usado en `articulos-proveedores-view`, `codigos-barras-view` y
+  `vehiculos-repuestos-view`. **No dupliques** este componente por vista; importá el de `ui/`.
+- **Gotcha:** no pongas un `<Input>` de "fallback manual" con el mismo valor **debajo** del
+  `BuscadorSelect` — su dropdown es `absolute` y el input siguiente compite/lo tapa, y parecía "no
+  funcionar" (pasó en la pág 94). Si necesitás mostrar el valor elegido, usá un `<p>` de texto.
+- La grilla usa `DataTable` y muestra las columnas de solo lectura del JOIN (descripción del
+  artículo, nombre del proveedor).
+
+#### REGLA: LOV completo + filtrado flexible en el front (TODA LOV, sin excepciones)
+
+Para **toda** LOV (personas, proveedores, artículos, rubros, marcas…), **NO** buscar en el
+backend por cada tecla: el endpoint devuelve la **lista completa** (sin `q`, sin `FETCH FIRST`)
+y la función cliente filtra **localmente** de forma flexible. Pedido explícito del usuario,
+repetido varias veces (Compras, Inventario); no volver a preguntarlo ni reabrir el tema:
+
+- **Nombre sin distinguir mayúsculas/minúsculas** (`toUpperCase()` en ambos lados).
+- **RUC/CI con o sin guion/espacios:** normalizar los dos lados con `.replace(/[-\s]/g, "")`
+  para que `4962931` encuentre `496293-1`.
+- También matchea por `cod_persona`.
+- **Sin tope de resultados:** se muestran todas las coincidencias (nada de `slice(0, 30)`).
+- El JSON de ORDS **omite las claves NULL** (`APEX_JSON`): tratar los campos como opcionales
+  (`p.nro_ci ?? ""`).
+
+Modelo: `buscarProveedoresCompra` en `src/lib/api.ts` (usada por el `BuscadorSelect` del modal
+"Nueva compra" de `compras-view.tsx`). El componente `BuscadorSelect` no cambia: solo cambia la
+implementación de su prop `buscar`. Backend: ver "Selector de FK" en `db/GUIA_ENDPOINTS.md`.
+**Esta variante es LA regla para toda LOV nueva, también artículos** (pedido explícito del
+usuario, repetido). El filtrado local matchea **palabras sueltas en cualquier orden** e
+**ID parcial** además de descripción/OEM, sin tope de resultados. Modelo con artículos:
+`buscarArticulosInventario` en `src/lib/api.ts` (Inventario, pág 58/59). NO usar `q` +
+`FETCH FIRST 30` salvo pedido explícito.
+
+**LOVs en cascada desde UN dataset:** cuando varias LOVs dependen entre sí (Rubro → Marca →
+Viscosidad, pág 113), no hacer un endpoint por LOV: un solo endpoint devuelve las ternas
+(`id_rubro/rubro/id_marca/marca/...`) de las filas candidatas y el front deriva cada lista con
+un `uniq` filtrando por las selecciones anteriores (al cambiar un nivel se resetean los
+inferiores). Modelo: `pendientesPlanilla` (api.ts) + `CrearPlanillaDialog` en
+`planilla-inventarios-view.tsx`.
+
+### Imágenes en BLOB (modelos: `articulos-view`, `monedas-view`)
+
+Tablas con imagen (`archivo_imagen BLOB` + `mime_type`). Dos caminos según el tamaño esperado:
+
+- **Subir / editar:** el archivo se lee a base64 en el navegador (`FileReader`/`btoa` por chunks) y
+  viaja como `imagen_base64` en el JSON del POST/PUT. El backend lo convierte a BLOB. Enviar `null`
+  = no tocar la imagen (patrón de `monedas_detalle` y `articulos`).
+- **Mostrar en un modal (una imagen):** el `OBTENER` (`GET tabla/:id`) devuelve `imagen_base64`; el
+  front la pinta con `src={`data:${mime};base64,${b64}`}`. Bien para 1 imagen a la vez.
+- **Thumbnail en una grilla (muchas):** el `LISTAR` **no** trae los blobs (solo un flag
+  `tiene_imagen`); cada fila apunta a un endpoint **público** que sirve el BLOB directo:
+  `<img src={urlImagenArticulo(id, codEmpresa)}>` → `GET articulos/:id/imagen`. Es público porque el
+  navegador no manda `Authorization` en un `<img>`. Cliente: helper `urlImagenArticulo` en `api.ts`.
+- **Proxy y binarios:** `src/routes/api/ords.$.ts` reenvía el body como `arrayBuffer()` (no
+  `res.text()`, que corrompe binarios decodificándolos como UTF-8). Sirve igual para JSON e imágenes.
+- **Dos fuentes de imagen — no confundirlas:** `ArticuloImgModal`/`imgArticuloUrl` tiran del módulo
+  ORDS `paginaweb` (`/api/img/articulosimg/:id`), que solo tiene los artículos publicados en la web;
+  `urlImagenArticulo(id, codEmpresa)` (api.ts) sirve el **BLOB de la tabla `ARTICULOS`** vía
+  `articulos/:id/imagen` — es lo que muestra el APEX. Si una vista replica una página APEX con
+  columna Imagen y sale "Sin imagen disponible", usar `urlImagenArticulo` (el modal acepta un prop
+  `src` opcional para esto). Thumbnail inline 60x60 en la grilla + click para ampliar: modelo
+  `precios-mayoristas-view` (`ImgCelda`, con fallback a ícono si el artículo no tiene imagen).
+- **Subir foto como binario crudo (sin base64):** para fotos que se comprimen en el front (ej. la
+  foto del conteo, pág 115), el cliente manda el `Blob` directo con `authFetch(..., { method:
+  "PUT", headers: { "Content-Type": "image/jpeg" }, body: blob })` a un endpoint con bind `:body`
+  BLOB (ver `db/GUIA_ENDPOINTS.md`, "Upload binario"). Modelo: `subirFotoInventario` (api.ts) +
+  `planilla-inventarios-view.tsx`.
+- **Cámara + compresión en el front:** botón "Tomar Foto" = `<input type="file" accept="image/*"
+  capture="environment">` oculto; la imagen se redimensiona con canvas a 600px de ancho, JPEG
+  calidad 0.7, y se rechaza si supera 100KB (réplica del JS de la pág 115 del APEX). Preview local
+  con `URL.createObjectURL(blob)`. Modelo: `procesarArchivo` en `planilla-inventarios-view.tsx`.
 
 ## Sin caché: todo dato se consulta en el momento
 
@@ -194,11 +283,105 @@ Notas de `Column<T>`:
 - `num: true` alinea a la derecha y ordena numéricamente.
 - `sortable`/`filterable`/`hideable` = `false` para desactivar por columna (la columna principal
   suele ir `hideable: false`).
+- `footer: (rows) => ReactNode` = **fila de totales al pie** (el "sum on break" de APEX). Recibe las
+  filas visibles ya filtradas/ordenadas. Si **ninguna** columna define `footer`, no se muestra el pie.
+  Sumar sobre las filas: `footer: (rows) => fmtNum(rows.reduce((a, r) => a + (r.total ?? 0), 0))`.
+  Poner `footer: () => "Total"` en la primera columna como etiqueta. Modelo: `conteo-efectivo-view.tsx`.
 - El componente **no** hace fetch ni pagina: recibe el array ya traído (regla "sin caché" intacta).
 - El search/filtro reemplaza al `<Input>` manual: quitar el estado `filtro` local de la vista.
 - **Export Excel** (`exportName`): exporta las columnas **visibles** con `accessor` y las filas
   **ya filtradas/ordenadas** (lo que se ve en pantalla), reusando `exportarExcel` de
   `src/lib/export.ts`. Sin `exportName` no se muestra el botón.
+
+## Reglas transversales (obligatorias en toda vista nueva)
+
+- **Montos con separador de miles — SIEMPRE.** Todo campo de monto/importe/precio/total/cantidad
+  grande lleva separador de miles (es-PY), tanto al mostrar como al editar.
+  - **Mostrar** (grillas, campos readonly, reportes): `Intl.NumberFormat("es-PY", { maximumFractionDigits: 0 })`
+    para guaraníes. Ver `fmtNum`/`fmtMonto` en las vistas.
+  - **Editar**: NO usar `<input type="number">` (no admite separador). Usar el componente
+    **`src/components/ui/input-monto.tsx`** (`InputMonto`): input de texto con miles en vivo, trabaja
+    con `value: number | null` + `onValueChange`, prop `maxDecimals` (0 = guaraníes). Modelos:
+    `suba-precios-view`, `compras-pagos-view`, `descuentos-escalonados-view`, `conteo-efectivo-view`.
+  - Porcentajes, nro de recibo e IDs **no** son montos: pueden seguir como `type="number"`.
+- **Botón "Limpiar" en toda vista con filtros.** Si la vista tiene filtros propios (facetas, checkboxes,
+  fecha, search fuera de la grilla), agregar un botón **"Limpiar"** (ícono `X`) que resetee todos los
+  filtros; mostrarlo solo si hay alguno activo. Etiqueta "Limpiar" (no "Restablecer" aunque el APEX
+  diga eso). Modelos: `post-venta-view`, `suba-precios-view`, `conteo-efectivo-view`. (El `DataTable`
+  ya trae su propio "Limpiar" para search/filtros de columna.)
+- **Permisos por usuario (app_user).** Cuando el APEX restringe por usuario (ej. solo `JOSEG` ve
+  ciertos datos/campos), replicarlo: el front lee `getSesion().app_user` (viene en MAYÚSCULAS) y el
+  backend recibe `app_user` como query param para decidir el filtro/visibilidad. Modelo: `conteo-efectivo`
+  (JOSEG filtra por fecha y ve el panel de totales; el resto solo ve el día de hoy, sin panel);
+  `existencia-articulos-view` (columnas de costo solo para JOSEG).
+- **Fechas — SIEMPRE `dd/mm/yyyy`.** El backend devuelve fechas como `YYYY-MM-DD` (ISO); en el front
+  convertir con un helper `fmtFecha` (`iso.split("-")` → `${d}/${m}/${y}`). NO mostrar un campo de
+  fecha de texto libre de la vista Oracle sin normalizar (puede venir en cualquier formato); usar
+  siempre la columna ISO + `fmtFecha`. Modelos: `compras-articulos-view`, `ficha-articulos-view`.
+- **Facetas — componente compartido `src/components/ui/faceta.tsx`.** Toda vista con búsqueda
+  facetada usa `<Faceta>` (look de Pedidos de Artículos: título simple, checkbox muted con hover,
+  conteo `(N)`, "Mostrar todo/menos" con límite 8, sin caja). NO crear un `Faceta` local con borde.
+  Props: `titulo`, `valores: {valor,n}[]`, `seleccion: Set<string>`, `onToggle`. Sidebar en
+  `<aside className="space-y-5">`. Modelos: `existencia-articulos-view`, `compras-articulos-view`,
+  `ficha-articulos-view`, `articulos-sin-barra-view`.
+
+## Reporte facetado con carga incremental por mes
+
+Para reportes de solo lectura con muchos registros y fecha (modelos: `compras-articulos-view`,
+`ficha-articulos-view`): el endpoint trae **todo el dataset** (ver `db/GUIA_ENDPOINTS.md`, "Reporte
+facetado"); el front muestra al inicio solo el **último mes con datos** y un botón **"Mostrar más"**
+que agrega un mes hacia atrás. Se deriva la lista de meses (`yyyy-mm`) del dataset, se toma una
+ventana de los N más recientes (`mesesVisibles`), y las facetas/búsqueda/total operan sobre esa
+ventana (no sobre todo el histórico). El botón se oculta cuando ya se muestran todos los meses.
+
+## Filtro binario Si/No (botones)
+
+Para un facet de dos valores (S/N, Si/No) va un par de **botones toggle horizontales** en vez de
+la lista de checkboxes: `variant={sel===v ? "default":"outline"}`, single-select (reclic
+deselecciona a `null`). Modelos: `compras-vs-ventas-view` (¿Activos/Gastos?),
+`saldos-proveedores-view` (¿Saldo?), `consulta-inventarios-view` (¿Con diferencia?/¿Cerrado?/
+¿Es activo?). Facetas con muchos valores (Rubro, Marca, Proveedor) siguen usando `ui/faceta`.
+
+`ui/faceta` acepta `limite` (default 8) para cuántas opciones mostrar antes de "Mostrar todo", y
+pone los **seleccionados primero** (así el valor elegido no se esconde al colapsar). Para ocultar
+el conteo `(N)` de una faceta, pasar `n: 0` en sus valores.
+
+**Facetas SIN conteo (regla del proyecto):** en toda vista nueva las facetas van **sin** el
+conteo `(N)` — construir los valores con `.map((valor) => ({ valor, n: 0 }))` (basta un Set de
+valores, no hace falta contar). Pedido explícito del usuario, varias veces. No copiar el patrón
+con conteo de vistas viejas (`articulos-sin-barra-view`). Modelos: `precios-mayoristas-view`,
+`articulos-no-inventariados-view`.
+
+## Punto de Venta (POS, pág 39) — carrito en React
+
+El POS (`punto-venta-view.tsx`) reemplaza el flujo de 4 páginas APEX (39/40/45/47) con
+`apex_collections` por **una vista con estado React**: panel de artículos (facetas Marca/Rubro +
+búsqueda + lector de código de barra + % descuento + imagen con `imgArticuloUrl`) a la izquierda y
+**carrito** (array en `useState`, cantidad ±, total) a la derecha. Al facturar, un modal reúne los
+datos de la factura (cliente con `BuscadorSelect`, vendedor, serie/talonario) y **cobros múltiples**,
+y manda **todo junto** a `pos/registrar` (un POST atómico; ver `db/GUIA_ENDPOINTS.md`, "POST con body
+JSON complejo"). El descuento va al backend (afecta el precio); rubro/marca/búsqueda filtran en el front.
+
+- **Cobros y vuelto (efectivo):** en efectivo el cajero ingresa lo **recibido**; se imputa a la venta
+  el `min(recibido, restante)` (el `total` del cobro nunca supera el total de la venta), y el excedente
+  es el **vuelto** (`recibido − restante`). Se guardan los tres campos: `total` (imputado),
+  `efectivo_recibido` y `efectivo_vuelto`. Formas bancarias usan monto + banco + nro transacción.
+- **Control del total según cantidad de cobros:** con **una sola** forma de cobro NO se controla que
+  cuadre el total (el efectivo puede ser mayor → vuelto). Solo cuando hay **varias** formas se valida
+  que la suma de cobros iguale el total. La suma imputada **nunca** puede superar el total de la venta.
+- **Validaciones (todas en el front, `onSubmit`):** cabecera (cliente, vendedor, talonario),
+  detalle (≥1 artículo, cantidad y precio > 0, total > 0) y cobros (≥1 forma; suma ≤ total; con varias,
+  suma == total). El backend `pos/registrar` **no valida negocio**, solo inserta.
+- **Buscador de cliente (`BuscadorSelect` + `buscarPersonas`):** el endpoint `personas/buscar` da
+  **400** si se le manda `q=` vacío; el cliente **omite** el param `q` cuando no hay texto (así al
+  abrir trae los primeros 30). Ver "Gotcha del buscador" abajo.
+- **Responsivo (móvil):** el carrito lateral se oculta (`hidden lg:flex`) y aparece un **botón flotante
+  (FAB)** abajo-derecha con total + contador que abre el carrito en un modal; el contenido del carrito
+  (`carritoContenido`) se comparte entre la columna desktop y el modal móvil.
+
+> **Gotcha del buscador (`BuscadorSelect`):** los endpoints `*/buscar` que rechazan `q=` vacío hacen
+> que la lista "no aparezca" (400 en la primera llamada al abrir). El cliente debe construir el
+> `URLSearchParams` **sin** `q` cuando está vacío: `if (q.trim()) params.set("q", q.trim())`.
 
 ## Gotchas de UI
 

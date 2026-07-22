@@ -1,13 +1,10 @@
 import { useState, useEffect, type FormEvent } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, Eye, Pencil, Trash2, Loader2, Barcode, Search, Check } from "lucide-react";
+import { Plus, Eye, Pencil, Trash2, Loader2, Barcode, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Skeleton } from "@/components/ui/skeleton";
-import { DataTable, type Column } from "@/components/ui/data-table";
-import { cn } from "@/lib/utils";
 import {
   Dialog,
   DialogContent,
@@ -26,6 +23,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { DataTable, type Column } from "@/components/ui/data-table";
 import {
   listarCodigosBarras,
   crearCodigoBarra,
@@ -37,55 +35,14 @@ import {
   type ArticuloBusqueda,
 } from "@/lib/api";
 
+// TODO: cod_empresa fijo; reemplazar cuando venga de la sesión.
 const COD_EMPRESA = 24;
 
 type ModalState =
   | { mode: "closed" }
   | { mode: "create" }
-  | { mode: "edit"; codigo: CodigoBarra }
-  | { mode: "view"; codigo: CodigoBarra };
-
-const COLUMNAS: Column<CodigoBarra>[] = [
-  {
-    key: "id_barra",
-    header: "ID",
-    num: true,
-    accessor: (r) => r.id_barra,
-    render: (r) => (
-      <Badge variant="outline" className="font-mono">
-        {r.id_barra}
-      </Badge>
-    ),
-    className: "w-16",
-  },
-  {
-    key: "cod_barra",
-    header: "Código de barras",
-    accessor: (r) => r.cod_barra,
-    render: (r) => <span className="font-mono">{r.cod_barra}</span>,
-    hideable: false,
-  },
-  {
-    key: "descripcion_articulo",
-    header: "Artículo",
-    accessor: (r) => r.descripcion_articulo ?? "",
-    render: (r) =>
-      r.descripcion_articulo || <span className="text-muted-foreground">—</span>,
-    className: "font-medium",
-  },
-  {
-    key: "codigo_oem",
-    header: "Cód. OEM",
-    accessor: (r) => r.codigo_oem ?? "",
-    render: (r) => r.codigo_oem || <span className="text-muted-foreground">—</span>,
-  },
-  {
-    key: "id_articulo",
-    header: "ID artículo",
-    num: true,
-    accessor: (r) => r.id_articulo,
-  },
-];
+  | { mode: "edit"; item: CodigoBarra }
+  | { mode: "view"; item: CodigoBarra };
 
 export function CodigosBarrasView() {
   const qc = useQueryClient();
@@ -106,7 +63,41 @@ export function CodigosBarrasView() {
     },
   });
 
-  const codigos = data ?? [];
+  const filas = (data ?? []).slice().sort((a, b) => b.id_barra - a.id_barra);
+
+  const COLUMNAS: Column<CodigoBarra>[] = [
+    {
+      key: "id_barra",
+      header: "ID",
+      num: true,
+      accessor: (r) => r.id_barra,
+      render: (r) => (
+        <Badge variant="outline" className="font-mono">
+          {r.id_barra}
+        </Badge>
+      ),
+      className: "w-16",
+    },
+    {
+      key: "cod_barra",
+      header: "Código de barras",
+      accessor: (r) => r.cod_barra,
+      render: (r) => <span className="font-mono font-medium">{r.cod_barra}</span>,
+      hideable: false,
+    },
+    {
+      key: "descripcion_articulo",
+      header: "Artículo",
+      accessor: (r) => r.descripcion_articulo ?? "",
+    },
+    {
+      key: "codigo_oem",
+      header: "Código OEM",
+      accessor: (r) => r.codigo_oem ?? "",
+      render: (r) =>
+        r.codigo_oem ? <span className="font-mono">{r.codigo_oem}</span> : "—",
+    },
+  ];
 
   return (
     <div className="rounded-2xl border border-border bg-card shadow-elegant">
@@ -114,7 +105,7 @@ export function CodigosBarrasView() {
         <div>
           <h2 className="font-display text-xl font-bold">Códigos de barras</h2>
           <p className="text-sm text-muted-foreground">
-            Códigos de barras asociados a los artículos
+            {filas.length} {filas.length === 1 ? "código" : "códigos"} registrados
           </p>
         </div>
         <Button
@@ -127,42 +118,35 @@ export function CodigosBarrasView() {
         </Button>
       </div>
 
-      <div className="p-4 sm:p-5">
-        {isLoading ? (
-          <div className="space-y-3">
-            {Array.from({ length: 5 }).map((_, i) => (
-              <Skeleton key={i} className="h-12 w-full" />
-            ))}
+      {isError ? (
+        <p className="p-8 text-center text-sm text-destructive">
+          {error instanceof Error ? error.message : "No se pudieron cargar los códigos"}
+        </p>
+      ) : filas.length === 0 && !isLoading ? (
+        <div className="grid place-items-center py-16 text-center">
+          <div className="grid h-14 w-14 place-items-center rounded-2xl bg-primary/10 text-primary">
+            <Barcode className="h-6 w-6" />
           </div>
-        ) : isError ? (
-          <p className="p-8 text-center text-sm text-destructive">
-            {error instanceof Error ? error.message : "No se pudieron cargar los códigos"}
+          <p className="mt-4 font-medium">Aún no hay códigos de barras</p>
+          <p className="mt-1 max-w-xs text-sm text-muted-foreground">
+            Crea el primero con el botón “Nuevo código”.
           </p>
-        ) : codigos.length === 0 ? (
-          <div className="grid place-items-center py-16 text-center">
-            <div className="grid h-14 w-14 place-items-center rounded-2xl bg-primary/10 text-primary">
-              <Barcode className="h-6 w-6" />
-            </div>
-            <p className="mt-4 font-medium">Aún no hay códigos de barras</p>
-            <p className="mt-1 max-w-xs text-sm text-muted-foreground">
-              Crea el primero con el botón “Nuevo código”.
-            </p>
-          </div>
-        ) : (
+        </div>
+      ) : (
+        <div className="p-4 sm:p-5">
           <DataTable
             columns={COLUMNAS}
-            rows={codigos}
+            rows={filas}
             getRowId={(r) => r.id_barra}
-            searchPlaceholder="Buscar código o artículo..."
-            exportName="codigos-barras"
             initialSort={{ key: "id_barra", dir: "desc" }}
+            exportName="codigos-barras"
             actions={(r) => (
               <div className="flex items-center justify-end gap-1">
                 <Button
                   variant="ghost"
                   size="icon"
                   className="h-8 w-8 text-muted-foreground hover:text-primary"
-                  onClick={() => setModal({ mode: "view", codigo: r })}
+                  onClick={() => setModal({ mode: "view", item: r })}
                   aria-label="Ver"
                 >
                   <Eye className="h-4 w-4" />
@@ -171,7 +155,7 @@ export function CodigosBarrasView() {
                   variant="ghost"
                   size="icon"
                   className="h-8 w-8 text-muted-foreground hover:text-primary"
-                  onClick={() => setModal({ mode: "edit", codigo: r })}
+                  onClick={() => setModal({ mode: "edit", item: r })}
                   aria-label="Editar"
                 >
                   <Pencil className="h-4 w-4" />
@@ -188,8 +172,8 @@ export function CodigosBarrasView() {
               </div>
             )}
           />
-        )}
-      </div>
+        </div>
+      )}
 
       <CodigoBarraDialog
         state={modal}
@@ -205,9 +189,8 @@ export function CodigosBarrasView() {
           <AlertDialogHeader>
             <AlertDialogTitle>¿Eliminar código de barras?</AlertDialogTitle>
             <AlertDialogDescription>
-              Se eliminará el código{" "}
-              <span className="font-mono font-semibold">{aEliminar?.cod_barra}</span>. Esta acción
-              no se puede deshacer.
+              Se eliminará <span className="font-semibold">{aEliminar?.cod_barra}</span>.
+              Esta acción no se puede deshacer.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -230,7 +213,7 @@ export function CodigosBarrasView() {
   );
 }
 
-// ─── Dialog de formulario (con buscador de artículos) ────────────────────────
+// ─── Dialog de formulario ────────────────────────────────────────────────────
 
 function CodigoBarraDialog({
   state,
@@ -243,27 +226,23 @@ function CodigoBarraDialog({
 }) {
   const open = state.mode !== "closed";
   const isView = state.mode === "view";
-  const codigo = state.mode === "edit" || state.mode === "view" ? state.codigo : null;
+  const item = state.mode === "edit" || state.mode === "view" ? state.item : null;
 
   const [codBarra, setCodBarra] = useState("");
-  // Artículo seleccionado (id + descripción para mostrar sin re-consultar).
-  const [articulo, setArticulo] = useState<ArticuloBusqueda | null>(null);
+  const [idArticulo, setIdArticulo] = useState<number | null>(null);
+  const [articuloLabel, setArticuloLabel] = useState("");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
 
+  // Sincroniza el form al abrir según el ítem seleccionado.
   const [lastKey, setLastKey] = useState("");
-  const key = `${state.mode}:${codigo?.id_barra ?? "new"}`;
+  const key = `${state.mode}:${item?.id_barra ?? "new"}`;
   if (open && key !== lastKey) {
     setLastKey(key);
-    setCodBarra(codigo?.cod_barra ?? "");
-    setArticulo(
-      codigo
-        ? {
-            id_articulo: codigo.id_articulo,
-            descripcion: codigo.descripcion_articulo,
-            codigo_oem: codigo.codigo_oem,
-          }
-        : null,
+    setCodBarra(item?.cod_barra ?? "");
+    setIdArticulo(item?.id_articulo ?? null);
+    setArticuloLabel(
+      item ? `${item.descripcion_articulo ?? ""}${item.codigo_oem ? ` (${item.codigo_oem})` : ""}` : "",
     );
     setError("");
   }
@@ -271,23 +250,19 @@ function CodigoBarraDialog({
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setError("");
-    if (!articulo) {
-      setError("Seleccioná un artículo");
-      return;
-    }
-    if (!codBarra.trim()) {
-      setError("Ingresá el código de barras");
+    if (!idArticulo) {
+      setError("Selecciona un artículo");
       return;
     }
     setSaving(true);
     try {
       const input: CodigoBarraInput = {
-        id_articulo: articulo.id_articulo,
+        id_articulo: idArticulo,
         cod_barra: codBarra.trim(),
         cod_empresa: COD_EMPRESA,
       };
       if (state.mode === "edit") {
-        await actualizarCodigoBarra(state.codigo.id_barra, input);
+        await actualizarCodigoBarra(state.item.id_barra, input);
       } else {
         await crearCodigoBarra(input);
       }
@@ -305,7 +280,6 @@ function CodigoBarraDialog({
       : state.mode === "edit"
         ? "Editar código de barras"
         : "Detalle del código de barras";
-  const dis = isView || saving;
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
@@ -314,29 +288,33 @@ function CodigoBarraDialog({
           <DialogTitle>{titulo}</DialogTitle>
           {!isView && (
             <DialogDescription>
-              Elegí el artículo y cargá (o escaneá) su código de barras.
+              Selecciona el artículo y escribe su código de barras.
             </DialogDescription>
           )}
         </DialogHeader>
 
         <form onSubmit={onSubmit} className="space-y-4">
-          {isView && codigo && (
+          {isView && item && (
             <div className="text-sm text-muted-foreground">
-              ID: <span className="font-mono text-foreground">{codigo.id_barra}</span>
+              ID: <span className="font-mono text-foreground">{item.id_barra}</span>
             </div>
           )}
 
           <div className="space-y-2">
             <Label>Artículo</Label>
             {isView ? (
-              <div className="rounded-md border border-input bg-muted/40 px-3 py-2 text-sm">
-                {articulo?.descripcion || `Artículo ${articulo?.id_articulo ?? "—"}`}
-              </div>
+              <Input value={articuloLabel} disabled />
             ) : (
               <SelectorArticulo
-                seleccionado={articulo}
-                onSelect={setArticulo}
-                disabled={dis}
+                value={idArticulo}
+                label={articuloLabel}
+                onSelect={(a) => {
+                  setIdArticulo(a.id_articulo);
+                  setArticuloLabel(
+                    `${a.descripcion ?? ""}${a.codigo_oem ? ` (${a.codigo_oem})` : ""}`,
+                  );
+                }}
+                disabled={saving}
               />
             )}
           </div>
@@ -347,10 +325,9 @@ function CodigoBarraDialog({
               id="cod_barra"
               value={codBarra}
               onChange={(e) => setCodBarra(e.target.value)}
-              placeholder="Escaneá o escribí el código"
-              disabled={dis}
+              placeholder="Ej. 7791234567890"
+              disabled={isView || saving}
               required={!isView}
-              autoFocus={!isView}
               className="font-mono"
             />
           </div>
@@ -388,109 +365,84 @@ function CodigoBarraDialog({
   );
 }
 
-// ─── Selector de artículo con búsqueda ───────────────────────────────────────
+// ─── Selector de artículo (buscador con debounce) ────────────────────────────
 
-export function SelectorArticulo({
-  seleccionado,
+function SelectorArticulo({
+  value,
+  label,
   onSelect,
   disabled,
 }: {
-  seleccionado: ArticuloBusqueda | null;
+  value: number | null;
+  label: string;
   onSelect: (a: ArticuloBusqueda) => void;
   disabled?: boolean;
 }) {
-  const [texto, setTexto] = useState("");
-  const [debounced, setDebounced] = useState("");
+  const [q, setQ] = useState("");
+  const [qDebounced, setQDebounced] = useState("");
   const [abierto, setAbierto] = useState(false);
 
-  // Debounce de 300ms para no consultar en cada tecla.
   useEffect(() => {
-    const t = setTimeout(() => setDebounced(texto.trim()), 300);
+    const t = setTimeout(() => setQDebounced(q), 300);
     return () => clearTimeout(t);
-  }, [texto]);
+  }, [q]);
 
-  const resultadosQuery = useQuery({
-    queryKey: ["articulos-buscar", COD_EMPRESA, debounced],
-    queryFn: () => buscarArticulos(debounced, COD_EMPRESA),
-    enabled: abierto && debounced.length > 0,
+  const { data, isFetching } = useQuery({
+    queryKey: ["articulos-buscar", qDebounced],
+    queryFn: () => buscarArticulos(COD_EMPRESA, qDebounced),
+    enabled: abierto,
     retry: false,
   });
-  const resultados = resultadosQuery.data ?? [];
+
+  const articulos = data ?? [];
 
   return (
-    <div className="space-y-2">
-      {seleccionado && (
-        <div className="flex items-center justify-between gap-2 rounded-md border border-primary/40 bg-primary/5 px-3 py-2 text-sm">
-          <span className="min-w-0 truncate">
-            <span className="font-medium">
-              {seleccionado.descripcion || `Artículo ${seleccionado.id_articulo}`}
-            </span>
-            <span className="ml-2 font-mono text-xs text-muted-foreground">
-              #{seleccionado.id_articulo}
-              {seleccionado.codigo_oem ? ` · ${seleccionado.codigo_oem}` : ""}
-            </span>
-          </span>
-          <Check className="h-4 w-4 shrink-0 text-primary" />
-        </div>
-      )}
-
-      {!disabled && (
-        <>
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={texto}
-              onChange={(e) => {
-                setTexto(e.target.value);
-                setAbierto(true);
-              }}
-              onFocus={() => setAbierto(true)}
-              placeholder={seleccionado ? "Cambiar artículo..." : "Buscar artículo..."}
-              className="pl-10"
-            />
-          </div>
-
-          {abierto && debounced.length > 0 && (
-            <div className="max-h-56 overflow-y-auto rounded-md border border-border">
-              {resultadosQuery.isLoading ? (
-                <div className="grid place-items-center py-6 text-muted-foreground">
-                  <Loader2 className="h-5 w-5 animate-spin" />
-                </div>
-              ) : resultados.length === 0 ? (
-                <p className="px-3 py-4 text-center text-sm text-muted-foreground">
-                  Sin resultados.
-                </p>
-              ) : (
-                <ul className="divide-y divide-border">
-                  {resultados.map((a) => (
-                    <li key={a.id_articulo}>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          onSelect(a);
-                          setTexto("");
-                          setAbierto(false);
-                        }}
-                        className={cn(
-                          "flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left text-sm hover:bg-accent",
-                          seleccionado?.id_articulo === a.id_articulo && "bg-primary/5",
-                        )}
-                      >
-                        <span className="font-medium">
-                          {a.descripcion || `Artículo ${a.id_articulo}`}
-                        </span>
-                        <span className="font-mono text-xs text-muted-foreground">
-                          #{a.id_articulo}
-                          {a.codigo_oem ? ` · ${a.codigo_oem}` : ""}
-                        </span>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
+    <div className="relative">
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          value={abierto ? q : value ? label : q}
+          onChange={(e) => {
+            setQ(e.target.value);
+            setAbierto(true);
+          }}
+          onFocus={() => setAbierto(true)}
+          onBlur={() => setTimeout(() => setAbierto(false), 150)}
+          placeholder="Buscar artículo por descripción, OEM o ID..."
+          disabled={disabled}
+          className="pl-10"
+        />
+      </div>
+      {abierto && (
+        <div className="absolute z-50 mt-1 max-h-60 w-full overflow-auto rounded-md border border-border bg-popover shadow-lg">
+          {isFetching ? (
+            <div className="flex items-center justify-center gap-2 p-3 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" /> Buscando...
             </div>
+          ) : articulos.length === 0 ? (
+            <p className="p-3 text-sm text-muted-foreground">Sin resultados</p>
+          ) : (
+            articulos.map((a) => (
+              <button
+                key={a.id_articulo}
+                type="button"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  onSelect(a);
+                  setAbierto(false);
+                  setQ("");
+                }}
+                className="flex w-full flex-col items-start gap-0.5 border-b border-border/50 px-3 py-2 text-left last:border-0 hover:bg-accent"
+              >
+                <span className="text-sm font-medium">{a.descripcion ?? "—"}</span>
+                <span className="text-xs text-muted-foreground">
+                  ID {a.id_articulo}
+                  {a.codigo_oem ? ` · OEM ${a.codigo_oem}` : ""}
+                </span>
+              </button>
+            ))
           )}
-        </>
+        </div>
       )}
     </div>
   );
