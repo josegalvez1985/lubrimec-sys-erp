@@ -39,7 +39,10 @@ export default defineConfig(({ mode }) => {
         "react/jsx-dev-runtime",
       ],
     },
-    server: { host: "::", port: 5173 },
+    // strictPort: si 8080 está ocupado, falla en vez de saltar a otro puerto
+    // (evita la confusión de "el navegador va a 5173 pero el server quedó en 5174").
+    // open: abre solo el navegador por defecto al arrancar `npm run dev`.
+    server: { host: "::", port: 8080, strictPort: true, open: true },
     plugins: [
       tailwindcss(),
       tsConfigPaths({ projects: ["./tsconfig.json"] }),
