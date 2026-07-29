@@ -51,7 +51,9 @@ npm run dev        # http://localhost:5173
 ## Estructura
 
 - `src/routes/` — rutas (login `index.tsx`, `home.tsx`) y proxy ORDS (`api/ords.$.ts`).
-- `src/components/` — vistas de páginas (`marcas-view.tsx`, `whatsapp-view.tsx`) y UI (`ui/`).
+- `src/components/` — vistas de páginas (`marcas-view.tsx`, `whatsapp-view.tsx`) y UI (`ui/`:
+  `data-table`, `faceta`, `input-monto`, `buscador-select` para catálogos grandes y
+  `selector-modal` para LOVs cortas en modal de botones).
 - `src/lib/api.ts` — cliente HTTP: sesión, `authFetch`, funciones por tabla.
 - `src/hooks/` — hooks (aviso de actualización del APK).
 - `db/` — paquetes PL/SQL y scripts ORDS de cada tabla.
@@ -70,12 +72,17 @@ Detalles del consumo desde el front y gotchas del proxy: **[src/GUIA_FRONT.md](s
 Las páginas se mapean por `page_id` de APEX en `src/routes/home.tsx` (mapa `VISTAS`). El menú y los
 accesos rápidos se arman dinámicamente desde el endpoint `menu/paginas`.
 
-- **Dashboard** (vista fija) — de arriba a abajo:
+- **Shell (menú y topbar)** — el **sidebar arranca siempre oculto** (la preferencia no se recuerda);
+  se muestra con el botón de la topbar. Junto al usuario hay un **botón Home** que vuelve al
+  dashboard, visible solo cuando se está en otra página.
+- **Dashboard** (vista fija) — de arriba a abajo. Todos los paneles de cobros **se ocultan si no
+  tienen registros** (si el endpoint falla, en cambio, muestran el error):
   - **Cobros por acreditar** (tarjeta): cheques/tarjetas/transferencias pendientes; cada fila abre
-    el modal de acreditación de la página 111. Se oculta si no hay pendientes.
-  - **Cobranza de hoy:** KPI del total cobrado hoy (tarjeta) + dona por forma de cobro. Reusa el
-    endpoint `cierre-dia` (trae todo sin filtrar fecha en SQL) y filtra "hoy" + agrupa por forma en
-    el front (mismo patrón que la página Cierre del Día).
+    el modal de acreditación de la página 111.
+  - **Cobranza de hoy + Cobros con tarjeta** (misma fila desde `xl`): a la izquierda el KPI del
+    total cobrado hoy y la dona por forma de cobro; a la derecha los cobros con tarjeta por
+    acreditar. La cobranza reusa el endpoint `cierre-dia` (trae todo sin filtrar fecha en SQL) y
+    filtra "hoy" + agrupa por forma en el front (mismo patrón que la página Cierre del Día).
   - **Ventas por día:** gráfico (barras/línea/área, recharts) con filtros año/mes. Endpoints:
     `db/ORDS_VENTAS_DASHBOARD.sql` (`ventas/anios`, `ventas/meses`, `ventas/por-dia`).
 - **Marcas** (page_id 6) — CRUD, referencia del patrón.
@@ -118,8 +125,8 @@ accesos rápidos se arman dinámicamente desde el endpoint `menu/paginas`.
   viscosidad) por `<select>` de catálogos; imagen en BLOB. `precio_venta`, `existencia`,
   `cantidad_vendida`, `costo_ultima_compra`, `fecha_ultimo_inventario` son **solo lectura** (los
   mantienen otros procesos). La grilla muestra un **thumbnail** por el endpoint público
-  `articulos/:id/imagen`; el modal de detalle trae la imagen grande vía `articulos/:id` (base64).
-  Backend: `db/articulos_sql.sql`.
+  `articulos/:id/imagen` (al tocarlo se **amplía en un modal**); el modal de detalle trae la imagen
+  grande vía `articulos/:id` (base64). Backend: `db/articulos_sql.sql`.
 - **Detalle de Monedas** (page_id 83) — vista propia del detalle de `monedas_detalle`: selector de
   moneda + denominaciones con imagen. Reutiliza `DetalleMoneda` de la página 18. Sin backend nuevo.
 - **Vehículos-Repuestos** (page_id 94) — CRUD de `vehiculos_repuestos` (modelo ↔ código OEM). El
@@ -130,9 +137,12 @@ accesos rápidos se arman dinámicamente desde el endpoint `menu/paginas`.
   y pago replicando los auto-cálculos del modal APEX; `Total Caja = caja_anterior + venta − retiro
   − pago` se calcula en vivo. Backend: `db/rendiciones_cajas_sql.sql`.
 - **Ventas** (page_id 60) — grilla de `ventas_cabecera` (solo update/delete: las ventas se crean en
-  otro sistema) con filtros de fecha (por defecto el último día con ventas). Por fila: **Artículos**
+  otro sistema) con filtros de fecha (por defecto el último día con ventas) y **columna Total con
+  fila de totales al pie** (el backend la calcula sumando el detalle). Por fila: **Artículos**
   (detalle `ventas_detalle` editable, pág 109), **Cobros** (cobros de la factura editables, pág 110,
-  reusa el modal de la pág 65) y editar/eliminar la cabecera. Backend: `db/ventas_sql.sql`.
+  reusa el modal de la pág 65) y editar/eliminar la cabecera. **Eliminar una venta borra en cascada**
+  sus cobros y su detalle en una sola transacción (antes fallaba con ORA-02292 y el error quedaba
+  mudo). Backend: `db/ventas_sql.sql`.
 - **Cobros de Ventas** (page_id 65) — CRUD de `ventas_cobros`. La factura se elige con buscador
   (`ventas/buscar`); selects de forma/banco/moneda; vuelto auto-calculado (`recibido − total`).
   Filtra por `cod_empresa` vía JOIN a `ventas_cabecera`. Backend: `db/ventas_cobros_sql.sql`.
@@ -178,10 +188,13 @@ accesos rápidos se arman dinámicamente desde el endpoint `menu/paginas`.
   ¿Con diferencia?/¿Cerrado?/¿Es activo?. **Vista en tarjetas** con imagen embebida (como el APEX
   NATIVE_CARDS). Backend: `db/consulta_inventarios_sql.sql`.
 - **Punto de Venta** (page_id 39) — POS completo (reemplaza las páginas APEX 39/40/45/47 y sus
-  `apex_collections`): panel de artículos con stock (facetas Marca/Rubro, búsqueda, lector de código
-  de barra, % descuento, imagen) + carrito en estado React (cantidad ±, total) + modal de
-  facturación con datos de la factura (cliente con buscador, vendedor, serie/talonario) y **formas de
-  cobro múltiples**. **Efectivo con vuelto:** el cajero ingresa lo recibido; se imputa `min(recibido,
+  `apex_collections`): panel de artículos con stock (facetas Marca/Rubro con botón **Limpiar**,
+  búsqueda, lector de código de barra, % descuento, imagen que se **amplía en un modal** al tocarla)
+  + carrito en estado React (cantidad ±, total) + modal de facturación con datos de la factura
+  (cliente con buscador, vendedor, serie/talonario) y **formas de cobro múltiples**. El modal abre
+  **precargado**: cliente `cod_persona` 1 ("sin cliente"), vendedor por `app_user`, serie **A**, y el
+  foco va directo a la forma de cobro; vendedor, talonario, forma de cobro y banco se eligen con
+  `SelectorModal` (modal de botones, ver `src/GUIA_FRONT.md`) y solo se listan **vendedores activos**. **Efectivo con vuelto:** el cajero ingresa lo recibido; se imputa `min(recibido,
   restante)` y el excedente es el vuelto (se guardan `total`/`efectivo_recibido`/`efectivo_vuelto`).
   Con una sola forma de cobro no se controla el total (permite vuelto); con varias, la suma debe
   igualarlo, y nunca superarlo. **Validaciones todas en el front** (cabecera, detalle, cobros). En
@@ -212,6 +225,11 @@ accesos rápidos se arman dinámicamente desde el endpoint `menu/paginas`.
   `inventario/:id/foto`). Backend: `db/ajustar_inventarios_sql.sql`.
 - **Parámetros** (page_id 89/90) — CRUD de `PARAMETROS` (parámetro/valor/observación);
   parámetro y valor se guardan en MAYÚSCULAS. Backend: `db/parametros_sql.sql`.
+- **Conteo de Efectivo** (page_id 85/86) — CRUD de `CONTEO_EFECTIVO` (`total = valor × cantidad`).
+  Permisos por usuario: JOSEG filtra por fecha y ve el panel de totales; el resto solo el día de hoy.
+  En el modal, moneda y **valor del billete** se eligen con `SelectorModal`: una grilla de tarjetas
+  donde cada denominación muestra **la imagen del billete** guardada en `MONEDAS_DETALLE`. Backend:
+  `db/conteo_efectivo_sql.sql`.
 - **Planilla para inventarios** (page_id 112/113/115) — conteos **abiertos** de `INVENTARIO`.
   "Crear Planilla" (pág 113) genera conteos masivos por Rubro/Marca/Viscosidad (LOVs en cascada
   derivadas de los artículos pendientes según la fecha del parámetro `FECHA_INVENTARIO`). El modal

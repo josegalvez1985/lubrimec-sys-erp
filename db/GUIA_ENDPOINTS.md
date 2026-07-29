@@ -109,6 +109,20 @@ endpoints de solo lectura sin paquete (`ORDS_MENU_PAGINAS.sql`, `ORDS_VENTAS_*.s
     `OWA_UTIL.MIME_HEADER(mime)` + `WPG_DOCLOAD.DOWNLOAD_FILE(blob)`. Su endpoint `tabla/:id/imagen`
     es **público** (sin `DEFINE_PARAMETER` de Authorization): el `<img>` del navegador no manda el
     header. El proxy (`ords.$.ts`) reenvía binarios como `arrayBuffer`, no como texto.
+- **ELIMINAR de una cabecera con hijos → borrado en cascada manual.** Si la tabla tiene hijos con FK
+  (`VENTAS_CABECERA` ← `VENTAS_DETALLE`/`VENTAS_COBROS`), un `DELETE` solo de la cabecera falla
+  **siempre** con `ORA-02292` en cuanto la fila tiene detalle: el usuario ve "no se puede eliminar"
+  para toda venta real. El procedimiento debe: 1) validar que exista (con un `SELECT COUNT(*)`, ya
+  que el `SQL%ROWCOUNT` del DELETE deja de servir), 2) borrar los hijos, 3) borrar la cabecera,
+  4) **un solo `COMMIT`** al final (atómico, `ROLLBACK` en el `EXCEPTION`). Dejar el `-2292` mapeado
+  a 409 para hijos de **otras** tablas no contempladas. Modelo: `PKG_VENTAS_LUBRIMEC.ELIMINAR`
+  (`ventas_sql.sql`).
+- **Total del maestro calculado desde el detalle:** cuando la grilla necesita el total por fila
+  (ej. el importe de cada factura), calcularlo en el `LISTAR` con una **subconsulta escalar** sobre
+  el detalle, con la **misma fórmula** que usa el procedimiento de detalle para que los números
+  coincidan entre pantallas:
+  `(SELECT NVL(SUM(NVL(d.cantidad,0)*NVL(d.precio,0)),0) FROM ventas_detalle d WHERE d.id_factura = b.id_factura) AS total`.
+  Modelo: `PKG_VENTAS_LUBRIMEC.LISTAR`.
 - Estados: 201 Created, 400 Bad Request, 404 Not Found, 401 Unauthorized,
   500 Internal Server Error.
 
@@ -356,6 +370,13 @@ de la UI que describen el ritmo.
 
 ## Notas / gotchas
 
+- **Síntoma "el código está bien pero la app se comporta viejo":** los `.sql` de este repo **no** se
+  aplican solos, hay que ejecutarlos a mano en la BD. Si el front manda un parámetro que el handler
+  ya lee y aun así se ignora (ej. `ventas-cobros?id_factura=` devolviendo todos los cobros), o si un
+  endpoint responde 404, lo primero a descartar es que la BD tenga una versión anterior del paquete
+  o del handler: re-ejecutar el `<tabla>_sql.sql` completo como JOSEGALVEZ. Cuando el dato es crítico
+  para la UI conviene además **filtrar defensivamente en el front** (modelo: el modal de cobros de
+  `ventas-view.tsx` descarta lo que no sea de esa factura).
 - `cod_empresa` **no** viene en la sesión (`Sesion` solo trae token/usuario/app_user/app_id).
   Pasarlo explícito a `listar*`. Si se necesita global, agregarlo a `Sesion` en el login.
 - Los binds de body en POST/PUT (`:descripcion`, etc.) ORDS los mapea automático
