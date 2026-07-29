@@ -1,4 +1,4 @@
-import { useMemo, useState, type FormEvent } from "react";
+import { useMemo, useRef, useState, type FormEvent, type Ref } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   ScanBarcode,
@@ -10,6 +10,10 @@ import {
   Loader2,
   X,
   CheckCircle2,
+  UserRound,
+  FileText,
+  Wallet,
+  Landmark,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
@@ -25,9 +29,10 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { BuscadorSelect } from "@/components/ui/buscador-select";
+import { SelectorModal } from "@/components/ui/selector-modal";
 import { InputMonto } from "@/components/ui/input-monto";
 import { Faceta } from "@/components/ui/faceta";
-import { imgArticuloUrl } from "@/components/articulo-img-modal";
+import { ArticuloImgModal, imgArticuloUrl } from "@/components/articulo-img-modal";
 import {
   getSesion,
   listarArticulosPOS,
@@ -45,6 +50,7 @@ import {
 
 const COD_EMPRESA = 24;
 const FORMA_EFECTIVO = 1; // id_forma efectivo (muestra moneda/vuelto en el APEX)
+const COD_PERSONA_SIN_CLIENTE = 1; // cliente por defecto: venta sin identificar
 
 const fmtGs = (n: number | null) =>
   n == null ? "0" : new Intl.NumberFormat("es-PY", { maximumFractionDigits: 0 }).format(n);
@@ -82,6 +88,8 @@ export function PuntoVentaView() {
   const [modal, setModal] = useState<"cerrado" | "cobro">("cerrado");
   // En móvil el carrito se abre en un modal desde un botón flotante (FAB).
   const [verCarrito, setVerCarrito] = useState(false);
+  // Artículo cuya imagen se está viendo ampliada (click en la miniatura).
+  const [imgArticulo, setImgArticulo] = useState<ArticuloPOS | null>(null);
 
   // Se trae todo el dataset (con el descuento aplicado en el precio); rubro,
   // marca y búsqueda se filtran en el front (facetas dependientes).
@@ -125,6 +133,13 @@ export function PuntoVentaView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [filas, busqueda, rubroSel, marcaSel],
   );
+
+  const hayFiltros = busqueda.trim() !== "" || marcaSel.size > 0 || rubroSel.size > 0;
+  function limpiarFiltros() {
+    setBusqueda("");
+    setMarcaSel(new Set());
+    setRubroSel(new Set());
+  }
 
   const toggle = (set: Set<string>, setter: (s: Set<string>) => void, v: string) => {
     const next = new Set(set);
@@ -332,6 +347,13 @@ export function PuntoVentaView() {
                 className="pl-10"
               />
             </div>
+            {/* Limpia búsqueda + facetas; solo aparece si hay algo activo. */}
+            {hayFiltros && (
+              <Button variant="outline" size="sm" className="w-full" onClick={limpiarFiltros}>
+                <X className="mr-2 h-4 w-4" />
+                Limpiar
+              </Button>
+            )}
             <Faceta
               titulo="Marca"
               valores={facetMarca.map((f) => ({ valor: f.valor, n: 0 }))}
@@ -357,15 +379,22 @@ export function PuntoVentaView() {
                 Sin artículos con stock
               </p>
             ) : (
-              <ul className="max-h-[60vh] divide-y divide-border overflow-auto rounded-xl border border-border">
+              // Alto del listado: el doble del original (60vh) para ver más artículos
+              // de una. Al pasar de la pantalla, la página scrollea (el carrito es sticky).
+              <ul className="max-h-[120vh] divide-y divide-border overflow-auto rounded-xl border border-border">
                 {articulos.map((a) => (
-                  <li key={a.id_articulo}>
+                  // La miniatura es su propio botón (abre la imagen ampliada), por eso la
+                  // fila no puede ser un único <button>: el resto es el botón "agregar".
+                  <li
+                    key={a.id_articulo}
+                    className="flex items-center gap-3 p-2.5 transition-colors hover:bg-accent"
+                  >
+                    <ThumbArticulo id={a.id_articulo} onClick={() => setImgArticulo(a)} />
                     <button
                       type="button"
                       onClick={() => agregar(a)}
-                      className="flex w-full items-center gap-3 p-2.5 text-left transition-colors hover:bg-accent"
+                      className="flex min-w-0 flex-1 items-center gap-3 text-left"
                     >
-                      <ThumbArticulo id={a.id_articulo} />
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm font-medium">{a.descripcion}</p>
                         <p className="truncate text-xs text-muted-foreground">
@@ -428,6 +457,14 @@ export function PuntoVentaView() {
         </Dialog>
       )}
 
+      {/* Imagen ampliada del artículo (click en la miniatura). */}
+      <ArticuloImgModal
+        open={imgArticulo != null}
+        id={imgArticulo ? String(imgArticulo.id_articulo) : null}
+        titulo={imgArticulo?.descripcion}
+        onClose={() => setImgArticulo(null)}
+      />
+
       {modal === "cobro" && (
         <FacturarDialog
           total={total}
@@ -446,8 +483,9 @@ export function PuntoVentaView() {
   );
 }
 
-// Miniatura del artículo con fallback a un ícono si no hay imagen.
-function ThumbArticulo({ id }: { id: number }) {
+// Miniatura del artículo con fallback a un ícono si no hay imagen. Con imagen es
+// un botón que abre el modal con la imagen ampliada (sin agregar al carrito).
+function ThumbArticulo({ id, onClick }: { id: number; onClick: () => void }) {
   const [ok, setOk] = useState(true);
   if (!ok) {
     return (
@@ -457,13 +495,21 @@ function ThumbArticulo({ id }: { id: number }) {
     );
   }
   return (
-    <img
-      src={imgArticuloUrl(String(id))}
-      alt=""
-      loading="lazy"
-      onError={() => setOk(false)}
-      className="h-10 w-10 shrink-0 rounded-lg border border-border object-contain"
-    />
+    <button
+      type="button"
+      onClick={onClick}
+      title="Ver imagen"
+      aria-label="Ver imagen del artículo"
+      className="shrink-0 rounded-lg"
+    >
+      <img
+        src={imgArticuloUrl(String(id))}
+        alt=""
+        loading="lazy"
+        onError={() => setOk(false)}
+        className="h-10 w-10 rounded-lg border border-border object-contain"
+      />
+    </button>
   );
 }
 
@@ -482,9 +528,10 @@ function FacturarDialog({
   onClose: () => void;
   onDone: (idFactura: number) => void;
 }) {
-  // Datos de factura (pág 45)
-  const [codPersona, setCodPersona] = useState<number | null>(null);
-  const [clienteLabel, setClienteLabel] = useState("");
+  // Datos de factura (pág 45). El cliente arranca fijo en "sin cliente" (cod 1):
+  // no hace falta consultar la LOV para eso, solo si el cajero lo cambia.
+  const [codPersona, setCodPersona] = useState<number | null>(COD_PERSONA_SIN_CLIENTE);
+  const [clienteLabel, setClienteLabel] = useState("Sin cliente");
   const [codVendedor, setCodVendedor] = useState<number | null>(null);
   const [idTalonario, setIdTalonario] = useState<number | null>(null);
   const [nroTelefono, setNroTelefono] = useState("");
@@ -493,6 +540,9 @@ function FacturarDialog({
   const [cobros, setCobros] = useState<Cobro[]>([]);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  // Cliente, vendedor y talonario ya vienen cargados: al abrir se va directo a la
+  // forma de cobro (se enfoca y se desplaza hasta ahí).
+  const formaCobroRef = useRef<HTMLButtonElement>(null);
 
   const { data: vendedores } = useQuery({
     queryKey: ["vendedores", COD_EMPRESA],
@@ -500,12 +550,18 @@ function FacturarDialog({
     retry: false,
   });
 
+  // Solo los vendedores activos (estado 'S') se ofrecen en la lista.
+  const vendedoresActivos = useMemo(
+    () => (vendedores ?? []).filter((v) => (v.estado ?? "").toUpperCase() === "S"),
+    [vendedores],
+  );
+
   // Autocarga del vendedor por usuario (pág 45, DA "Vendedor": cod_usuario =
   // app_user). Solo una vez, al llegar los vendedores, si aún no se eligió uno.
   const [vendedorAuto, setVendedorAuto] = useState(false);
   if (!vendedorAuto && vendedores && codVendedor == null) {
     setVendedorAuto(true);
-    const propio = vendedores.find(
+    const propio = vendedoresActivos.find(
       (v) => (v.cod_usuario ?? "").toUpperCase() === vendedorDefault.toUpperCase(),
     );
     if (propio) setCodVendedor(propio.cod_vendedor);
@@ -515,6 +571,20 @@ function FacturarDialog({
     queryFn: () => listarTalonarios(COD_EMPRESA),
     retry: false,
   });
+
+  // Serie/talonario por defecto: la serie "A" (prefiere la activa). Igual que el
+  // vendedor, se aplica una sola vez y se puede cambiar.
+  const [talonarioAuto, setTalonarioAuto] = useState(false);
+  if (!talonarioAuto && talonarios && idTalonario == null) {
+    setTalonarioAuto(true);
+    const esSerieA = (t: { ser_timbrado: string | null }) =>
+      (t.ser_timbrado ?? "").trim().toUpperCase() === "A";
+    const serieA =
+      talonarios.find((t) => esSerieA(t) && (t.activo ?? "").toUpperCase() === "S") ??
+      talonarios.find(esSerieA);
+    if (serieA) setIdTalonario(serieA.id_talonario);
+  }
+
   const { data: formas } = useQuery({
     queryKey: ["formas-cobro-pago"],
     queryFn: listarFormasCobroPago,
@@ -599,7 +669,15 @@ function FacturarDialog({
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-h-[90vh] overflow-auto sm:max-w-lg">
+      <DialogContent
+        className="max-h-[90vh] overflow-auto sm:max-w-lg"
+        onOpenAutoFocus={(e) => {
+          // En vez del primer campo (cliente), el foco arranca en la forma de cobro.
+          e.preventDefault();
+          formaCobroRef.current?.focus();
+          formaCobroRef.current?.scrollIntoView({ block: "center" });
+        }}
+      >
         <DialogHeader>
           <DialogTitle>Facturar · Total ₲ {fmtGs(total)}</DialogTitle>
           <DialogDescription>Datos de la factura y formas de cobro.</DialogDescription>
@@ -627,35 +705,37 @@ function FacturarDialog({
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-2">
               <Label htmlFor="vendedor">Vendedor</Label>
-              <select
+              <SelectorModal
                 id="vendedor"
-                value={codVendedor ?? ""}
-                onChange={(e) => setCodVendedor(e.target.value ? Number(e.target.value) : null)}
-                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-              >
-                <option value="">Seleccionar...</option>
-                {(vendedores ?? []).map((v) => (
-                  <option key={v.cod_vendedor} value={v.cod_vendedor}>
-                    {v.nombre}
-                  </option>
-                ))}
-              </select>
+                titulo="Vendedor"
+                descripcion="Elegí el vendedor de la factura."
+                icono={UserRound}
+                opciones={vendedoresActivos.map((v) => ({
+                  valor: v.cod_vendedor,
+                  titulo: v.nombre ?? `Vendedor ${v.cod_vendedor}`,
+                  sub: v.cod_usuario,
+                }))}
+                value={codVendedor}
+                onSelect={setCodVendedor}
+                vacioLabel="No hay vendedores activos."
+              />
             </div>
             <div className="space-y-2">
               <Label htmlFor="talonario">Serie / Talonario</Label>
-              <select
+              <SelectorModal
                 id="talonario"
-                value={idTalonario ?? ""}
-                onChange={(e) => setIdTalonario(e.target.value ? Number(e.target.value) : null)}
-                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-              >
-                <option value="">Seleccionar...</option>
-                {(talonarios ?? []).map((t) => (
-                  <option key={t.id_talonario} value={t.id_talonario}>
-                    {t.ser_timbrado}
-                  </option>
-                ))}
-              </select>
+                titulo="Serie / Talonario"
+                descripcion="Elegí el talonario con el que se emite."
+                icono={FileText}
+                opciones={(talonarios ?? []).map((t) => ({
+                  valor: t.id_talonario,
+                  titulo: t.ser_timbrado,
+                  sub: t.nro_timbrado ? `Timbrado ${t.nro_timbrado}` : null,
+                }))}
+                value={idTalonario}
+                onSelect={setIdTalonario}
+                vacioLabel="No hay talonarios cargados."
+              />
             </div>
           </div>
 
@@ -717,6 +797,7 @@ function FacturarDialog({
               restante={Math.max(restante, 0)}
               yaHayCobros={cobros.length > 0}
               onAdd={(c) => setCobros((prev) => [...prev, c])}
+              selectRef={formaCobroRef}
             />
           </div>
 
@@ -750,11 +831,14 @@ function AgregarCobro({
   restante,
   yaHayCobros,
   onAdd,
+  selectRef,
 }: {
   formas: { id_forma: number; descripcion: string | null }[];
   restante: number;
   yaHayCobros: boolean;
   onAdd: (c: Cobro) => void;
+  // Ref al selector de forma de cobro: el modal lo enfoca al abrirse.
+  selectRef?: Ref<HTMLButtonElement>;
 }) {
   const [idForma, setIdForma] = useState<number | null>(null);
   const [monto, setMonto] = useState<number | null>(null);
@@ -806,24 +890,23 @@ function AgregarCobro({
     setEfectivoRecibido(null);
   }
 
-  const selectCls =
-    "flex h-9 w-full rounded-md border border-input bg-background px-2 text-sm";
-
   return (
     <div className="space-y-2 rounded-lg border border-dashed border-border p-2.5">
       <div className="grid grid-cols-2 gap-2">
-        <select
-          value={idForma ?? ""}
-          onChange={(e) => setIdForma(e.target.value ? Number(e.target.value) : null)}
-          className={selectCls}
-        >
-          <option value="">Forma de cobro...</option>
-          {formas.map((f) => (
-            <option key={f.id_forma} value={f.id_forma}>
-              {f.descripcion}
-            </option>
-          ))}
-        </select>
+        <SelectorModal
+          triggerRef={selectRef}
+          titulo="Forma de cobro"
+          descripcion="Elegí cómo paga el cliente."
+          icono={Wallet}
+          placeholder="Forma de cobro..."
+          opciones={formas.map((f) => ({
+            valor: f.id_forma,
+            titulo: f.descripcion ?? `Forma ${f.id_forma}`,
+          }))}
+          value={idForma}
+          onSelect={setIdForma}
+          vacioLabel="No hay formas de cobro cargadas."
+        />
         <InputMonto
           value={esEfectivo ? imputadoEfectivo : monto}
           onValueChange={setMonto}
@@ -850,18 +933,19 @@ function AgregarCobro({
           </div>
         ) : (
           <div className="grid grid-cols-2 gap-2">
-            <select
-              value={idBanco ?? ""}
-              onChange={(e) => setIdBanco(e.target.value ? Number(e.target.value) : null)}
-              className={selectCls}
-            >
-              <option value="">Banco...</option>
-              {(bancos ?? []).map((b) => (
-                <option key={b.id_banco} value={b.id_banco}>
-                  {b.nombre}
-                </option>
-              ))}
-            </select>
+            <SelectorModal
+              titulo="Banco"
+              descripcion="Banco de la transacción."
+              icono={Landmark}
+              placeholder="Banco..."
+              opciones={(bancos ?? []).map((b) => ({
+                valor: b.id_banco,
+                titulo: b.nombre ?? `Banco ${b.id_banco}`,
+              }))}
+              value={idBanco}
+              onSelect={setIdBanco}
+              vacioLabel="No hay bancos cargados."
+            />
             <Input
               value={nroTransaccion}
               onChange={(e) => setNroTransaccion(e.target.value)}

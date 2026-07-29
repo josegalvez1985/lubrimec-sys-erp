@@ -1969,6 +1969,7 @@ export type VentaCabecera = {
   cod_vendedor: number;
   nombre_vendedor: string | null;
   nro_telefono: string | null;
+  total: number | null; // suma del detalle (la calcula el backend)
 };
 
 export type VentaCabeceraInput = {

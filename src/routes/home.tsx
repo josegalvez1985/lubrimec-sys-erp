@@ -5,6 +5,7 @@ import { App } from "@capacitor/app";
 import { Capacitor } from "@capacitor/core";
 import {
   LayoutDashboard,
+  Home,
   Package,
   ShoppingCart,
   Users,
@@ -351,15 +352,11 @@ function HomePage() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [perfilOpen, setPerfilOpen] = useState(false);
   const [cotizadorOpen, setCotizadorOpen] = useState(false);
-  // Sidebar colapsable en escritorio; la preferencia se recuerda.
-  const [menuColapsado, setMenuColapsado] = useState(
-    () => typeof window !== "undefined" && localStorage.getItem("menu_colapsado") === "1",
-  );
+  // Sidebar colapsable en escritorio: SIEMPRE arranca oculto (no se recuerda la
+  // preferencia). El botón de la topbar lo muestra mientras dure la sesión de pantalla.
+  const [menuColapsado, setMenuColapsado] = useState(true);
   function toggleMenu() {
-    setMenuColapsado((c) => {
-      localStorage.setItem("menu_colapsado", c ? "0" : "1");
-      return !c;
-    });
+    setMenuColapsado((c) => !c);
   }
   const navigate = useNavigate();
 
@@ -526,6 +523,18 @@ function HomePage() {
               <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-primary" />
             </Button>
             <ThemeToggle />
+            {/* Volver al inicio: solo cuando se está en otra página. */}
+            {active !== "dashboard" && (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => handleNav("dashboard")}
+                aria-label="Ir al inicio"
+                title="Ir al inicio"
+              >
+                <Home className="h-5 w-5" />
+              </Button>
+            )}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button
@@ -765,14 +774,14 @@ function DashboardView({
       {/* Cobros pendientes de acreditar (link al modal de la página 111) */}
       <CobrosAcreditarCard />
 
-      {/* Cobranza de hoy por forma de cobro */}
-      <CobrosHoyChart />
+      {/* Cobranza de hoy por forma de cobro, con los cobros con tarjeta al lado */}
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] xl:items-start">
+        <CobrosHoyChart />
+        <CobrosTarjetaView />
+      </div>
 
       {/* Gráfico de ventas por día */}
       <VentasDashboardChart />
-
-      {/* Cobros con tarjeta pendientes de acreditar */}
-      <CobrosTarjetaView />
 
       {/* Quick actions */}
       <div className="rounded-2xl border border-border bg-card p-5 shadow-elegant">

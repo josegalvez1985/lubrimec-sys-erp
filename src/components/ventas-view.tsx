@@ -10,6 +10,7 @@ import {
   HandCoins,
   Plus,
 } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -86,6 +87,8 @@ const COLUMNAS: Column<VentaCabecera>[] = [
     ),
     className: "w-20",
     hideable: false,
+    // Etiqueta del pie: sin al menos un footer el DataTable no dibuja la fila.
+    footer: () => "Total",
   },
   {
     key: "tip_comprobante",
@@ -126,6 +129,15 @@ const COLUMNAS: Column<VentaCabecera>[] = [
     accessor: (r) => r.nro_telefono ?? "",
     render: (r) => r.nro_telefono || "—",
   },
+  {
+    key: "total",
+    header: "Total",
+    num: true,
+    accessor: (r) => r.total ?? 0,
+    render: (r) => <span className="font-semibold">{fmtNum(r.total)}</span>,
+    // Totaliza las filas visibles (ya filtradas por la grilla).
+    footer: (rows) => fmtNum(rows.reduce((a, r) => a + (r.total ?? 0), 0)),
+  },
 ];
 
 export function VentasView() {
@@ -147,6 +159,9 @@ export function VentasView() {
       qc.invalidateQueries({ queryKey: ["ventas"] });
       setAEliminar(null);
     },
+    // Sin esto un fallo del backend (409/500) quedaba mudo: el diálogo seguía
+    // abierto y parecía que el botón no hacía nada.
+    onError: (e) => toast.error(e instanceof Error ? e.message : "No se pudo eliminar la venta"),
   });
 
   const filas = data?.data ?? [];
@@ -548,8 +563,12 @@ function DetalleDialog({ state, onClose }: { state: ModalState; onClose: () => v
     mutationFn: (nroLinea: number) => eliminarVentaDetalle(item!.id_factura, nroLinea),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["venta-detalle"] });
+      qc.invalidateQueries({ queryKey: ["ventas"] }); // el total de la factura cambió
       setAEliminarLinea(null);
     },
+    // Sin onError el fallo era mudo: el diálogo quedaba abierto y parecía que el
+    // botón no hacía nada.
+    onError: (e) => toast.error(e instanceof Error ? e.message : "No se pudo eliminar la línea"),
   });
 
   const lineas = data ?? [];
@@ -884,9 +903,13 @@ function CobrosDialog({ state, onClose }: { state: ModalState; onClose: () => vo
       qc.invalidateQueries({ queryKey: ["ventas-cobros"] });
       setAEliminarCobro(null);
     },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "No se pudo eliminar el cobro"),
   });
 
-  const cobros = data ?? [];
+  // El endpoint ya filtra por id_factura, pero se vuelve a filtrar acá: si la BD
+  // tiene una versión vieja del handler/paquete (sin el param), el modal mostraba
+  // los cobros de TODAS las facturas.
+  const cobros = (data ?? []).filter((c) => c.id_factura === item?.id_factura);
   const total = cobros.reduce((a, c) => a + (c.total ?? 0), 0);
 
   const facturaLabel = item

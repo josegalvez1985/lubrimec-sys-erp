@@ -111,7 +111,11 @@ CREATE OR REPLACE PACKAGE BODY PKG_VENTAS_LUBRIMEC AS
                b.cod_persona,
                NVL(pe.nombre_fantasia, pe.nombre) AS nombre_cliente,
                b.cod_moneda, b.tip_cambio, b.estado, b.id_talonario,
-               b.cod_vendedor, ve.nombre AS nombre_vendedor, b.nro_telefono
+               b.cod_vendedor, ve.nombre AS nombre_vendedor, b.nro_telefono,
+               -- Total facturado = suma del detalle (misma formula que DETALLE)
+               (SELECT NVL(SUM(NVL(d.cantidad, 0) * NVL(d.precio, 0)), 0)
+                  FROM ventas_detalle d
+                 WHERE d.id_factura = b.id_factura) AS total
           FROM ventas_cabecera b
           LEFT JOIN personas pe ON pe.cod_persona = b.cod_persona
                                 AND pe.cod_empresa = b.cod_empresa
@@ -137,6 +141,7 @@ CREATE OR REPLACE PACKAGE BODY PKG_VENTAS_LUBRIMEC AS
       APEX_JSON.WRITE('cod_vendedor', r.cod_vendedor);
       APEX_JSON.WRITE('nombre_vendedor', r.nombre_vendedor);
       APEX_JSON.WRITE('nro_telefono', r.nro_telefono);
+      APEX_JSON.WRITE('total', r.total);
       APEX_JSON.CLOSE_OBJECT;
     END LOOP;
     APEX_JSON.CLOSE_ARRAY;
@@ -218,6 +223,7 @@ CREATE OR REPLACE PACKAGE BODY PKG_VENTAS_LUBRIMEC AS
   --------------------------------------------------------------------------
   PROCEDURE ELIMINAR(p_token IN VARCHAR2, p_id_factura IN NUMBER, p_cod_empresa IN NUMBER) IS
     l_usuario VARCHAR2(255);
+    l_existe  NUMBER := 0;
   BEGIN
     l_usuario := f_usuario(p_token);
     IF l_usuario IS NULL THEN
@@ -225,15 +231,28 @@ CREATE OR REPLACE PACKAGE BODY PKG_VENTAS_LUBRIMEC AS
       RETURN;
     END IF;
 
-    DELETE FROM ventas_cabecera
-     WHERE id_factura = p_id_factura
+    -- Que exista y sea de la empresa (antes se detectaba con el ROWCOUNT del
+    -- DELETE, pero ahora primero se borran los hijos).
+    SELECT COUNT(*)
+      INTO l_existe
+      FROM ventas_cabecera
+     WHERE id_factura  = p_id_factura
        AND cod_empresa = p_cod_empresa;
 
-    IF SQL%ROWCOUNT = 0 THEN
-      ROLLBACK;
+    IF l_existe = 0 THEN
       p_error(404, 'Not Found', 'Venta no encontrada');
       RETURN;
     END IF;
+
+    -- Borrado en cascada manual: los hijos (cobros y detalle) y recien la
+    -- cabecera, con UN solo COMMIT al final (atomico, ROLLBACK ante error).
+    -- Antes se borraba solo la cabecera y toda venta real fallaba con ORA-02292.
+    DELETE FROM ventas_cobros  WHERE id_factura = p_id_factura;
+    DELETE FROM ventas_detalle WHERE id_factura = p_id_factura;
+    DELETE FROM ventas_cabecera
+     WHERE id_factura  = p_id_factura
+       AND cod_empresa = p_cod_empresa;
+
     COMMIT;
 
     APEX_JSON.OPEN_OBJECT;
@@ -244,7 +263,9 @@ CREATE OR REPLACE PACKAGE BODY PKG_VENTAS_LUBRIMEC AS
     WHEN OTHERS THEN
       ROLLBACK;
       IF SQLCODE = -2292 THEN
-        p_error(409, 'Conflict', 'No se puede eliminar: la venta tiene detalle asociado');
+        -- Queda alguna otra tabla apuntando a la factura (no es detalle ni cobros).
+        p_error(409, 'Conflict',
+                'No se puede eliminar: la venta tiene registros asociados en otra tabla');
       ELSE
         p_error(500, 'Internal Server Error', 'Error: ' || SQLERRM);
       END IF;
