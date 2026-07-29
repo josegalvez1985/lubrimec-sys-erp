@@ -102,6 +102,17 @@ sus permisos. Cada usuario ve un menú distinto.
 - **Resolver la vista:** el mapa `VISTAS: Record<number, () => ReactElement>` relaciona
   `page_id` → componente. Si la página activa está en `VISTAS`, se renderiza; si no,
   muestra `PlaceholderView` con su `page_title`.
+- **El sidebar arranca SIEMPRE oculto** (`menuColapsado` inicia en `true`): la preferencia **no** se
+  recuerda entre recargas (se quitó la clave `menu_colapsado` de `localStorage`). El botón de la
+  topbar lo muestra/oculta mientras dure la pantalla. Pedido explícito del usuario.
+- **Botón Home en la topbar:** ícono de casa a la izquierda del usuario, visible **solo** cuando
+  `active !== "dashboard"`. Usa el mismo `handleNav("dashboard")` que el menú, así el botón atrás
+  (web y APK) sigue funcionando: apila dashboard en el historial en vez de resetearlo.
+- **Paneles del dashboard que se ocultan sin datos:** un panel sin registros devuelve `null` en vez
+  de dibujar un estado vacío (`if (query.isSuccess && filas.length === 0) return null`). Condicionar
+  por `isSuccess`, **no** por `!isLoading`: si el endpoint falla hay que seguir mostrando el error,
+  no hacer desaparecer el panel en silencio. Modelos: `cobros-acreditar-card`, `cobros-tarjeta-view`,
+  `cobros-hoy-chart`.
 - **Orden de "Accesos rápidos" por uso local:** `QuickActions` ordena por los más usados en
   ESTE dispositivo. El conteo se guarda en `localStorage` (`src/lib/uso-accesos.ts`, clave
   `quick_actions_uso`, mapa `{ "application_id-page_id": veces }`): cada clic incrementa y
@@ -145,6 +156,38 @@ la BD son legado — no copiarlos en páginas nuevas.
   funcionar" (pasó en la pág 94). Si necesitás mostrar el valor elegido, usá un `<p>` de texto.
 - La grilla usa `DataTable` y muestra las columnas de solo lectura del JOIN (descripción del
   artículo, nombre del proveedor).
+
+### LOV corta en modal de botones (`ui/selector-modal.tsx`)
+
+Para catálogos **cortos** (monedas, billetes, vendedores, talonarios, formas de cobro, bancos) el
+`<select>` nativo se reemplaza por **`SelectorModal`**: un botón con el mismo alto/estilo que un
+input, que abre un modal con una **grilla de tarjetas** (una por opción) y cierra al elegir. Pedido
+explícito del usuario ("que no sea una lista de valores sino un modal con la lista en formato de
+botones, con imagen para un aspecto más moderno"). **No** dupliques este componente por vista.
+
+```tsx
+<SelectorModal
+  titulo="Forma de cobro"                 // título del modal
+  descripcion="Elegí cómo paga el cliente."
+  icono={Wallet}                          // ícono del botón y fallback sin imagen
+  placeholder="Forma de cobro..."
+  opciones={formas.map((f) => ({ valor: f.id_forma, titulo: f.descripcion ?? "" }))}
+  value={idForma}
+  onSelect={setIdForma}
+  vacioLabel="No hay formas de cobro cargadas."
+/>
+```
+
+- `OpcionSelector`: `{ valor, titulo, sub?, imagen?, mono? }`. `sub` = segunda línea (siglas, nro de
+  timbrado, `cod_usuario`); `mono: true` para montos; `imagen` = data URL o URL.
+- **Con imágenes** (si **alguna** opción trae `imagen`) las tarjetas muestran la imagen arriba en
+  grilla 2/3 columnas; **sin imágenes** quedan compactas de solo texto en 1/2 columnas. Modelo con
+  imagen: los billetes de `MONEDAS_DETALLE` en `conteo-efectivo-view.tsx`.
+- `triggerRef` expone el botón para enfocarlo desde afuera (modelo: el modal de facturar del POS
+  enfoca la forma de cobro al abrirse con `onOpenAutoFocus`).
+- **Cuándo NO usarlo:** catálogos grandes (artículos, clientes, proveedores) → `BuscadorSelect`,
+  que filtra por texto. La regla de "LOV completa + filtro en el front" (abajo) sigue rigiendo para
+  esos.
 
 #### REGLA: LOV completo + filtrado flexible en el front (TODA LOV, sin excepciones)
 
@@ -192,6 +235,11 @@ Tablas con imagen (`archivo_imagen BLOB` + `mime_type`). Dos caminos según el t
   navegador no manda `Authorization` en un `<img>`. Cliente: helper `urlImagenArticulo` en `api.ts`.
 - **Proxy y binarios:** `src/routes/api/ords.$.ts` reenvía el body como `arrayBuffer()` (no
   `res.text()`, que corrompe binarios decodificándolos como UTF-8). Sirve igual para JSON e imágenes.
+- **Click en la miniatura → imagen ampliada:** toda grilla/lista con thumbnail debe abrir
+  `ArticuloImgModal` al tocarla (pedido del usuario para Punto de Venta y Artículos). La miniatura va
+  envuelta en un `<button type="button">` con `aria-label`; si la fila entera ya es un botón (POS),
+  **no se puede anidar**: hay que partir la fila en dos botones hermanos (miniatura = ver imagen,
+  resto = acción de la fila). El fallback sin imagen queda no clickeable.
 - **Dos fuentes de imagen — no confundirlas:** `ArticuloImgModal`/`imgArticuloUrl` tiran del módulo
   ORDS `paginaweb` (`/api/img/articulosimg/:id`), que solo tiene los artículos publicados en la web;
   `urlImagenArticulo(id, codEmpresa)` (api.ts) sirve el **BLOB de la tabla `ARTICULOS`** vía
@@ -243,6 +291,12 @@ que hacer nada extra**, solo respetar el patrón:
 - **react-query** para todo el estado servidor:
   - `useQuery({ queryKey: ["tabla", codEmpresa], queryFn, retry: false })` para listar.
   - `useMutation` + `qc.invalidateQueries({ queryKey: ["tabla"] })` en `onSuccess`.
+  - **`onError` OBLIGATORIO en toda mutación.** Sin él, un 409/500/404 del backend queda mudo: el
+    diálogo de confirmación sigue abierto y el usuario reporta "el botón no hace nada" (pasó con
+    eliminar venta, línea y cobro en la pág 60). Mínimo:
+    `onError: (e) => toast.error(e instanceof Error ? e.message : "No se pudo eliminar")`.
+  - Invalidar **todas** las queries afectadas: si borrar una línea cambia el total de la cabecera,
+    invalidar también la query de la grilla, no solo la del detalle.
   - **No** agregar `staleTime` (la regla global es 0; ver "Sin caché").
 - **Ordenamiento en el front:** ordenar el array del query antes de render, no en el back.
   Ej. marcas: `.sort((a, b) => b.id_marca - a.id_marca)`. El `ORDER BY` del paquete es
