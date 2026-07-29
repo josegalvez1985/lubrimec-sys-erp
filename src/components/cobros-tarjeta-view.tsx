@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { CreditCard, Loader2, CheckCircle2 } from "lucide-react";
+import { CreditCard, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -78,6 +78,10 @@ export function CobrosTarjetaView() {
 
   const totalPendiente = cobros.reduce((t, c) => t + (c.total ?? 0), 0);
 
+  // Sin pendientes: no ocupar espacio en el dashboard. Solo cuando la consulta
+  // terminó bien (si carga o falla, el panel se muestra con su estado).
+  if (cobrosQuery.isSuccess && cobros.length === 0) return null;
+
   return (
     <div className="rounded-2xl border border-border bg-card p-5 shadow-elegant">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -105,11 +109,6 @@ export function CobrosTarjetaView() {
               ? cobrosQuery.error.message
               : "No se pudieron cargar los cobros"}
           </p>
-        ) : cobros.length === 0 ? (
-          <div className="grid h-32 place-items-center gap-2 text-center text-muted-foreground">
-            <CheckCircle2 className="h-8 w-8 text-primary/70" />
-            <p className="text-sm">No hay cobros pendientes de acreditar.</p>
-          </div>
         ) : (
           <ul className="max-h-80 divide-y divide-border overflow-y-auto">
             {cobros.map((c) => (

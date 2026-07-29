@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, Eye, Pencil, Trash2, Loader2, Coins, X } from "lucide-react";
+import { Plus, Eye, Pencil, Trash2, Loader2, Coins, Banknote, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { DataTable, type Column } from "@/components/ui/data-table";
 import { InputMonto } from "@/components/ui/input-monto";
+import { SelectorModal } from "@/components/ui/selector-modal";
 import {
   getSesion,
   listarConteoEfectivo,
@@ -453,24 +454,24 @@ function ConteoDialog({
               {isView ? (
                 <Input value={item?.moneda ?? ""} disabled />
               ) : (
-                <select
+                <SelectorModal
                   id="cod_moneda"
-                  value={codMoneda ?? ""}
-                  onChange={(e) => {
-                    setCodMoneda(e.target.value ? Number(e.target.value) : null);
-                    setValor(null);
+                  titulo="Moneda"
+                  descripcion="Elegí la moneda del conteo."
+                  icono={Banknote}
+                  opciones={(monedas ?? []).map((m) => ({
+                    valor: m.cod_moneda,
+                    titulo: m.descripcion ?? `Moneda ${m.cod_moneda}`,
+                    sub: m.siglas,
+                  }))}
+                  value={codMoneda}
+                  onSelect={(cod) => {
+                    setCodMoneda(cod);
+                    setValor(null); // los valores dependen de la moneda
                   }}
                   disabled={saving}
-                  required
-                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  <option value="">Seleccionar...</option>
-                  {(monedas ?? []).map((m) => (
-                    <option key={m.cod_moneda} value={m.cod_moneda}>
-                      {m.descripcion}
-                    </option>
-                  ))}
-                </select>
+                  vacioLabel="No hay monedas cargadas."
+                />
               )}
             </div>
           </div>
@@ -480,24 +481,28 @@ function ConteoDialog({
             {isView ? (
               <Input value={fmtNum(item?.valor ?? null)} disabled className="font-mono" />
             ) : (
-              <select
+              <SelectorModal
                 id="valor"
-                value={valor ?? ""}
-                onChange={(e) => setValor(e.target.value ? Number(e.target.value) : null)}
-                disabled={saving || codMoneda == null}
-                required
-                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <option value="">Seleccionar...</option>
-                {(detalles ?? [])
+                titulo="Valor del billete"
+                descripcion="Elegí la denominación contada."
+                icono={Coins}
+                opciones={(detalles ?? [])
                   .slice()
                   .sort((a, b) => a.valor - b.valor)
-                  .map((d) => (
-                    <option key={d.valor} value={d.valor}>
-                      {fmtNum(d.valor)}
-                    </option>
-                  ))}
-              </select>
+                  .map((d) => ({
+                    valor: d.valor,
+                    titulo: fmtNum(d.valor),
+                    mono: true,
+                    // MONEDAS_DETALLE guarda el BLOB como base64 sin prefijo data:.
+                    imagen: d.imagen_base64
+                      ? `data:${d.mime_type ?? "image/png"};base64,${d.imagen_base64}`
+                      : null,
+                  }))}
+                value={valor}
+                onSelect={setValor}
+                disabled={saving || codMoneda == null}
+                vacioLabel="La moneda elegida no tiene valores cargados."
+              />
             )}
             {/* Imagen del billete elegido */}
             {!isView && detalleSel?.imagen_base64 && (

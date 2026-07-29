@@ -32,7 +32,7 @@ const hoyDDMMYYYY = () => {
 // MISMO endpoint que la página "Cierre del Día" (listarCierreDia, sin filtro de
 // fecha en SQL, por eso funciona) y filtra "hoy" + agrupa por forma en el front.
 export function CobrosHoyChart() {
-  const { data, isLoading, isError } = useQuery({
+  const { data, isLoading, isError, isSuccess } = useQuery({
     queryKey: ["cierre-dia", COD_EMPRESA],
     queryFn: () => listarCierreDia(COD_EMPRESA),
     retry: false,
@@ -53,30 +53,33 @@ export function CobrosHoyChart() {
   const total = filas.reduce((a, f) => a + f.valor, 0);
   const formasCount = filas.length;
 
+  // Sin cobros hoy: no ocupar espacio en el dashboard (se ocultan el KPI y la dona).
+  // Solo cuando la consulta terminó bien; si carga o falla, se muestra su estado.
+  if (isSuccess && filas.length === 0) return null;
+
   return (
     <div className="grid gap-4 lg:grid-cols-[320px_1fr]">
-      {/* KPI: total cobrado hoy */}
-      <div className="flex flex-col justify-between rounded-2xl border border-border bg-gradient-to-br from-primary/10 to-transparent p-5 shadow-elegant">
-        <div className="flex items-center justify-between">
+      {/* KPI: total cobrado hoy. Contenido centrado (no "justify-between"): al
+          estirarse a la altura de la dona dejaba huecos verticales enormes. */}
+      <div className="flex flex-col justify-center gap-2 rounded-2xl border border-border bg-gradient-to-br from-primary/10 to-transparent p-4 shadow-elegant sm:p-5">
+        <div className="flex items-center justify-between gap-2">
           <span className="text-sm font-medium text-muted-foreground">Cobranza de hoy</span>
-          <div className="grid h-10 w-10 place-items-center rounded-xl bg-primary/15 text-primary">
+          <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-primary/15 text-primary">
             <Wallet className="h-5 w-5" />
           </div>
         </div>
-        <div className="mt-4">
-          {isLoading ? (
-            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-          ) : (
-            <>
-              <p className="font-display text-4xl font-bold tabular-nums">{fmtGs(total)}</p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Guaraníes · {hoy}
-              </p>
-            </>
-          )}
-        </div>
+        {isLoading ? (
+          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        ) : (
+          <div>
+            <p className="font-display text-3xl font-bold tabular-nums sm:text-4xl">
+              {fmtGs(total)}
+            </p>
+            <p className="text-sm text-muted-foreground">Guaraníes · {hoy}</p>
+          </div>
+        )}
         {!isLoading && formasCount > 0 && (
-          <div className="mt-4 flex items-center gap-1.5 text-xs text-muted-foreground">
+          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
             <TrendingUp className="h-3.5 w-3.5" />
             {formasCount} {formasCount === 1 ? "forma de cobro" : "formas de cobro"}
           </div>
@@ -84,32 +87,25 @@ export function CobrosHoyChart() {
       </div>
 
       {/* Dona: composición por forma de cobro */}
-      <div className="rounded-2xl border border-border bg-card p-5 shadow-elegant">
-        <div className="mb-2">
+      <div className="rounded-2xl border border-border bg-card p-4 shadow-elegant sm:p-5">
+        <div className="mb-3">
           <h3 className="font-display text-lg font-bold">Por forma de cobro</h3>
           <p className="text-sm text-muted-foreground">Composición de la caja del día</p>
         </div>
 
         {isLoading ? (
-          <div className="flex h-56 items-center justify-center text-muted-foreground">
+          <div className="flex h-40 items-center justify-center text-muted-foreground">
             <Loader2 className="mr-2 h-5 w-5 animate-spin" /> Cargando...
           </div>
         ) : isError ? (
-          <p className="py-16 text-center text-sm text-destructive">
+          <p className="py-10 text-center text-sm text-destructive">
             No se pudo cargar la cobranza de hoy
           </p>
-        ) : filas.length === 0 ? (
-          <div className="grid h-56 place-items-center text-center">
-            <div>
-              <p className="font-medium">Sin cobros hoy</p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Aún no hay cobros registrados en el día.
-              </p>
-            </div>
-          </div>
         ) : (
-          <div className="grid gap-4 sm:grid-cols-[1fr_auto] sm:items-center">
-            <div className="relative h-56">
+          // Dona de tamaño fijo + leyenda flexible: apiladas en pantalla angosta y
+          // lado a lado desde sm. La dona ya no se estira (era la que generaba el alto).
+          <div className="flex flex-col items-center gap-4 sm:flex-row sm:items-center">
+            <div className="relative h-40 w-40 shrink-0">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
                   <Pie
@@ -146,7 +142,7 @@ export function CobrosHoyChart() {
             </div>
 
             {/* Leyenda con montos y % — etiqueta directa, identidad no solo-color */}
-            <ul className="space-y-2 text-sm">
+            <ul className="w-full min-w-0 flex-1 space-y-2 text-sm">
               {filas.map((d) => (
                 <li key={d.nombre} className="flex items-center gap-2">
                   <span

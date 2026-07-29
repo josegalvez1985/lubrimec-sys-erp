@@ -24,6 +24,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { DataTable, type Column } from "@/components/ui/data-table";
+import { ArticuloImgModal } from "@/components/articulo-img-modal";
 import { consumirBusquedaInicial } from "@/lib/busqueda-inicial";
 import {
   listarArticulos,
@@ -59,6 +60,8 @@ export function ArticulosView() {
   const qc = useQueryClient();
   const [modal, setModal] = useState<ModalState>({ mode: "closed" });
   const [aEliminar, setAEliminar] = useState<Articulo | null>(null);
+  // Artículo cuya imagen se está viendo ampliada (click en la miniatura).
+  const [imgArticulo, setImgArticulo] = useState<Articulo | null>(null);
 
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ["articulos", COD_EMPRESA],
@@ -98,12 +101,21 @@ export function ArticulosView() {
       className: "w-20",
       render: (r) =>
         r.tiene_imagen ? (
-          <img
-            src={urlImagenArticulo(r.id_articulo, COD_EMPRESA)}
-            alt={r.descripcion ?? ""}
-            loading="lazy"
-            className="h-16 w-16 rounded-md border border-border object-cover"
-          />
+          // Click en la miniatura → modal con la imagen ampliada.
+          <button
+            type="button"
+            onClick={() => setImgArticulo(r)}
+            title="Ver imagen"
+            aria-label="Ver imagen del artículo"
+            className="rounded-md"
+          >
+            <img
+              src={urlImagenArticulo(r.id_articulo, COD_EMPRESA)}
+              alt={r.descripcion ?? ""}
+              loading="lazy"
+              className="h-16 w-16 cursor-pointer rounded-md border border-border object-cover"
+            />
+          </button>
         ) : (
           <div className="grid h-16 w-16 place-items-center rounded-md border border-border bg-muted/40 text-muted-foreground/40">
             <Package className="h-6 w-6" />
@@ -236,6 +248,16 @@ export function ArticulosView() {
           />
         </div>
       )}
+
+      {/* Imagen ampliada (click en la miniatura de la grilla). Usa el BLOB de
+          ARTICULOS, la misma fuente que la miniatura, no el módulo paginaweb. */}
+      <ArticuloImgModal
+        open={imgArticulo != null}
+        id={imgArticulo ? String(imgArticulo.id_articulo) : null}
+        titulo={imgArticulo?.descripcion}
+        src={imgArticulo ? urlImagenArticulo(imgArticulo.id_articulo, COD_EMPRESA) : undefined}
+        onClose={() => setImgArticulo(null)}
+      />
 
       <ArticuloDialog
         state={modal}
