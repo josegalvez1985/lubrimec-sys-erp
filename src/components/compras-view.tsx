@@ -1,6 +1,16 @@
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent, type ReactNode } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Pencil, Trash2, Loader2, ShoppingBag, X, ListOrdered, Plus, FilePlus } from "lucide-react";
+import {
+  Pencil,
+  Trash2,
+  Loader2,
+  ShoppingBag,
+  X,
+  ListOrdered,
+  Plus,
+  FilePlus,
+  Eye,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -68,6 +78,7 @@ type ModalState =
   | { mode: "closed" }
   | { mode: "create" }
   | { mode: "edit"; item: CompraCabecera }
+  | { mode: "ver"; item: CompraCabecera }
   | { mode: "detalle"; item: CompraCabecera };
 
 const COLUMNAS: Column<CompraCabecera>[] = [
@@ -273,6 +284,16 @@ export function ComprasView() {
                   variant="ghost"
                   size="icon"
                   className="h-8 w-8 text-muted-foreground hover:text-primary"
+                  onClick={() => setModal({ mode: "ver", item: r })}
+                  aria-label="Ver cabecera"
+                  title="Ver cabecera"
+                >
+                  <Eye className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 text-muted-foreground hover:text-primary"
                   onClick={() => setModal({ mode: "detalle", item: r })}
                   aria-label="Artículos"
                   title="Artículos"
@@ -315,6 +336,7 @@ export function ComprasView() {
           setModal({ mode: "detalle", item: nueva });
         }}
       />
+      <CompraVerDialog state={modal} onClose={() => setModal({ mode: "closed" })} />
       <CompraEditDialog
         state={modal}
         onClose={() => setModal({ mode: "closed" })}
@@ -707,6 +729,102 @@ function CompraCreateDialog({
   );
 }
 
+// ─── Dialog de solo lectura: cabecera completa de la factura ─────────────────
+// La pantalla de edición solo muestra los campos editables; acá se ven TODOS los
+// datos de la cabecera (serie, timbrado, moneda, tipo de cambio, comprador, total).
+
+function CampoVer({ label, valor }: { label: string; valor: ReactNode }) {
+  return (
+    <div className="space-y-1">
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className="break-words text-sm font-medium">{valor === "" || valor == null ? "—" : valor}</p>
+    </div>
+  );
+}
+
+function CompraVerDialog({ state, onClose }: { state: ModalState; onClose: () => void }) {
+  const open = state.mode === "ver";
+  const item = open ? state.item : null;
+
+  const { data: condiciones } = useQuery({
+    queryKey: ["condiciones-facturas"],
+    queryFn: listarCondicionesFacturas,
+    enabled: open,
+    retry: false,
+  });
+  const { data: vendedores } = useQuery({
+    queryKey: ["vendedores", COD_EMPRESA],
+    queryFn: () => listarVendedores(COD_EMPRESA),
+    enabled: open,
+    retry: false,
+  });
+
+  // Se prefiere la descripción del JOIN; las LOVs son el respaldo si la BD aún
+  // no tiene la versión nueva del paquete (desc_condicion/nombre_comprador).
+  const condicion =
+    item?.desc_condicion ??
+    (condiciones ?? []).find((c) => c.id_condicion === item?.id_condicion)?.descripcion ??
+    null;
+  const comprador =
+    item?.nombre_comprador ??
+    (vendedores ?? []).find((v) => v.cod_vendedor === item?.id_comprador)?.nombre ??
+    null;
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Cabecera de la factura {item?.id_factura}</DialogTitle>
+          <DialogDescription>Datos completos del comprobante de compra.</DialogDescription>
+        </DialogHeader>
+
+        {item && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+              <CampoVer label="Tipo" valor={item.tip_comprobante} />
+              <CampoVer label="Serie" valor={item.ser_timbrado} />
+              <CampoVer label="Nro timbrado" valor={item.nro_timbrado} />
+              <CampoVer label="Nro comprobante" valor={item.nro_comprobante} />
+              <CampoVer label="Fecha" valor={fmtFecha(item.fec_comprobante)} />
+              <CampoVer label="Vencimiento" valor={fmtFecha(item.fec_vencimiento)} />
+            </div>
+
+            <div className="border-t border-border pt-4">
+              <CampoVer
+                label="Proveedor"
+                valor={
+                  item.nombre_proveedor
+                    ? `${item.nombre_proveedor} (#${item.cod_persona})`
+                    : `#${item.cod_persona}`
+                }
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4 border-t border-border pt-4 sm:grid-cols-3">
+              <CampoVer label="Condición" valor={condicion ?? item.id_condicion} />
+              <CampoVer label="Moneda" valor={item.desc_moneda ?? item.cod_moneda} />
+              <CampoVer label="Tipo de cambio" valor={fmtNum(item.tip_cambio)} />
+              <CampoVer label="Comprador" valor={comprador ?? item.id_comprador} />
+              <CampoVer label="Costo delivery" valor={fmtNum(item.costo_delivery)} />
+            </div>
+
+            <div className="flex items-center justify-between rounded-md bg-muted/50 px-3 py-2">
+              <span className="text-sm font-medium">Total</span>
+              <span className="font-mono text-lg font-semibold">{fmtNum(item.total)}</span>
+            </div>
+          </div>
+        )}
+
+        <DialogFooter>
+          <Button type="button" onClick={onClose}>
+            Cerrar
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ─── Dialog de edición de la cabecera (solo update) ──────────────────────────
 
 function CompraEditDialog({
@@ -727,6 +845,17 @@ function CompraEditDialog({
     enabled: open,
     retry: false,
   });
+  const { data: vendedores } = useQuery({
+    queryKey: ["vendedores", COD_EMPRESA],
+    queryFn: () => listarVendedores(COD_EMPRESA),
+    enabled: open,
+    retry: false,
+  });
+
+  const comprador =
+    item?.nombre_comprador ??
+    (vendedores ?? []).find((v) => v.cod_vendedor === item?.id_comprador)?.nombre ??
+    null;
 
   const [tipComprobante, setTipComprobante] = useState("");
   const [nroComprobante, setNroComprobante] = useState("");
@@ -735,6 +864,7 @@ function CompraEditDialog({
   const [codPersona, setCodPersona] = useState<number | null>(null);
   const [proveedorLabel, setProveedorLabel] = useState("");
   const [idCondicion, setIdCondicion] = useState<number | null>(null);
+  const [costoDelivery, setCostoDelivery] = useState<number | null>(null);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -749,6 +879,7 @@ function CompraEditDialog({
     setCodPersona(item.cod_persona);
     setProveedorLabel(item.nombre_proveedor ?? `Proveedor ${item.cod_persona}`);
     setIdCondicion(item.id_condicion);
+    setCostoDelivery(item.costo_delivery ?? null);
     setError("");
   }
 
@@ -773,6 +904,7 @@ function CompraEditDialog({
         cod_persona: codPersona,
         id_condicion: idCondicion,
         id_comprador: item.id_comprador, // se preserva (no editable en esta pantalla)
+        costo_delivery: costoDelivery,
       };
       await actualizarCompra(item.id_factura, input);
       onSaved();
@@ -785,7 +917,7 @@ function CompraEditDialog({
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Editar compra {item?.id_factura}</DialogTitle>
           <DialogDescription>
@@ -881,6 +1013,31 @@ function CompraEditDialog({
             </div>
           </div>
 
+          <div className="space-y-2">
+            <Label htmlFor="costo_delivery">Costo delivery</Label>
+            <InputMonto
+              id="costo_delivery"
+              value={costoDelivery}
+              onValueChange={setCostoDelivery}
+              disabled={saving}
+              maxDecimals={0}
+              className="font-mono"
+            />
+          </div>
+
+          {/* Datos de la cabecera que se cargan en el alta y NO se editan acá
+              (el back solo actualiza los de arriba): se muestran para no
+              dejarlos invisibles. */}
+          {item && (
+            <div className="grid grid-cols-2 gap-4 rounded-md border border-border bg-muted/30 px-3 py-3 sm:grid-cols-3">
+              <CampoVer label="Serie" valor={item.ser_timbrado} />
+              <CampoVer label="Nro timbrado" valor={item.nro_timbrado} />
+              <CampoVer label="Moneda" valor={item.desc_moneda ?? item.cod_moneda} />
+              <CampoVer label="Tipo de cambio" valor={fmtNum(item.tip_cambio)} />
+              <CampoVer label="Comprador" valor={comprador ?? item.id_comprador} />
+            </div>
+          )}
+
           {error && (
             <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
               {error}
@@ -920,6 +1077,7 @@ function DetalleDialog({ state, onClose }: { state: ModalState; onClose: () => v
 
   const [lineaModal, setLineaModal] = useState<LineaModalState>({ mode: "closed" });
   const [aEliminarLinea, setAEliminarLinea] = useState<CompraDetalleLinea | null>(null);
+  const [verCabecera, setVerCabecera] = useState(false);
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ["compra-detalle", item?.id_factura],
@@ -947,7 +1105,15 @@ function DetalleDialog({ state, onClose }: { state: ModalState; onClose: () => v
           <DialogDescription>{item?.nombre_proveedor ?? ""}</DialogDescription>
         </DialogHeader>
 
-        <div className="flex justify-end">
+        <div className="flex flex-wrap justify-end gap-2">
+          {/* Tras "Nueva compra" el item es un stub con solo id_factura (no hay
+              cabecera que mostrar todavía): el botón aparece desde la grilla. */}
+          {item?.cod_persona != null && (
+            <Button size="sm" variant="outline" onClick={() => setVerCabecera(true)}>
+              <Eye className="mr-2 h-4 w-4" />
+              Ver cabecera
+            </Button>
+          )}
           <Button size="sm" onClick={() => setLineaModal({ mode: "create" })}>
             <Plus className="mr-2 h-4 w-4" />
             Agregar artículo
@@ -1041,6 +1207,13 @@ function DetalleDialog({ state, onClose }: { state: ModalState; onClose: () => v
       </DialogContent>
 
       {item && (
+        <CompraVerDialog
+          state={verCabecera ? { mode: "ver", item } : { mode: "closed" }}
+          onClose={() => setVerCabecera(false)}
+        />
+      )}
+
+      {item && (
         <LineaDialog
           idFactura={item.id_factura}
           state={lineaModal}
@@ -1048,6 +1221,10 @@ function DetalleDialog({ state, onClose }: { state: ModalState; onClose: () => v
           onSaved={() => {
             qc.invalidateQueries({ queryKey: ["compra-detalle"] });
             setLineaModal({ mode: "closed" });
+          }}
+          onSavedKeepOpen={() => {
+            qc.invalidateQueries({ queryKey: ["compra-detalle"] });
+            qc.invalidateQueries({ queryKey: ["compras"] }); // el total de la cabecera cambia
           }}
         />
       )}
@@ -1091,14 +1268,18 @@ function LineaDialog({
   state,
   onClose,
   onSaved,
+  onSavedKeepOpen,
 }: {
   idFactura: number;
   state: LineaModalState;
   onClose: () => void;
   onSaved: () => void;
+  // Refresca la grilla sin cerrar el modal (alta encadenada de artículos).
+  onSavedKeepOpen: () => void;
 }) {
   const open = state.mode !== "closed";
   const linea = state.mode === "edit" ? state.linea : null;
+  const codProveedorRef = useRef<HTMLInputElement>(null);
 
   const { data: ivas } = useQuery({
     queryKey: ["iva"],
@@ -1117,6 +1298,22 @@ function LineaDialog({
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [resolviendo, setResolviendo] = useState(false);
+  // El artículo ya quedó resuelto por el código del proveedor: se muestra como
+  // texto en vez del buscador (no hace falta elegirlo de la LOV).
+  const [resueltoPorCod, setResueltoPorCod] = useState(false);
+
+  // Deja el formulario en blanco para cargar otro artículo.
+  function limpiarCampos() {
+    setIdArticulo(null);
+    setArticuloLabel("");
+    setCodProveedor("");
+    setCantidad(null);
+    setPrecio(null);
+    setCodIva(null);
+    setCostoAnterior(null);
+    setResueltoPorCod(false);
+    setError("");
+  }
 
   const [lastKey, setLastKey] = useState("");
   const key = `${state.mode}:${linea?.nro_linea ?? "new"}`;
@@ -1131,6 +1328,7 @@ function LineaDialog({
     setPrecio(linea?.precio ?? null);
     setCodIva(linea?.cod_iva ?? null);
     setCostoAnterior(linea?.costo_anterior ?? null);
+    setResueltoPorCod(false);
     setError("");
   }
 
@@ -1161,7 +1359,9 @@ function LineaDialog({
         setArticuloLabel(r.descripcion_articulo ?? `Artículo ${r.id_articulo}`);
         setCodIva(r.cod_iva);
         setCostoAnterior(r.costo_anterior);
+        setResueltoPorCod(true);
       } else {
+        setResueltoPorCod(false);
         setError("Sin artículo para ese código de proveedor");
       }
     } catch (err) {
@@ -1187,7 +1387,17 @@ function LineaDialog({
         precio,
         cod_iva: codIva,
       });
-      onSaved();
+      if (linea) {
+        // Edición: se cierra el modal como siempre.
+        onSaved();
+      } else {
+        // Alta: los campos quedan limpios para cargar el siguiente artículo
+        // sin cerrar el modal (se refresca la grilla de fondo igual).
+        onSavedKeepOpen();
+        limpiarCampos();
+        setLastKey(""); // fuerza re-sync del form en el próximo render
+        codProveedorRef.current?.focus();
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "No se pudo guardar");
     } finally {
@@ -1200,7 +1410,9 @@ function LineaDialog({
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="sm:max-w-md">
+      {/* max-h + overflow: con descripciones largas el modal no desborda el
+          viewport (se scrollea dentro). */}
+      <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-md">
         <DialogHeader>
           <DialogTitle>{linea ? "Editar artículo" : "Agregar artículo"}</DialogTitle>
           <DialogDescription>Factura {idFactura}</DialogDescription>
@@ -1212,6 +1424,7 @@ function LineaDialog({
             <div className="relative">
               <Input
                 id="cod_proveedor"
+                ref={codProveedorRef}
                 value={codProveedor}
                 onChange={(e) => setCodProveedor(e.target.value.toUpperCase())}
                 onBlur={onResolverCodProveedor}
@@ -1227,20 +1440,41 @@ function LineaDialog({
 
           <div className="space-y-2">
             <Label>Artículo</Label>
-            <BuscadorSelect
-              placeholder="Buscar artículo por descripción, código o ID..."
-              emptyLabel="Sin artículos"
-              value={idArticulo}
-              label={articuloLabel}
-              buscar={(q) => buscarArticulosCompra(COD_EMPRESA, q)}
-              itemKey={(a) => a.id_articulo}
-              itemTitle={(a) => a.descripcion ?? `Artículo ${a.id_articulo}`}
-              itemSub={(a) =>
-                `#${a.id_articulo}${a.codigo_oem ? ` · OEM ${a.codigo_oem}` : ""}`
-              }
-              onSelect={onSelectArticulo}
-              disabled={saving}
-            />
+            {resueltoPorCod && idArticulo != null ? (
+              // Ya resuelto por el código del proveedor: no hace falta la LOV.
+              <div className="flex items-start justify-between gap-2 rounded-md border border-input bg-muted/40 px-3 py-2">
+                <div className="min-w-0 flex-1">
+                  {/* La descripción se ve completa: envuelve a varias líneas, no se trunca. */}
+                  <p className="break-words text-sm font-medium">{articuloLabel}</p>
+                  <p className="text-xs text-muted-foreground">#{idArticulo}</p>
+                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="shrink-0"
+                  onClick={() => setResueltoPorCod(false)}
+                  disabled={saving}
+                >
+                  Cambiar
+                </Button>
+              </div>
+            ) : (
+              <BuscadorSelect
+                placeholder="Buscar artículo por descripción, código o ID..."
+                emptyLabel="Sin artículos"
+                value={idArticulo}
+                label={articuloLabel}
+                buscar={(q) => buscarArticulosCompra(COD_EMPRESA, q)}
+                itemKey={(a) => a.id_articulo}
+                itemTitle={(a) => a.descripcion ?? `Artículo ${a.id_articulo}`}
+                itemSub={(a) =>
+                  `#${a.id_articulo}${a.codigo_oem ? ` · OEM ${a.codigo_oem}` : ""}`
+                }
+                onSelect={onSelectArticulo}
+                disabled={saving}
+              />
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-3">

@@ -2,7 +2,6 @@ import { defineConfig, loadEnv } from "vite";
 import { tanstackStart } from "@tanstack/react-start/plugin/vite";
 import viteReact from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
-import tsConfigPaths from "vite-tsconfig-paths";
 import { nitro } from "nitro/vite";
 
 // Base path: "/lubrimec-sys-erp/" en GitHub Pages, "/" en local.
@@ -20,6 +19,9 @@ export default defineConfig(({ mode }) => {
     define,
     css: { transformer: "lightningcss" },
     resolve: {
+      // Resolución nativa de los "paths" del tsconfig (reemplaza al plugin
+      // vite-tsconfig-paths, soportado de forma nativa desde Vite 7).
+      tsconfigPaths: true,
       alias: { "@": `${process.cwd()}/src` },
       dedupe: [
         "react",
@@ -45,7 +47,6 @@ export default defineConfig(({ mode }) => {
     server: { host: "::", port: 8080, strictPort: true, open: true },
     plugins: [
       tailwindcss(),
-      tsConfigPaths({ projects: ["./tsconfig.json"] }),
       tanstackStart({ server: { entry: "server" }, spa: { enabled: true } }),
       nitro(),
       viteReact(),

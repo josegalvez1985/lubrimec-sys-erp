@@ -68,6 +68,16 @@ endpoints de solo lectura sin paquete (`ORDS_MENU_PAGINAS.sql`, `ORDS_VENTAS_*.s
   `rubros_sql.sql` trigger, `monedas_sql.sql` secuencia, `condiciones_facturas_sql.sql` IDENTITY).
 - Si la PK **la ingresa el usuario** (no autogenerada), validarla obligatoria y devolver 409 en
   `DUP_VAL_ON_INDEX` (modelos: `iva_sql.sql`, `unidades_medidas_sql.sql`).
+- **Detalle maestro-detalle: verificar SIEMPRE si la PK es compuesta o global.** No asumir que el
+  `nro_linea` de una tabla de detalle se numera por documento. `VENTAS_DETALLE` tiene PK compuesta
+  `(id_factura, nro_linea)` → ahí `MAX(nro_linea)+1 WHERE id_factura` es correcto. Pero
+  `COMPRAS_DETALLE` tiene **`PRIMARY KEY (nro_linea)` a secas** (global a toda la tabla) y un
+  trigger `TRG_COMPRAS_DETALLE` que lo asigna desde `seq_compras_detalle` cuando llega NULL.
+  Numerarlo a mano por factura repetía números ya usados por otras facturas → **ORA-00001**
+  (`unique constraint COMPRAS_DETALLE_PK violated ... columns (NRO_LINEA)`). Fix: **no** incluir la
+  columna en el INSERT y leerla con `RETURNING nro_linea INTO l_nro_linea`. Pista de que hay
+  trigger: otro módulo inserta en esa tabla sin pasar la columna y funciona (`ajustar_inventarios_sql.sql`).
+  El mensaje de Oracle dice qué columnas cubre la constraint: si lista una sola, la PK **no** es compuesta.
 - **FK a otra tabla** (ej. `id_articulo`): capturar `-2291` (FK padre no existe) → 400 con mensaje
   claro. En LISTAR/OBTENER hacer `LEFT JOIN` a la tabla padre para devolver su descripción como
   campo de solo lectura (modelos: `codigos_barras_sql.sql`, `articulos_proveedores_sql.sql`).
