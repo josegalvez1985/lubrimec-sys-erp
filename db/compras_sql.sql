@@ -22,9 +22,12 @@
 -- id_comprador).
 -- DETALLE: lineas de COMPRAS_DETALLE (pag 36) con descripcion del articulo,
 -- costo_anterior (fn_costo_ultimo) y total = cantidad * precio.
--- GUARDAR_DETALLE (upsert): nro_linea NULL = insertar (nro_linea = MAX+1,
+-- GUARDAR_DETALLE (upsert): nro_linea NULL = insertar (el nro_linea lo asigna el
+-- trigger TRG_COMPRAS_DETALLE desde seq_compras_detalle y se lee con RETURNING;
 -- cod_iva copiado de ARTICULOS, cod_persona/cod_empresa de la cabecera); con
 -- nro_linea = actualizar la linea.
+-- OJO: COMPRAS_DETALLE_PK es PK (nro_linea) GLOBAL, no compuesta con id_factura
+-- (VENTAS_DETALLE si es compuesta). No numerar a mano: da ORA-00001.
 -- ELIMINAR_DETALLE: borra una linea por (id_factura, nro_linea).
 --
 -- === 1) PAQUETE PKG_COMPRAS_LUBRIMEC =======================================
@@ -46,7 +49,8 @@ CREATE OR REPLACE PACKAGE PKG_COMPRAS_LUBRIMEC AS
       p_token IN VARCHAR2, p_id_factura IN NUMBER, p_cod_empresa IN NUMBER,
       p_tip_comprobante IN VARCHAR2, p_nro_comprobante IN NUMBER,
       p_fec_comprobante IN VARCHAR2, p_fec_vencimiento IN VARCHAR2,
-      p_cod_persona IN NUMBER, p_id_condicion IN NUMBER, p_id_comprador IN NUMBER);
+      p_cod_persona IN NUMBER, p_id_condicion IN NUMBER, p_id_comprador IN NUMBER,
+      p_costo_delivery IN NUMBER);
   -- Helpers para el alta (DAs de la pag 29): siguiente nro de comprobante por
   -- tip+serie del proveedor, y timbrado sugerido del ultimo comprobante del prov.
   PROCEDURE SUGERIDOS_ALTA(
@@ -130,7 +134,9 @@ CREATE OR REPLACE PACKAGE BODY PKG_COMPRAS_LUBRIMEC AS
                b.cod_persona,
                NVL(pe.nombre_fantasia, pe.nombre) AS nombre_proveedor,
                b.cod_moneda, mo.descripcion AS desc_moneda, b.tip_cambio,
-               b.id_condicion, b.id_comprador,
+               b.id_condicion, cf.descripcion AS desc_condicion,
+               b.id_comprador, ve.nombre AS nombre_comprador,
+               b.costo_delivery,
                (SELECT SUM(NVL(d.cantidad, 0) * NVL(d.precio, 0))
                   FROM compras_detalle d
                  WHERE d.id_factura = b.id_factura) AS total
@@ -138,6 +144,9 @@ CREATE OR REPLACE PACKAGE BODY PKG_COMPRAS_LUBRIMEC AS
           LEFT JOIN personas pe ON pe.cod_persona = b.cod_persona
                                 AND pe.cod_empresa = b.cod_empresa
           LEFT JOIN monedas mo ON mo.cod_moneda = b.cod_moneda
+          LEFT JOIN condiciones_facturas cf ON cf.id_condicion = b.id_condicion
+          LEFT JOIN vendedores ve ON ve.cod_vendedor = b.id_comprador
+                                  AND ve.cod_empresa = b.cod_empresa
          WHERE b.cod_empresa = p_cod_empresa
            AND (l_anio IS NULL OR EXTRACT(YEAR FROM b.fec_comprobante) = l_anio)
            AND (l_mes IS NULL OR EXTRACT(MONTH FROM b.fec_comprobante) = l_mes)
@@ -157,7 +166,10 @@ CREATE OR REPLACE PACKAGE BODY PKG_COMPRAS_LUBRIMEC AS
       APEX_JSON.WRITE('desc_moneda', r.desc_moneda);
       APEX_JSON.WRITE('tip_cambio', r.tip_cambio);
       APEX_JSON.WRITE('id_condicion', r.id_condicion);
+      APEX_JSON.WRITE('desc_condicion', r.desc_condicion);
       APEX_JSON.WRITE('id_comprador', r.id_comprador);
+      APEX_JSON.WRITE('nombre_comprador', r.nombre_comprador);
+      APEX_JSON.WRITE('costo_delivery', r.costo_delivery);
       APEX_JSON.WRITE('total', r.total);
       APEX_JSON.CLOSE_OBJECT;
     END LOOP;
@@ -321,7 +333,8 @@ CREATE OR REPLACE PACKAGE BODY PKG_COMPRAS_LUBRIMEC AS
       p_token IN VARCHAR2, p_id_factura IN NUMBER, p_cod_empresa IN NUMBER,
       p_tip_comprobante IN VARCHAR2, p_nro_comprobante IN NUMBER,
       p_fec_comprobante IN VARCHAR2, p_fec_vencimiento IN VARCHAR2,
-      p_cod_persona IN NUMBER, p_id_condicion IN NUMBER, p_id_comprador IN NUMBER) IS
+      p_cod_persona IN NUMBER, p_id_condicion IN NUMBER, p_id_comprador IN NUMBER,
+      p_costo_delivery IN NUMBER) IS
     l_usuario VARCHAR2(255);
     l_fecha   DATE;
     l_venc    DATE := NULL;
@@ -356,7 +369,8 @@ CREATE OR REPLACE PACKAGE BODY PKG_COMPRAS_LUBRIMEC AS
            fec_vencimiento = l_venc,
            cod_persona     = p_cod_persona,
            id_condicion    = p_id_condicion,
-           id_comprador    = p_id_comprador
+           id_comprador    = p_id_comprador,
+           costo_delivery  = p_costo_delivery
      WHERE id_factura = p_id_factura
        AND cod_empresa = p_cod_empresa;
 
@@ -476,9 +490,10 @@ CREATE OR REPLACE PACKAGE BODY PKG_COMPRAS_LUBRIMEC AS
   END DETALLE;
 
   --------------------------------------------------------------------------
-  -- GUARDAR_DETALLE (upsert de linea). nro_linea NULL = insertar con
-  -- MAX(nro_linea)+1, cod_iva del articulo y cod_persona/cod_empresa de la
-  -- cabecera (como el proceso NATIVE_FORM_DML de la pag 36).
+  -- GUARDAR_DETALLE (upsert de linea). nro_linea NULL = insertar dejando que el
+  -- trigger TRG_COMPRAS_DETALLE numere desde seq_compras_detalle (RETURNING),
+  -- con cod_iva del articulo y cod_persona/cod_empresa de la cabecera (como el
+  -- proceso NATIVE_FORM_DML de la pag 36).
   --------------------------------------------------------------------------
   PROCEDURE GUARDAR_DETALLE(
       p_token IN VARCHAR2, p_id_factura IN NUMBER, p_nro_linea IN NUMBER,
@@ -533,17 +548,19 @@ CREATE OR REPLACE PACKAGE BODY PKG_COMPRAS_LUBRIMEC AS
     END IF;
 
     IF l_nro_linea IS NULL THEN
-      SELECT NVL(MAX(nro_linea), 0) + 1
-        INTO l_nro_linea
-        FROM compras_detalle
-       WHERE id_factura = p_id_factura;
-
+      -- OJO: COMPRAS_DETALLE_PK es PRIMARY KEY (nro_linea) a secas, GLOBAL a toda
+      -- la tabla (NO compuesta con id_factura, a diferencia de VENTAS_DETALLE).
+      -- El nro_linea lo asigna el trigger TRG_COMPRAS_DETALLE desde
+      -- seq_compras_detalle cuando llega NULL: por eso NO se incluye en el INSERT
+      -- y se recupera con RETURNING. Numerarlo a mano con MAX+1 por factura daba
+      -- ORA-00001 (repetia numeros ya usados por otras facturas).
       INSERT INTO compras_detalle (
-          id_factura, nro_linea, id_articulo, cantidad, precio, cod_iva,
+          id_factura, id_articulo, cantidad, precio, cod_iva,
           cod_empresa, cod_persona)
       VALUES (
-          p_id_factura, l_nro_linea, p_id_articulo, p_cantidad, p_precio,
-          l_cod_iva, l_cod_empresa, l_cod_persona);
+          p_id_factura, p_id_articulo, p_cantidad, p_precio,
+          l_cod_iva, l_cod_empresa, l_cod_persona)
+      RETURNING nro_linea INTO l_nro_linea;
     ELSE
       UPDATE compras_detalle
          SET id_articulo = p_id_articulo,
@@ -731,11 +748,12 @@ CREATE OR REPLACE PACKAGE BODY PKG_COMPRAS_LUBRIMEC AS
 
   --------------------------------------------------------------------------
   -- BUSCAR_ARTICULOS (LOV propio del detalle pag 36). Incluye cod_iva para
-  -- el DA carga_iva del modal de linea. q vacio = primeras 30.
+  -- el DA carga_iva del modal de linea. Devuelve el catalogo COMPLETO: el
+  -- filtrado lo hace el front (p_q se ignora, se mantiene por compatibilidad
+  -- del handler ORDS que ya bindea :q).
   --------------------------------------------------------------------------
   PROCEDURE BUSCAR_ARTICULOS(p_token IN VARCHAR2, p_cod_empresa IN NUMBER, p_q IN VARCHAR2) IS
     l_usuario VARCHAR2(255);
-    l_q       VARCHAR2(400) := '%' || UPPER(TRIM(p_q)) || '%';
   BEGIN
     l_usuario := f_usuario(p_token);
     IF l_usuario IS NULL THEN
@@ -743,6 +761,13 @@ CREATE OR REPLACE PACKAGE BODY PKG_COMPRAS_LUBRIMEC AS
       RETURN;
     END IF;
 
+    -- REGLA del proyecto: LOV completa, el filtrado es 100% del front (sin q,
+    -- sin FETCH FIRST). El LIKE con el texto entero fallaba en cuanto el usuario
+    -- pegaba "OEM + descripcion" (el OEM esta en otra columna) y ademas el tope
+    -- de 30 filas escondia coincidencias. Ver GUIA_ENDPOINTS.md.
+    -- OJO: el filtro es por ESTADO = 'A' (Activo/Inactivo, como el APEX), NO por
+    -- es_activo ('S'/'N'). Son DOS columnas distintas de ARTICULOS y filtrar por
+    -- la equivocada dejaba fuera articulos que el usuario espera ver.
     APEX_JSON.OPEN_OBJECT;
     APEX_JSON.WRITE('success', TRUE);
     APEX_JSON.OPEN_ARRAY('data');
@@ -750,15 +775,8 @@ CREATE OR REPLACE PACKAGE BODY PKG_COMPRAS_LUBRIMEC AS
         SELECT id_articulo, descripcion, codigo_oem, cod_iva
           FROM articulos
          WHERE cod_empresa = p_cod_empresa
-           AND NVL(es_activo, 'S') = 'S'
-           AND (
-                 TRIM(p_q) IS NULL
-                 OR UPPER(descripcion) LIKE l_q
-                 OR UPPER(codigo_oem) LIKE l_q
-                 OR TO_CHAR(id_articulo) LIKE l_q
-               )
+           AND UPPER(NVL(estado, 'A')) = 'A'
          ORDER BY descripcion
-         FETCH FIRST 30 ROWS ONLY
     ) LOOP
       APEX_JSON.OPEN_OBJECT;
       APEX_JSON.WRITE('id_articulo', r.id_articulo);
@@ -1072,7 +1090,8 @@ BEGIN
         p_fec_vencimiento => :fec_vencimiento,
         p_cod_persona => TO_NUMBER(:cod_persona),
         p_id_condicion => TO_NUMBER(:id_condicion),
-        p_id_comprador => TO_NUMBER(:id_comprador));
+        p_id_comprador => TO_NUMBER(:id_comprador),
+        p_costo_delivery => TO_NUMBER(:costo_delivery));
 END;
 ~');
   ORDS.DEFINE_PARAMETER(p_module_name => 'lubrimec', p_pattern => 'compras-cabecera/:id', p_method => 'PUT',
