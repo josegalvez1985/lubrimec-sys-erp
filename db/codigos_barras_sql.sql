@@ -271,9 +271,17 @@ CREATE OR REPLACE PACKAGE BODY PKG_CODIGOS_BARRAS_LUBRIMEC AS
   -- articulos activos de la empresa que matcheen por descripcion / codigo_oem
   -- / id_articulo. Con q vacio, los primeros por descripcion.
   --------------------------------------------------------------------------
+  -- LOV completa: devuelve TODO el catalogo de la empresa y el filtrado
+  -- (multi-palabra en cualquier orden, ID/OEM parcial) lo hace el front. Sin `q`
+  -- y sin FETCH FIRST: el LIKE con el texto entero contra una sola columna no
+  -- encontraba nada y el tope de 30 escondia el resto. p_q se mantiene en la
+  -- firma por compatibilidad, pero ya no se usa.
+  -- OJO: el filtro es por ESTADO = 'A' (Activo/Inactivo, como el APEX), NO por
+  -- es_activo ('S'/'N'). Son DOS columnas distintas de ARTICULOS y filtrar por
+  -- la equivocada dejaba fuera articulos que el usuario espera ver. Mismo
+  -- criterio que PKG_COMPRAS_LUBRIMEC.BUSCAR_ARTICULOS.
   PROCEDURE BUSCAR_ARTICULOS(p_token IN VARCHAR2, p_cod_empresa IN NUMBER, p_q IN VARCHAR2) IS
     l_usuario VARCHAR2(255);
-    l_q       VARCHAR2(400) := '%' || UPPER(TRIM(p_q)) || '%';
   BEGIN
     l_usuario := f_usuario(p_token);
     IF l_usuario IS NULL THEN
@@ -288,15 +296,8 @@ CREATE OR REPLACE PACKAGE BODY PKG_CODIGOS_BARRAS_LUBRIMEC AS
         SELECT id_articulo, descripcion, codigo_oem, precio_venta, costo_ultima_compra
           FROM articulos
          WHERE cod_empresa = p_cod_empresa
-           AND NVL(es_activo, 'S') = 'S'
-           AND (
-                 TRIM(p_q) IS NULL
-                 OR UPPER(descripcion) LIKE l_q
-                 OR UPPER(codigo_oem) LIKE l_q
-                 OR TO_CHAR(id_articulo) LIKE l_q
-               )
+           AND UPPER(NVL(estado, 'A')) = 'A'
          ORDER BY descripcion
-         FETCH FIRST 30 ROWS ONLY
     ) LOOP
       APEX_JSON.OPEN_OBJECT;
       APEX_JSON.WRITE('id_articulo', r.id_articulo);

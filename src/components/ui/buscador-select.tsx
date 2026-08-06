@@ -3,9 +3,11 @@ import { useQuery } from "@tanstack/react-query";
 import { Loader2, Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
 
-// Buscador genérico con debounce para elegir una FK sin cargar todo el catálogo.
-// Modelos de uso: selector de artículo/proveedor (articulos-proveedores-view),
-// código OEM (vehiculos-repuestos-view). Backend: endpoints `*/buscar` (≤30 filas).
+// Buscador genérico con debounce para elegir una FK. Sigue la regla de LOVs del
+// proyecto: el endpoint `*/buscar` devuelve el catálogo COMPLETO y la función
+// `buscar` filtra en el front (multi-palabra en cualquier orden, ID/OEM parcial,
+// sin tope). Modelos de uso: selector de artículo/proveedor
+// (articulos-proveedores-view), código OEM (vehiculos-repuestos-view).
 export function BuscadorSelect<T>({
   value,
   label,
@@ -43,6 +45,10 @@ export function BuscadorSelect<T>({
     queryFn: () => buscar(qDebounced),
     enabled: abierto,
     retry: false,
+    // Las LOVs traen el catálogo completo y filtran en el front: mientras llega
+    // el resultado del nuevo texto, seguir mostrando el anterior en vez de
+    // vaciar la lista (evita el parpadeo "Sin artículos" en cada tecla).
+    placeholderData: (prev) => prev,
   });
 
   const items = data ?? [];
