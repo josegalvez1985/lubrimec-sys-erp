@@ -1040,10 +1040,26 @@ export async function eliminarCodigoBarra(idBarra: number, codEmpresa: number): 
   await authFetch(`codigos-barras/${idBarra}?${q}`, { method: "DELETE" });
 }
 
+// LOV completa de artículos + filtrado flexible en el front (REGLA del proyecto).
+// Antes mandaba `q` al backend: URLSearchParams codifica el espacio como '+' y
+// UTL_URL.UNESCAPE no lo revierte, así que cualquier búsqueda con espacios no
+// matcheaba nada; encima el LIKE usaba el texto ENTERO contra una sola columna y
+// el FETCH FIRST 30 escondía el resto. Ahora: palabras sueltas en cualquier
+// orden, ID/OEM parcial y sin tope. Los separadores (-, /, ., espacios) se
+// normalizan en ambos lados para que "9091503001" encuentre "90915-03001".
 export async function buscarArticulos(codEmpresa: number, q: string): Promise<ArticuloBusqueda[]> {
-  const params = new URLSearchParams({ cod_empresa: String(codEmpresa), q });
-  const data = await authFetch(`articulos/buscar?${params}`);
-  return (data.data ?? []) as ArticuloBusqueda[];
+  const data = await authFetch(`articulos/buscar?${qs({ cod_empresa: String(codEmpresa) })}`);
+  const todos = (data.data ?? []) as ArticuloBusqueda[];
+
+  const tokens = q.trim().toUpperCase().split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return todos;
+
+  const sinSep = (s: string) => s.replace(/[-/.\s]/g, "");
+  return todos.filter((a) => {
+    const texto = `${a.descripcion ?? ""} ${a.codigo_oem ?? ""} ${a.id_articulo}`.toUpperCase();
+    const textoSinSep = sinSep(texto);
+    return tokens.every((t) => texto.includes(t) || textoSinSep.includes(sinSep(t)));
+  });
 }
 
 // ─── Artículos-Proveedores (página 27) ───────────────────────────────────────
