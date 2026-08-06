@@ -6,6 +6,8 @@ por WhatsApp. Frontend **TanStack Start** (React 19) sobre backend **Oracle APEX
 ## Stack
 
 - **Frontend:** TanStack Start (React 19 + Router + Query), shadcn/ui (Radix + Tailwind v4), Vite.
+  Los `paths` del `tsconfig` (el alias `@/`) los resuelve Vite de forma **nativa**
+  (`resolve.tsconfigPaths: true`, desde Vite 7); ya no se usa el plugin `vite-tsconfig-paths`.
 - **Servidor:** Nitro (Node). Gestor de paquetes: **npm**.
 - **Backend:** Oracle APEX/ORDS (esquema `JOSEGALVEZ`, módulo `lubrimec`). Auth con token Bearer.
 - **Móvil:** APK Android vía Capacitor (WebView que carga la app publicada).
@@ -116,8 +118,10 @@ accesos rápidos se arman dinámicamente desde el endpoint `menu/paginas`.
   progreso, borrador persistente, guía de uso integrada. Backend: `db/whatsapp_sql.sql`
   (paquete + endpoints), `db/PROC_ENVIAR_MENSAJES_WHATSAPP.sql`, `db/WHATSAPP_DDL.sql`.
 - **Códigos de Barras** (page_id 24) — CRUD de `codigos_barras`. El artículo se elige con un
-  buscador con debounce (endpoint `articulos/buscar`); grilla con `DataTable` + export. Backend:
-  `db/codigos_barras_sql.sql`.
+  buscador con debounce sobre el endpoint `articulos/buscar`, que devuelve el **catálogo completo**
+  de artículos activos (`ESTADO='A'`) y filtra en el front por palabras sueltas, ID u OEM parcial;
+  grilla con `DataTable` + export. Ese mismo endpoint alimenta las LOVs de artículos de
+  Artículos-Proveedores y Vehículos-Repuestos. Backend: `db/codigos_barras_sql.sql`.
 - **Artículos-Proveedores** (page_id 27) — CRUD de `articulos_proveedores` (relación artículo↔
   proveedor + código del proveedor). Dos buscadores con debounce (`articulos/buscar`,
   `proveedores/buscar`). Backend: `db/articulos_proveedores_sql.sql`.
@@ -204,11 +208,20 @@ accesos rápidos se arman dinámicamente desde el endpoint `menu/paginas`.
   compras−ventas, descuento por `fn_porc_descuento`). Backend: `db/punto_venta_sql.sql`.
 - **Compras** (page_id 28/36) — maestro-detalle de `compras_cabecera`/`compras_detalle` (réplica de
   Ventas): grilla con filtros año/mes, alta "Nueva compra" (sugeridos de nro/timbrado), edición y
-  detalle de artículos con costo anterior por proveedor. **LOV de proveedores propio**
-  (`compras-cabecera/buscar-proveedores`): el endpoint devuelve **todos** los proveedores y el
-  front filtra flexible — nombre sin distinguir mayúsculas/minúsculas, RUC/CI con o sin guion, sin
-  tope de resultados (patrón preferido para LOVs de catálogos chicos; ver las guías). Backend:
-  `db/compras_sql.sql`.
+  detalle de artículos con costo anterior por proveedor.
+  - **Ver cabecera:** modal de solo lectura (ícono 👁 en la grilla y botón dentro del detalle) con
+    **todos** los datos del comprobante — serie, timbrado, moneda, tipo de cambio, condición,
+    comprador, costo delivery y total. Los campos que el modal de edición no permite tocar igual
+    se muestran ahí como texto (nada queda invisible).
+  - **Costo delivery** editable en la cabecera (`costo_delivery`); condición y comprador vienen
+    resueltos por JOIN (`desc_condicion`, `nombre_comprador`).
+  - **Alta encadenada de líneas:** al agregar un artículo el modal no se cierra — limpia los
+    campos, refresca la grilla y el total, y deja el foco listo para el siguiente.
+  - **LOVs propias** (proveedores y artículos): el endpoint devuelve el catálogo **completo** y el
+    front filtra flexible — nombre sin distinguir mayúsculas/minúsculas, RUC/CI con o sin guion,
+    palabras sueltas en cualquier orden, OEM con o sin guion (`9091503001` ≡ `90915-03001`), sin
+    tope de resultados. Es **la** regla del proyecto para toda LOV (ver las guías).
+  - Backend: `db/compras_sql.sql`.
 - **Inventario** (page_id 58/59) — CRUD de conteos de `INVENTARIO`. El modal Crear (pág 59) filtra
   el artículo por ¿Es Activo?/Categoría/Marca, resuelve códigos de barra
   (`inventario/articulo-por-barra`) y el backend calcula `cantidad_sistema` con
@@ -281,3 +294,13 @@ El APK es una **WebView remota** que carga la app de GitHub Pages (`server.url` 
 - [db/GUIA_ENDPOINTS.md](db/GUIA_ENDPOINTS.md) — mapear tablas Oracle a endpoints ORDS.
 - [src/GUIA_FRONT.md](src/GUIA_FRONT.md) — consumo desde el front, proxy y gotchas.
 - [GENERAR_APK.md](GENERAR_APK.md) — generar, firmar, publicar y versionar el APK.
+- [GUIA_LOGIN.md](GUIA_LOGIN.md) — guía portable para replicar este login (paquete
+  `PKG_AUTH_*` + token en tabla + proxy + sesión en el front) en **otro** proyecto
+  Oracle APEX/ORDS + React.
+
+### Reglas que no se reabren
+
+- **LOVs: lista completa del backend + filtrado en el front, sin excepciones** (también artículos).
+  Nada de `q` por query string ni `FETCH FIRST 30`. Detalle y por qué, en las dos guías.
+- **Sin caché en ningún nivel** (ver arriba).
+- Idioma del proyecto (código, comentarios, UI, docs): **español**.

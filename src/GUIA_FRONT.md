@@ -151,6 +151,9 @@ la BD son legado — no copiarlos en páginas nuevas.
   debounce de 300ms → `useQuery({ enabled: abierto })` → dropdown de resultados; al elegir llama
   `onSelect(item)`. Usado en `articulos-proveedores-view`, `codigos-barras-view` y
   `vehiculos-repuestos-view`. **No dupliques** este componente por vista; importá el de `ui/`.
+  Trae `placeholderData: (prev) => prev`: como la LOV filtra en el front, mientras llega el
+  resultado del texto nuevo se sigue mostrando el anterior (sin esto parpadeaba "Sin artículos"
+  en cada tecla).
 - **Gotcha:** no pongas un `<Input>` de "fallback manual" con el mismo valor **debajo** del
   `BuscadorSelect` — su dropdown es `absolute` y el input siguiente compite/lo tapa, y parecía "no
   funcionar" (pasó en la pág 94). Si necesitás mostrar el valor elegido, usá un `<p>` de texto.
@@ -209,9 +212,36 @@ Modelo: `buscarProveedoresCompra` en `src/lib/api.ts` (usada por el `BuscadorSel
 implementación de su prop `buscar`. Backend: ver "Selector de FK" en `db/GUIA_ENDPOINTS.md`.
 **Esta variante es LA regla para toda LOV nueva, también artículos** (pedido explícito del
 usuario, repetido). El filtrado local matchea **palabras sueltas en cualquier orden** e
-**ID parcial** además de descripción/OEM, sin tope de resultados. Modelo con artículos:
-`buscarArticulosInventario` en `src/lib/api.ts` (Inventario, pág 58/59). NO usar `q` +
-`FETCH FIRST 30` salvo pedido explícito.
+**ID parcial** además de descripción/OEM, sin tope de resultados. Modelos con artículos, ya todos
+migrados: `buscarArticulosInventario` (Inventario, pág 58/59), **`buscarArticulos`** (el genérico:
+códigos de barras, artículos-proveedores, vehículos-repuestos) y **`buscarArticulosCompra`**
+(detalle de compras). NO usar `q` + `FETCH FIRST 30` salvo pedido explícito.
+
+**Filtro estándar de artículos** (copiar tal cual en toda LOV de artículos nueva): se arma un
+texto único `descripcion + codigo_oem + id_articulo` en mayúsculas y **cada palabra** del término
+debe estar contenida ahí. Además se compara una versión **sin separadores** (`-`, `/`, `.`,
+espacios) de ambos lados, para que `9091503001` encuentre `90915-03001`:
+
+```ts
+const tokens = q.trim().toUpperCase().split(/\s+/).filter(Boolean);
+if (tokens.length === 0) return todos;
+const sinSep = (s: string) => s.replace(/[-/.\s]/g, "");
+return todos.filter((a) => {
+  const texto = `${a.descripcion ?? ""} ${a.codigo_oem ?? ""} ${a.id_articulo}`.toUpperCase();
+  const textoSinSep = sinSep(texto);
+  return tokens.every((t) => texto.includes(t) || textoSinSep.includes(sinSep(t)));
+});
+```
+
+**Por qué el patrón viejo (`q` al backend) fallaba** — tres bugs a la vez, útil para no repetirlos:
+
+1. **`URLSearchParams` codifica el espacio como `+`** y `UTL_URL.UNESCAPE` del lado Oracle **no**
+   lo revierte a espacio: cualquier búsqueda con espacios llegaba con `+` incrustado y no
+   matcheaba nada. Este solo gotcha ya invalida mandar texto libre por query string.
+2. El `LIKE` usaba el **texto entero contra una sola columna**: pegar
+   `"90915-03001 FILTRO DE ACEITE COROLLA"` no encontraba nada, porque el OEM vive en
+   `codigo_oem` y el resto en `descripcion`.
+3. El `FETCH FIRST 30` **escondía el resto** de las coincidencias.
 
 **LOVs en cascada desde UN dataset:** cuando varias LOVs dependen entre sí (Rubro → Marca →
 Viscosidad, pág 113), no hacer un endpoint por LOV: un solo endpoint devuelve las ternas
@@ -378,6 +408,25 @@ Notas de `Column<T>`:
   Props: `titulo`, `valores: {valor,n}[]`, `seleccion: Set<string>`, `onToggle`. Sidebar en
   `<aside className="space-y-5">`. Modelos: `existencia-articulos-view`, `compras-articulos-view`,
   `ficha-articulos-view`, `articulos-sin-barra-view`.
+- **Ningún dato de la cabecera queda invisible.** Si el modal de edición solo permite tocar algunos
+  campos (porque el back solo actualiza esos), los demás **no se omiten**: van como texto de solo
+  lectura. Dos piezas, modelo `compras-view.tsx`:
+  - Un **modal "Ver"** (ícono `Eye` en la columna de acciones y botón dentro del detalle) con la
+    cabecera completa, armado con un helper local `CampoVer` (`label` + valor, `—` si es nulo).
+  - Un bloque `bg-muted/30` **dentro del modal de edición** con esos mismos campos no editables
+    (serie, timbrado, moneda, tipo de cambio, comprador).
+  - Para las descripciones de FK, preferir el campo del JOIN (`desc_condicion`, `nombre_comprador`)
+    y dejar la LOV como respaldo (`item.desc_condicion ?? lov.find(...)?.descripcion`): así la
+    pantalla no se rompe si la BD todavía no tiene la versión nueva del paquete.
+  - Cuidado con los **stubs**: tras "Nueva compra" el item solo tiene `id_factura`, no hay cabecera
+    que mostrar → condicionar el botón (`item?.cod_persona != null`).
+- **Alta encadenada en modales de detalle.** En un maestro-detalle se cargan varias líneas seguidas,
+  así que al **dar de alta** el modal **no se cierra**: llama a `onSavedKeepOpen()` (invalida las
+  queries del detalle **y las del maestro** — el total de la cabecera cambia), limpia los campos,
+  resetea el `lastKey` del sync del form y devuelve el foco al primer input para el siguiente
+  artículo. En **edición** sí se cierra (`onSaved()`, comportamiento de siempre). Modelo:
+  `LineaDialog` en `compras-view.tsx`. Los `DialogContent` de formularios largos llevan
+  `max-h-[90dvh] overflow-y-auto` para no cortarse en móvil.
 
 ## Reporte facetado con carga incremental por mes
 
@@ -433,9 +482,13 @@ JSON complejo"). El descuento va al backend (afecta el precio); rubro/marca/bús
   (FAB)** abajo-derecha con total + contador que abre el carrito en un modal; el contenido del carrito
   (`carritoContenido`) se comparte entre la columna desktop y el modal móvil.
 
-> **Gotcha del buscador (`BuscadorSelect`):** los endpoints `*/buscar` que rechazan `q=` vacío hacen
-> que la lista "no aparezca" (400 en la primera llamada al abrir). El cliente debe construir el
-> `URLSearchParams` **sin** `q` cuando está vacío: `if (q.trim()) params.set("q", q.trim())`.
+> **Gotcha del buscador (`BuscadorSelect`), solo para los `*/buscar` legado que todavía reciben
+> `q`:** esos endpoints rechazan `q=` vacío y la lista "no aparece" (400 en la primera llamada al
+> abrir). El cliente debe construir el `URLSearchParams` **sin** `q` cuando está vacío:
+> `if (q.trim()) params.set("q", q.trim())`. En LOVs nuevas el problema no existe: **no se manda
+> `q` nunca** (lista completa + filtro en el front, ver la REGLA). De hecho mandarlo está roto para
+> texto con espacios — `URLSearchParams` los codifica como `+` y `UTL_URL.UNESCAPE` no los
+> revierte.
 
 ## Gotchas de UI
 

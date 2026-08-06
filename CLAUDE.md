@@ -18,6 +18,9 @@ establecido y gotchas que costó descubrir; no reinventar nada que ya esté resu
   mano del `QUERY_STRING`. Referencia viva: tabla `marcas`.
 - [GENERAR_APK.md](GENERAR_APK.md) — solo si se toca algo nativo del APK (ícono,
   nombre, `appId`, `server.url`, plugins, versión).
+- [GUIA_LOGIN.md](GUIA_LOGIN.md) — guía portable del login (paquete `PKG_AUTH_*`, token
+  en tabla, proxy, sesión en el front). Es para **replicarlo en otro proyecto**; no hace
+  falta leerla para trabajar en este.
 
 ## Reglas clave (detalle en las guías)
 
@@ -30,9 +33,14 @@ establecido y gotchas que costó descubrir; no reinventar nada que ya esté resu
 - Contrato JSON uniforme: `{ success, message?, data? }`.
 - **LOVs (listas de valores): SIEMPRE lista completa + filtro en el front, sin excepciones**
   (también artículos). El endpoint devuelve todo el catálogo (sin `q`, sin `FETCH FIRST 30`);
-  el front filtra multi-palabra en cualquier orden, ID parcial y sin tope de resultados.
+  el front filtra multi-palabra en cualquier orden, ID/OEM parcial, con o sin separadores
+  (`9091503001` ≡ `90915-03001`) y sin tope de resultados.
   Modelos: `PKG_INVENTARIO_LUBRIMEC.BUSCAR_ARTICULOS` (`db/inventario_sql.sql`) +
-  `buscarArticulosInventario` (`src/lib/api.ts`). Regla cerrada: no volver a preguntarla.
+  `buscarArticulos` / `buscarArticulosCompra` / `buscarArticulosInventario` (`src/lib/api.ts`).
+  Regla cerrada: no volver a preguntarla. Dos gotchas asociados: **no** mandar texto libre por
+  query string (`URLSearchParams` codifica el espacio como `+` y `UTL_URL.UNESCAPE` no lo
+  revierte) y en `ARTICULOS` filtrar por **`ESTADO='A'`**, no por `es_activo` (son columnas
+  distintas).
 - El APK es WebView remota: los cambios web llegan con `git push` (Pages), sin
   regenerar el APK.
 - Gestor de paquetes: **npm**. Deploy: push a `main` dispara GitHub Pages
