@@ -88,10 +88,14 @@ endpoints de solo lectura sin paquete (`ORDS_MENU_PAGINAS.sql`, `ORDS_VENTAS_*.s
   Los `BUSCAR_*` viejos con `q` + `FETCH FIRST 30` (`codigos_barras_sql.sql`,
   `articulos_proveedores_sql.sql`, `numeros_vouchers_sql.sql`) son **legado**: no copiarlos en
   páginas nuevas.
-  - **`q` vacío → 400:** el handler ORDS rechaza `q=` vacío. El proc debe tratar `TRIM(q) IS NULL`
-    como "sin filtro" (devuelve los primeros 30), y el **cliente** front debe omitir el param `q`
-    cuando no hay texto (ver `src/GUIA_FRONT.md`, gotcha del buscador). Modelo: `BUSCAR_PERSONAS` en
+  - **`q` vacío → 400** (solo aplica a los `BUSCAR_*` legado que aún reciben `q`): el handler ORDS
+    rechaza `q=` vacío. El proc debe tratar `TRIM(q) IS NULL` como "sin filtro" (devuelve los
+    primeros 30), y el **cliente** front debe omitir el param `q` cuando no hay texto (ver
+    `src/GUIA_FRONT.md`, gotcha del buscador). Modelo: `BUSCAR_PERSONAS` en
     `numeros_vouchers_sql.sql` (endpoint `personas/buscar`, usado por el buscador de cliente del POS).
+  - **No mandar texto libre por query string.** `URLSearchParams` codifica el espacio como `+` y
+    `UTL_URL.UNESCAPE` **no** lo revierte: toda búsqueda con espacios llega con `+` incrustado y no
+    matchea nada. Otra razón para que el filtrado viva en el front.
   - **Búsqueda por RUC/CI:** normalizar guiones/espacios en ambos lados para que `4962931` matchee
     `496293-1`: `REPLACE(REPLACE(UPPER(nro_ruc),'-'),' ') LIKE l_qn`, con `l_qn` el término también
     sin guiones ni espacios. Modelo: `BUSCAR_PERSONAS` en `numeros_vouchers_sql.sql`.
@@ -108,6 +112,17 @@ endpoints de solo lectura sin paquete (`ORDS_MENU_PAGINAS.sql`, `ORDS_VENTAS_*.s
     `PKG_INVENTARIO_LUBRIMEC.BUSCAR_ARTICULOS` (`inventario_sql.sql`): devuelve el catálogo
     completo con sus atributos de cascada (`es_activo`, `id_rubro`, `id_marca`) y el front
     filtra todo (multi-palabra en cualquier orden, ID parcial, cascada), sin tope.
+    **Ya migrados** (todos los `BUSCAR_ARTICULOS` del proyecto siguen la regla):
+    `inventario_sql.sql`, `compras_sql.sql` (`compras-cabecera/buscar-articulos`) y
+    `codigos_barras_sql.sql` (`articulos/buscar`, el genérico que usan también
+    artículos-proveedores y vehículos-repuestos).
+    - Al migrar un proc viejo, **dejar `p_q` en la firma** aunque no se use: el handler ORDS ya
+      bindea `:q` y cambiar la firma obliga a tocar el script ORDS. Se ignora y se documenta.
+  - **`ARTICULOS` tiene DOS columnas de activo — filtrar por `ESTADO`, no por `es_activo`.**
+    `ESTADO = 'A'` es Activo/Inactivo (lo que muestra el APEX y lo que el usuario espera ver);
+    `es_activo` (`'S'`/`'N'`) es otra cosa. Filtrar por la equivocada dejaba fuera artículos
+    válidos de las LOVs. Usar `UPPER(NVL(estado, 'A')) = 'A'` (criterio único en
+    `compras_sql.sql` y `codigos_barras_sql.sql`).
 - **Imagen en BLOB** (modelo: `articulos_sql.sql`). Reglas para no serializar megas de más:
   - `LISTAR` **no** devuelve el blob: solo `CASE WHEN DBMS_LOB.GETLENGTH(archivo_imagen) > 0 THEN 1
     ELSE 0 END AS tiene_imagen`.
@@ -259,6 +274,11 @@ el bloque `BEGIN ... ORDS.DEFINE_* ... END;`.
   `articulos_para_inventario_sql.sql` (pág 76), `ajustar_inventarios_sql.sql` (pág 87/88, ajuste
   con comprobante AJS-E atómico + foto pública), `planilla_inventarios_sql.sql` (pág 112/113/115,
   planilla masiva + upload de foto binario).
+- **Maestro-detalle:** `ventas_sql.sql` (pág 60/109) y `compras_sql.sql` (pág 28/36) — cabecera con
+  total calculado del detalle + `LEFT JOIN` a las FK para devolver descripciones de solo lectura
+  (`desc_moneda`, `desc_condicion`, `nombre_comprador`, `nombre_proveedor`), upsert de línea y
+  LOVs propias del módulo. Ojo con la numeración del detalle (ver la nota de PK compuesta vs
+  global más arriba).
 - **Proceso de negocio replicado del APEX:** `ajustar_inventarios_sql.sql` — el proceso AFTER
   SUBMIT del APEX (nro de comprobante con algoritmo de huecos + INSERT cabecera/detalle + UPDATE
   de cierre) se replica como UN procedimiento con COMMIT único al final (atómico, ROLLBACK en
