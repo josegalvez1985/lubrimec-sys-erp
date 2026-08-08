@@ -3515,3 +3515,33 @@ export async function registrarVentaPOS(
   });
   return data.id_factura as number;
 }
+
+// ─── Carga de artículos (jobs de DBMS_SCHEDULER) ──────────────────────────────
+
+export type ResultadoJobCarga = {
+  job: string;
+  ok: boolean;
+  error?: string;
+  segundos: number;
+};
+
+export type CargaArticulosResultado = {
+  message: string;
+  jobs: ResultadoJobCarga[];
+};
+
+/**
+ * Dispara los tres jobs de carga de artículos (repuestos, lubricantes y más
+ * vendidos) con `use_current_session => TRUE`: la llamada es **síncrona**, no
+ * resuelve hasta que los tres terminan en la BD. Solo el usuario admin (JOSEG)
+ * está autorizado; el backend devuelve 403 al resto.
+ */
+export async function cargarArticulos(): Promise<CargaArticulosResultado> {
+  const s = getSesion();
+  const p = new URLSearchParams({ app_user: (s?.app_user ?? "").toUpperCase() });
+  const data = await authFetch(`cargar-articulos?${p}`, { method: "POST" });
+  return {
+    message: (data.message ?? "Carga finalizada") as string,
+    jobs: (data.data ?? []) as ResultadoJobCarga[],
+  };
+}

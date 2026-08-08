@@ -120,6 +120,21 @@ sus permisos. Cada usuario ve un menú distinto.
   → título alfabético (estable). Es por dispositivo, no se sincroniza. El conteo es histórico
   total (no decae): un acceso muy usado queda arriba aunque dejes de abrirlo.
 
+### Botón de acción del dashboard (proceso de BD, no una página)
+
+Modelo: `src/components/cargar-articulos-boton.tsx` — botón "Cargar artículos" en el header del
+`DashboardView` (junto a "Nueva venta"), que dispara los jobs de carga vía
+`POST cargar-articulos` (ver `db/GUIA_ENDPOINTS.md`, "Disparar un job de DBMS_SCHEDULER").
+
+- No va en `VISTAS` (no es una página del menú): se renderiza directo en `DashboardView`.
+- **El propio componente decide si se muestra:** `getSesion()?.app_user === "JOSEG"` → si no,
+  devuelve `null`. El backend igual valida (403); el chequeo del front es solo UX.
+- Confirmación con `AlertDialog` + `e.preventDefault()` en el `AlertDialogAction`, para que el
+  diálogo **no se cierre al click** sino cuando la mutación termina (el proceso es síncrono y
+  puede tardar minutos; el botón queda en "Cargando..." con spinner).
+- Segundo `AlertDialog` con el **detalle por job** (ok/error/segundos) del array `data` de la
+  respuesta. `onError` obligatorio con `toast.error` (regla del proyecto).
+
 ### Registrar una página nueva en el menú
 
 1. Implementar el componente (ej. `src/components/<tabla>-view.tsx`).
