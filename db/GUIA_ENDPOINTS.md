@@ -398,6 +398,26 @@ actual:** lote de **60** números por corrida (`v_max_registros`), **20s** entre
 también `MAX_LOTE_BASE` en `whatsapp-view.tsx` (debe coincidir con `v_max_registros`) y los textos
 de la UI que describen el ritmo.
 
+## Disparar un job de DBMS_SCHEDULER desde un endpoint
+
+Modelo: `db/cargar_articulos_sql.sql` (`POST cargar-articulos`) — corre
+`JOB_CARGA_REPUESTOS`, `JOB_INSERT_LUBRICANTES` y `JOB_ARTICULOS_MAS_VENDIDOS`, el bloque
+anónimo que antes se ejecutaba a mano en la BD.
+
+- `DBMS_SCHEDULER.RUN_JOB(job, use_current_session => TRUE)` corre el job **en la sesión del
+  request**: el POST es **síncrono** y no responde hasta que termina. Es lo que se quiere (el
+  usuario ve el resultado), pero si el job crece puede chocar con el timeout de ORDS/proxy. Si
+  eso pasa, la alternativa es `use_current_session => FALSE` + polling (patrón WhatsApp).
+- **Un `BEGIN/EXCEPTION` por job**, no un bloque único: el bloque anónimo original abortaba en el
+  primer error y no se sabía qué había corrido. La respuesta devuelve
+  `data: [{ job, ok, error?, segundos }]` y `success = (0 fallas)`.
+- **Sin `COMMIT`/`ROLLBACK` en el handler:** cada job maneja su propia transacción.
+- El POST **no lleva body**: los parámetros (`app_user`) van por query string y se leen con
+  `get_qs`. El proxy no manda `content-type` cuando no hay payload, así que ORDS no tira el 400
+  de "Expected {,[ but got EOF".
+- Proceso de carga masiva → **restringido a `app_user = 'JOSEG'`** (403 al resto), igual criterio
+  que `conteo-efectivo`/`existencia-articulos`.
+
 ## Notas / gotchas
 
 - **Síntoma "el código está bien pero la app se comporta viejo":** los `.sql` de este repo **no** se

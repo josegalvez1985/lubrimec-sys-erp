@@ -84,6 +84,7 @@ import {
   claveAcceso,
   type UsoAccesos,
 } from "@/lib/uso-accesos";
+import { CargarArticulosBoton } from "@/components/cargar-articulos-boton";
 import { CobrosTarjetaView } from "@/components/cobros-tarjeta-view";
 import { MarcasView } from "@/components/marcas-view";
 import { VentasDashboardChart } from "@/components/ventas-dashboard-chart";
@@ -761,14 +762,18 @@ function DashboardView({
             Aquí tienes el resumen de tu negocio.
           </p>
         </div>
-        <Button
-          onClick={() => onNavigate(39)}
-          className="shrink-0 bg-gradient-primary font-semibold text-primary-foreground shadow-glow hover:opacity-95"
-        >
-          <Plus className="mr-2 h-4 w-4" />
-          <span className="hidden sm:inline">Nueva venta</span>
-          <span className="sm:hidden">Venta</span>
-        </Button>
+        <div className="flex shrink-0 items-center gap-2">
+          {/* Solo visible para el usuario admin (el propio componente lo decide) */}
+          <CargarArticulosBoton />
+          <Button
+            onClick={() => onNavigate(39)}
+            className="shrink-0 bg-gradient-primary font-semibold text-primary-foreground shadow-glow hover:opacity-95"
+          >
+            <Plus className="mr-2 h-4 w-4" />
+            <span className="hidden sm:inline">Nueva venta</span>
+            <span className="sm:hidden">Venta</span>
+          </Button>
+        </div>
       </div>
 
       {/* Cobros pendientes de acreditar (link al modal de la página 111) */}
