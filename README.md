@@ -90,6 +90,7 @@ responsabilidad de cada vista: [src/GUIA_FRONT.md](src/GUIA_FRONT.md).
   `data-table`, `faceta`, `input-monto`, `buscador-select` para catálogos grandes y
   `selector-modal` para LOVs cortas en modal de botones).
 - `src/lib/api.ts` — cliente HTTP: sesión, `authFetch`, funciones por tabla.
+- `src/lib/vistas.tsx` — mapa `page_id` → vista, cargadas con `React.lazy` (una por chunk).
 - `src/hooks/` — hooks (aviso de actualización del APK).
 - `db/` — paquetes PL/SQL y scripts ORDS de cada tabla.
 - `android/` — proyecto Capacitor para el APK.
@@ -110,8 +111,9 @@ Detalles del consumo desde el front y gotchas del proxy: **[src/GUIA_FRONT.md](s
 
 ## Páginas implementadas
 
-Las páginas se mapean por `page_id` de APEX en `src/routes/home.tsx` (mapa `VISTAS`). El menú y los
-accesos rápidos se arman dinámicamente desde el endpoint `menu/paginas`.
+Las páginas se mapean por `page_id` de APEX en `src/lib/vistas.tsx` (mapa `VISTAS`), cada una
+cargada con `React.lazy` para que baje solo al abrirse. El menú y los accesos rápidos se arman
+dinámicamente desde el endpoint `menu/paginas`.
 
 - **Shell (menú y topbar)** — el **sidebar arranca siempre oculto** (la preferencia no se recuerda);
   se muestra con el botón de la topbar. Junto al usuario hay un **botón Home** que vuelve al
@@ -307,6 +309,26 @@ accesos rápidos se arman dinámicamente desde el endpoint `menu/paginas`.
   (`APEX_APPLICATION_PAGES`, requiere el fix de workspace); al crear se excluyen las páginas ya
   asignadas al usuario. "Copiar Roles" (pág 64) copia los roles de un usuario a otro (solo los
   que no tiene). Backend: `db/roles_paginas_sql.sql`.
+
+## Rendimiento
+
+Dos reglas que sostienen el arranque de la app; romperlas se nota enseguida:
+
+1. **Las vistas se cargan con `React.lazy`** (`src/lib/vistas.tsx`). Con imports estáticos las
+   61 vistas caen en el chunk de `/home`: eran **1,5 MB (371 KB gzip)** y el dashboard tenía que
+   bajar y parsear todo el ERP antes de pintar. Hoy el arranque es **62 KB (17,6 KB gzip)** —21×
+   menos— repartido en ~148 chunks, y `jspdf`, `html2canvas` y `recharts` quedaron fuera del
+   arranque (bajan con la pantalla que los usa). Al agregar una página: anotarla en `vistas.tsx`
+   con `vista(...)`, **nunca** con un import estático en `home.tsx`.
+2. **Nada que se tipee va en una `queryKey`.** Como no hay caché (ver GUIA_FRONT), cada cambio
+   de `queryKey` es un viaje al servidor: un valor que cambia tecla a tecla dispara una consulta
+   por pulsación. En el POS, `descuento` en la `queryKey` hacía que cada tecla relanzara una
+   consulta de **12,5 s**; ahora el catálogo se pide una vez y el descuento se aplica en el front.
+   Un `<select>`, un `type="date"` o un id de LOV sí pueden ir: cambian por selección, no por
+   carácter.
+
+Detalle y casos concretos: **[src/GUIA_FRONT.md](src/GUIA_FRONT.md)** — "Qué NO poner en una
+`queryKey`".
 
 ## Deploy
 

@@ -28,6 +28,16 @@ establecido y gotchas que costó descubrir; no reinventar nada que ya esté resu
   `/api/ords/` (proxy en `src/routes/api/ords.$.ts`). Toda llamada protegida usa
   `authFetch`, nunca `fetch` directo. Imágenes binarias (módulo ORDS `paginaweb`) van
   por otro proxy: `/api/img/` (`src/routes/api/img.$.ts`, público, con timeout + reintentos).
+- **Vistas con `React.lazy`:** el mapa `page_id` → vista vive en `src/lib/vistas.tsx` (NO en
+  `src/routes/`: ahí TanStack Start lo tomaría como ruta y rompería el route tree, y con él el
+  proxy y el login). Al agregar una página se anota con `vista(() => import(...), "XView")`,
+  nunca con un import estático en `home.tsx`: eso devolvería las 61 vistas al chunk de arranque
+  (era 371 KB gzip; hoy 17,6 KB).
+- **Nada que el usuario tipee va en una `queryKey`.** Sin caché, cada cambio de key es una
+  consulta al servidor: un texto/monto/fecha escrito a mano dispara una por tecla. Si el valor
+  solo transforma datos ya traídos, resolvelo en el front (`useMemo`); si hay que consultar,
+  esperá a que esté completo (`enabled`). Un `<select>`, `type="date"` o id de LOV sí pueden ir.
+  Caso: `descuento` en el POS costaba 12,5 s por tecla. Detalle en `src/GUIA_FRONT.md`.
 - **Sin caché en ningún nivel:** no poner `staleTime` en `useQuery`; los defaults
   globales ya fuerzan consulta al servidor siempre.
 - Contrato JSON uniforme: `{ success, message?, data? }`.

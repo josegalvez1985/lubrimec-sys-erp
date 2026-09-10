@@ -219,10 +219,19 @@ function CrearPlanillaDialog({
     }
   }
 
+  // La fecha se tipea a mano (dd/mm/yyyy). Si entrara cruda en la queryKey, cada
+  // tecla dispararía una consulta —y las intermedias ("2", "25/", "25/0"…) no son
+  // fechas válidas—: se consulta solo cuando está completa. Vacía = primera carga,
+  // donde el backend resuelve la fecha por parámetro y la devuelve.
+  const fechaCompleta = /^\d{2}\/\d{2}\/\d{4}$/.test(fecha.trim());
+  const fechaConsulta = fechaCompleta ? fecha.trim() : "";
+
   const pendientesQ = useQuery({
-    queryKey: ["planilla-pendientes", COD_EMPRESA, fecha],
-    queryFn: () => pendientesPlanilla(COD_EMPRESA, fecha || null),
-    enabled: open,
+    queryKey: ["planilla-pendientes", COD_EMPRESA, fechaConsulta],
+    queryFn: () => pendientesPlanilla(COD_EMPRESA, fechaConsulta || null),
+    // Mientras la fecha está a medio escribir no se consulta: se conserva en
+    // pantalla el último resultado en vez de pedir listados que no sirven.
+    enabled: open && (fechaCompleta || !fecha.trim()),
     retry: false,
   });
 
