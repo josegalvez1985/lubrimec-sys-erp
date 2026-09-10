@@ -48,18 +48,28 @@ el binario tal cual, sin forzar JSON. Es **público** (sin token). Endpoint:
 
 ## `VITE_API_URL` por entorno
 
-`src/lib/api.ts` lee `import.meta.env.VITE_API_URL` como base. Debe valer `/api/ords/`
-en **todos** los entornos donde haya servidor Node (dev y prod con Nitro), para que use
-el proxy:
+`src/lib/api.ts` lee `import.meta.env.VITE_API_URL` como base. Su valor depende de si el
+entorno tiene servidor Node (y por lo tanto proxy) o no:
 
-- `.env` (dev) → `VITE_API_URL=/api/ords/`
-- `.env.production` → `VITE_API_URL=/api/ords/` + `ORDS_TARGET=https://oracleapex.com`
+- **Dev y prod con Nitro** → `VITE_API_URL=/api/ords/` (pasa por el proxy: sin CORS y el
+  token no viaja en la URL).
+  - `.env` (dev) → `VITE_API_URL=/api/ords/` + `ORDS_TARGET=https://oracleapex.com`
+  - `.env.production` → lo mismo, para `node .output/server/index.mjs`.
+- **GitHub Pages** (el deploy que se usa hoy, SPA estático **sin** servidor Node) →
+  `VITE_API_URL=https://oracleapex.com/ords/josegalvez/lubrimec/`, es decir el navegador
+  llama a ORDS **directo**. Funciona porque los handlers emiten
+  `Access-Control-Allow-Origin: *`. Lo fija el workflow `.github/workflows/deploy-pages.yml`;
+  si esos headers CORS se sacaran del backend, Pages dejaría de andar y habría que mover el
+  deploy a un host con Node.
 
-> **Deploy:** este front necesita correr con **servidor Node** (`node .output/server/index.mjs`),
-> NO GitHub Pages estático. En Pages no existe el proxy `/api/ords` → el navegador
-> llamaría a ORDS directo y reaparece el CORS. Build: `npm run build` (preset
-> `node-server`). Setear en el host: `VITE_API_URL=/api/ords/`, `VITE_APP_ID`,
-> `ORDS_TARGET`.
+> **`.env` NO se versiona** (está en `.gitignore`): después de clonar hay que crearlo a mano
+> o el front sale sin base de API.
+>
+> **Síntoma de `.env` faltante en dev:** el login dice **"Usuario o contraseña incorrectos"**
+> con credenciales válidas. Con `VITE_API_URL` vacío la llamada va a `/auth/login` del propio
+> dev server, que responde el HTML del SPA; `res.json()` falla, el parser recibe `{}` y como no
+> hay `token` tira ese mensaje. No es el backend ni la contraseña. Vite lee el `.env` **solo al
+> arrancar**: hay que reiniciar `npm run dev` después de crearlo.
 
 ## `src/lib/api.ts` — el cliente
 
@@ -203,6 +213,8 @@ botones, con imagen para un aspecto más moderno"). **No** dupliques este compon
   imagen: los billetes de `MONEDAS_DETALLE` en `conteo-efectivo-view.tsx`.
 - `triggerRef` expone el botón para enfocarlo desde afuera (modelo: el modal de facturar del POS
   enfoca la forma de cobro al abrirse con `onOpenAutoFocus`).
+- Al portar un formulario de APEX, **todo `<select>` nativo de catálogo corto va a
+  `SelectorModal`** (modelo: la forma de pago de `compras-pagos-view`, pág 78).
 - **Cuándo NO usarlo:** catálogos grandes (artículos, clientes, proveedores) → `BuscadorSelect`,
   que filtra por texto. La regla de "LOV completa + filtro en el front" (abajo) sigue rigiendo para
   esos.
@@ -231,6 +243,14 @@ usuario, repetido). El filtrado local matchea **palabras sueltas en cualquier or
 migrados: `buscarArticulosInventario` (Inventario, pág 58/59), **`buscarArticulos`** (el genérico:
 códigos de barras, artículos-proveedores, vehículos-repuestos) y **`buscarArticulosCompra`**
 (detalle de compras). NO usar `q` + `FETCH FIRST 30` salvo pedido explícito.
+
+**LOV de documentos (no de artículos):** mismo patrón, cambiando el texto que se arma. Modelo:
+`buscarCompras` (facturas del pago de compras, pág 78) — arma
+`proveedor + serie + nro_comprobante + id_factura + fecha` y agrega la fecha **en los dos
+formatos** (`dd/mm/yyyy` e ISO) para que se pueda tipear como se ve en pantalla o como viene del
+backend. La etiqueta que se muestra replica la de la LOV del APEX
+(`proveedor, dd/mm/yyyy, serie-nro`); para poder rearmarla al **editar**, el `LISTAR` del backend
+tiene que devolver esos campos del JOIN, no solo el id.
 
 **Filtro estándar de artículos** (copiar tal cual en toda LOV de artículos nueva): se arma un
 texto único `descripcion + codigo_oem + id_articulo` en mayúsculas y **cada palabra** del término
@@ -392,6 +412,65 @@ Notas de `Column<T>`:
   **ya filtradas/ordenadas** (lo que se ve en pantalla), reusando `exportarExcel` de
   `src/lib/export.ts`. Sin `exportName` no se muestra el botón.
 
+## Responsive: escala fluida + Web/Mobile (regla del proyecto)
+
+Requisito explícito del usuario: la app tiene que verse bien en **1920×1080 y 1366×768**
+(el problema original era que en 1366 los campos, botones y espacios se veían enormes) y
+tener una experiencia **móvil propia**, no una versión encogida del escritorio.
+**Prohibido resolverlo con `zoom` global.**
+
+### Dónde se centraliza: `src/styles.css`
+
+Los tamaños de control y los espaciados del layout viven en **variables CSS** (un solo
+lugar). Los componentes de `ui/` las consumen, así que cambiar un valor ahí reescala toda
+la app sin tocar ninguna vista:
+
+| Variable | Para qué |
+|---|---|
+| `--ui-font`, `--ui-font-sm`, `--ui-font-lg` | tipografía de UI |
+| `--field-font` | fuente de los campos (16px en móvil: evita el zoom de iOS) |
+| `--control-h`, `--control-h-sm`, `--control-h-lg`, `--control-px` | alto/padding de input, button y triggers |
+| `--panel-p`, `--panel-gap` | padding y separación de paneles |
+| `--cell-px`, `--cell-py` | celdas de tabla |
+| `--topbar-h`, `--sidebar-w` | shell (`home.tsx`) |
+
+Tres regímenes, no un escalado único:
+
+1. **Escritorio (default):** `clamp()` entre 1280 y 1920px → controles ~32px en 1366 y
+   ~36px en 1920.
+2. **Notebook chico / tablet (`<1024px`):** valores fijos del extremo compacto.
+3. **Móvil (`<640px`):** al revés de lo intuitivo, los controles **crecen** a 44px (área
+   táctil) y los campos usan 16px de fuente.
+
+Uso desde JSX con arbitrary values de Tailwind v4 (verificados en el CSS compilado):
+`h-[var(--control-h)]`, `px-[var(--control-px)]`, `p-[var(--panel-p)]`,
+`text-[length:var(--ui-font)]`.
+
+- **No** vuelvas a poner `h-9`/`h-10`/`text-sm`/`p-4 sm:p-6 lg:p-8` fijos en los
+  componentes de `ui/` ni en el shell: usá las variables.
+- En una vista puntual sí podés usar utilidades normales; lo que no se hace es
+  redefinir la escala.
+
+### Mobile: qué ya es automático
+
+- **`DataTable` cambia de forma solo:** tabla en `md:` y **tarjetas** en móvil (una por
+  fila, columna principal como título y el resto como pares etiqueta/valor, más los
+  totales al pie). Ya no hace falta el doble render manual "tarjetas + grilla" de
+  `ventas-articulos-view`. La columna principal es la primera con `hideable: false`
+  (marcá siempre una).
+- Los botones de acción de la fila se agrandan a 40px dentro de la tarjeta móvil.
+- **`DialogContent`** ya trae `max-h-[90dvh] overflow-y-auto` y deja margen lateral en
+  móvil: no hace falta repetirlo en cada modal.
+
+### Qué sigue siendo responsabilidad de la vista
+
+- Pares de campos en un modal: `grid-cols-1 gap-3 sm:grid-cols-2` (nunca `grid-cols-2` a
+  secas, que en 360px queda ilegible). Modelo: `compras-pagos-view`.
+- Layouts propios: unidades relativas y `minmax(0,1fr)`, nunca anchos fijos mayores al
+  viewport.
+- El `<main>` del shell lleva `min-w-0` (ver "Gotchas de UI").
+- Gráficos: `ResponsiveContainer`.
+
 ## Reglas transversales (obligatorias en toda vista nueva)
 
 - **Montos con separador de miles — SIEMPRE.** Todo campo de monto/importe/precio/total/cantidad
@@ -533,7 +612,8 @@ JSON complejo"). El descuento va al backend (afecta el precio); rubro/marca/bús
 - [ ] ¿El verbo está declarado en el proxy `ords.$.ts`?
 - [ ] ¿El back tiene `DEFINE_PARAMETER` del header Authorization? (si no → "Token invalido")
 - [ ] ¿DELETE/GET van sin body? (si mandan content-type JSON vacío → 400)
-- [ ] ¿`VITE_API_URL` = `/api/ords/` en el entorno donde falla?
+- [ ] ¿`VITE_API_URL` = `/api/ords/` en el entorno donde falla? (en dev, ¿existe el `.env`?
+      si no, el login dice "Usuario o contraseña incorrectos" con credenciales válidas)
 - [ ] ¿La respuesta es JSON? Si llega HTML "Service Unavailable" → error 500 en el handler
       PL/SQL (revisar el bloque del handler en ORDS).
 

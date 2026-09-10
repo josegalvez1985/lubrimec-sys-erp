@@ -462,7 +462,7 @@ function HomePage() {
       {/* Desktop sidebar */}
       <aside
         className={cn(
-          "hidden w-64 shrink-0 flex-col bg-sidebar text-sidebar-foreground",
+          "hidden w-[var(--sidebar-w)] shrink-0 flex-col bg-sidebar text-sidebar-foreground",
           !menuColapsado && "lg:flex",
         )}
       >
@@ -490,7 +490,7 @@ function HomePage() {
       {/* Main */}
       <div className="flex min-w-0 flex-1 flex-col">
         {/* Topbar */}
-        <header className="sticky top-0 z-20 flex h-16 items-center gap-3 border-b border-border bg-background/80 px-4 backdrop-blur sm:px-6">
+        <header className="sticky top-0 z-20 flex h-[var(--topbar-h)] items-center gap-3 border-b border-border bg-background/80 px-[var(--panel-p)] backdrop-blur">
           <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
             <SheetTrigger asChild>
               <Button variant="ghost" size="icon" className="lg:hidden" aria-label="Abrir menú">
@@ -568,7 +568,9 @@ function HomePage() {
         </header>
 
         {/* Page content */}
-        <main className="min-w-0 flex-1 p-4 sm:p-6 lg:p-8">
+        {/* min-w-0: sin esto una tabla ancha empuja la página entera fuera del
+            viewport en vez de scrollear dentro de su contenedor. */}
+        <main className="min-w-0 flex-1 p-[var(--panel-p)]">
           {active === "dashboard" ? (
             <DashboardView usuario={usuario} paginas={paginas} onNavigate={handleNav} />
           ) : VISTAS[active as number] ? (
@@ -626,14 +628,16 @@ function SidebarContent({
   return (
     <div className="flex h-full flex-col">
       {/* Brand */}
-      <div className="flex h-16 items-center gap-3 border-b border-sidebar-border px-5">
+      <div className="flex h-[var(--topbar-h)] items-center gap-3 border-b border-sidebar-border px-[var(--panel-p)]">
         <img
           src={`${import.meta.env.BASE_URL}logo.png`}
           alt="Lubrimec"
-          className="h-12 w-12 shrink-0 rounded-xl bg-white object-contain p-1 shadow-glow"
+          className="h-10 w-10 shrink-0 rounded-xl bg-white object-contain p-1 shadow-glow xl:h-12 xl:w-12"
         />
         <div className="min-w-0">
-          <div className="font-display text-lg font-bold leading-none">Lubrimesys</div>
+          <div className="font-display text-[length:var(--ui-font-lg)] font-bold leading-none">
+            Lubrimesys
+          </div>
           <div className="mt-1 text-[10px] uppercase tracking-widest text-sidebar-foreground/50">
             Admin Panel
           </div>

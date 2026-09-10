@@ -35,10 +35,22 @@ Componente React (react-query)
 
 ```bash
 npm install
-npm run dev        # http://localhost:5173
+npm run dev        # http://localhost:8080 (puerto fijo: strictPort)
 ```
 
-`.env` (dev) debe tener `VITE_API_URL=/api/ords/` para usar el proxy.
+**El `.env` no se versiona: hay que crearlo a mano tras clonar** (copiar `.env.example`). En dev
+debe tener `VITE_API_URL=/api/ords/` para usar el proxy:
+
+```env
+VITE_API_URL=/api/ords/
+VITE_APP_ID=86972
+ORDS_TARGET=https://oracleapex.com
+```
+
+> **Síntoma de `.env` faltante:** el login responde **"Usuario o contraseña incorrectos"** con
+> credenciales válidas. Sin `VITE_API_URL` la llamada va a `/auth/login` del propio dev server,
+> que devuelve el HTML del SPA; al no ser JSON, el cliente lo reporta como credenciales inválidas.
+> Vite lee el `.env` **solo al arrancar**: después de crearlo hay que reiniciar `npm run dev`.
 
 ### Scripts
 
@@ -49,6 +61,27 @@ npm run dev        # http://localhost:5173
 | `npm run lint` | ESLint. |
 | `npm run format` | Prettier. |
 | `npm run cap:sync` | Sincroniza la config de Capacitor con Android. |
+
+## Diseño responsive (Web + Mobile)
+
+La app tiene que servir bien **1920×1080 y 1366×768** en escritorio y tener una experiencia
+**móvil propia**, no una versión encogida. **Nunca con `zoom` global.**
+
+Los tamaños de control y los espaciados viven **centralizados en variables CSS** en
+`src/styles.css` (`--ui-font`, `--control-h`, `--panel-p`, `--cell-px`, `--topbar-h`,
+`--sidebar-w`, …), que consumen los componentes de `src/components/ui/` y el shell. Cambiar un
+valor ahí reescala toda la app sin tocar las vistas. Tres regímenes:
+
+| Rango | Comportamiento |
+|---|---|
+| Escritorio (default) | `clamp()` entre 1280 y 1920px: controles ~32px en 1366, ~36px en 1920 |
+| Notebook chico / tablet (`<1024px`) | extremo compacto de la escala, fijo |
+| Móvil (`<640px`) | controles **más grandes** (44px táctiles) y campos de 16px (evita el zoom de iOS) |
+
+Lo que ya es automático en móvil: el **`DataTable` se convierte en tarjetas** (una por fila, con
+sus totales al pie y acciones de 40px) en vez de una tabla con scroll horizontal, y los
+`DialogContent` traen alto máximo, scroll y margen lateral. Detalle y qué sigue siendo
+responsabilidad de cada vista: [src/GUIA_FRONT.md](src/GUIA_FRONT.md).
 
 ## Estructura
 
@@ -63,9 +96,15 @@ npm run dev        # http://localhost:5173
 
 ## Backend (ORDS) — agregar una tabla
 
-Patrón: paquete PL/SQL (`db/PKG_<TABLA>_LUBRIMEC.sql`) + script ORDS (`db/ORDS_<TABLA>.sql`) +
-cliente en `src/lib/api.ts`. Guía completa: **[db/GUIA_ENDPOINTS.md](db/GUIA_ENDPOINTS.md)**.
+Patrón: **un solo archivo por tabla**, `db/<tabla>_sql.sql`, con el paquete PL/SQL
+(`PKG_<TABLA>_LUBRIMEC`) y los endpoints ORDS en dos secciones — más el cliente en
+`src/lib/api.ts`. (Los pares separados `PKG_*.sql` + `ORDS_*.sql` son la convención vieja; no
+volver a separarlos.) Guía completa: **[db/GUIA_ENDPOINTS.md](db/GUIA_ENDPOINTS.md)**.
 Referencia viva: tabla `marcas`.
+
+> Los `.sql` de este repo **no se aplican solos**: hay que ejecutarlos a mano en la BD como
+> `JOSEGALVEZ`. Si el front manda un parámetro que el handler ignora, o un endpoint responde 404,
+> lo primero a descartar es que la BD tenga una versión anterior del paquete.
 
 Detalles del consumo desde el front y gotchas del proxy: **[src/GUIA_FRONT.md](src/GUIA_FRONT.md)**.
 
@@ -222,6 +261,16 @@ accesos rápidos se arman dinámicamente desde el endpoint `menu/paginas`.
     palabras sueltas en cualquier orden, OEM con o sin guion (`9091503001` ≡ `90915-03001`), sin
     tope de resultados. Es **la** regla del proyecto para toda LOV (ver las guías).
   - Backend: `db/compras_sql.sql`.
+- **Pagos de Compras** (page_id 77/78) — CRUD de `COMPRAS_PAGOS`: grilla con `DataTable` + export
+  y modal de alta/edición (la página APEX 78 "Crear Pago de Factura").
+  - **LOV de facturas:** solo comprobantes `FCR` de la empresa **con saldo pendiente**
+    (`PKG_COMPRAS.FN_SALDO_PROVEEDOR = 'S'`), ordenados por fecha. El endpoint devuelve la lista
+    completa y el front filtra por proveedor, comprobante, id o fecha (palabras sueltas en
+    cualquier orden, con o sin separadores). La etiqueta replica la del APEX:
+    `proveedor, dd/mm/yyyy, serie-nro`.
+  - Forma de pago con `SelectorModal` (catálogo corto), monto con `InputMonto` (separador de
+    miles), observación en textarea de 1000 caracteres, nro de recibo obligatorio.
+  - Backend: `db/compras_pagos_sql.sql`.
 - **Inventario** (page_id 58/59) — CRUD de conteos de `INVENTARIO`. El modal Crear (pág 59) filtra
   el artículo por ¿Es Activo?/Categoría/Marca, resuelve códigos de barra
   (`inventario/articulo-por-barra`) y el backend calcula `cantidad_sistema` con
@@ -303,4 +352,10 @@ El APK es una **WebView remota** que carga la app de GitHub Pages (`server.url` 
 - **LOVs: lista completa del backend + filtrado en el front, sin excepciones** (también artículos).
   Nada de `q` por query string ni `FETCH FIRST 30`. Detalle y por qué, en las dos guías.
 - **Sin caché en ningún nivel** (ver arriba).
+- **Responsive con variables CSS y breakpoints, nunca `zoom` global**; móvil es una experiencia
+  propia (táctil, sin scroll horizontal), no la web reducida (ver arriba).
+- **Montos con separador de miles** siempre: `InputMonto` al editar, `Intl.NumberFormat("es-PY")`
+  al mostrar. **Fechas siempre `dd/mm/yyyy`** en pantalla (el backend las manda ISO).
+- **`onError` obligatorio en toda mutación** (sin él, un 409/500 queda mudo y el usuario reporta
+  que "el botón no hace nada").
 - Idioma del proyecto (código, comentarios, UI, docs): **español**.

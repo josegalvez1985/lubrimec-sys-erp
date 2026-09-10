@@ -1,8 +1,10 @@
 import { useState, type FormEvent } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, Eye, Pencil, Trash2, Loader2, Receipt } from "lucide-react";
+import { Plus, Eye, Pencil, Trash2, Loader2, Receipt, Wallet } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -25,6 +27,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { DataTable, type Column } from "@/components/ui/data-table";
 import { BuscadorSelect } from "@/components/ui/buscador-select";
+import { SelectorModal } from "@/components/ui/selector-modal";
 import { InputMonto } from "@/components/ui/input-monto";
 import {
   listarComprasPagos,
@@ -43,19 +46,35 @@ const COD_EMPRESA = 24;
 const fmtMonto = (n: number) =>
   new Intl.NumberFormat("es-PY", { maximumFractionDigits: 0 }).format(n);
 
+// El backend manda las fechas en ISO; en pantalla van siempre como dd/mm/yyyy.
+function fmtFecha(iso: string | null): string {
+  if (!iso) return "—";
+  const [a, m, d] = iso.split("-");
+  return d && m && a ? `${d}/${m}/${a}` : iso;
+}
+
+// Comprobante "serie-número" de la factura (ambos campos pueden faltar).
+function comprobante(c: { nro_comprobante: number | null; ser_timbrado: string | null }): string {
+  const comp = c.ser_timbrado
+    ? `${c.ser_timbrado}-${c.nro_comprobante ?? ""}`
+    : `${c.nro_comprobante ?? ""}`;
+  return comp.trim() === "-" ? "" : comp.trim();
+}
+
+// Misma etiqueta que la LOV de P78_ID_FACTURA en el APEX:
+// "proveedor, dd/mm/yyyy, serie-nro" (con el id como respaldo).
 function labelFactura(c: {
   id_factura: number;
   nro_comprobante: number | null;
   ser_timbrado: string | null;
+  fec_comprobante: string | null;
   nombre_proveedor: string | null;
 }): string {
-  const comp = c.ser_timbrado
-    ? `${c.ser_timbrado}-${c.nro_comprobante ?? ""}`
-    : `${c.nro_comprobante ?? ""}`;
-  const partes = [`Factura ${c.id_factura}`];
-  if (comp.trim() && comp.trim() !== "-") partes.push(comp);
-  if (c.nombre_proveedor) partes.push(c.nombre_proveedor);
-  return partes.join(" · ");
+  const partes = [c.nombre_proveedor ?? `Factura ${c.id_factura}`];
+  if (c.fec_comprobante) partes.push(fmtFecha(c.fec_comprobante));
+  const comp = comprobante(c);
+  if (comp) partes.push(comp);
+  return partes.join(", ");
 }
 
 type ModalState =
@@ -81,6 +100,7 @@ export function ComprasPagosView() {
       qc.invalidateQueries({ queryKey: ["compras-pagos"] });
       setAEliminar(null);
     },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "No se pudo eliminar el pago"),
   });
 
   const filas = (data ?? []).slice().sort((a, b) => b.id_pago - a.id_pago);
@@ -102,6 +122,7 @@ export function ComprasPagosView() {
       key: "fecha",
       header: "Fecha",
       accessor: (r) => r.fecha ?? "",
+      render: (r) => fmtFecha(r.fecha),
     },
     {
       key: "nro_recibo",
@@ -113,13 +134,19 @@ export function ComprasPagosView() {
     {
       key: "factura",
       header: "Factura",
-      accessor: (r) => `${r.id_factura} ${r.nombre_proveedor ?? ""}`,
-      render: (r) => (
-        <div className="flex flex-col">
-          <span className="font-mono text-xs text-muted-foreground">Factura {r.id_factura}</span>
-          <span>{r.nombre_proveedor ?? "—"}</span>
-        </div>
-      ),
+      accessor: (r) => `${r.id_factura} ${comprobante(r)} ${r.nombre_proveedor ?? ""}`,
+      render: (r) => {
+        const comp = comprobante(r);
+        return (
+          <div className="flex flex-col">
+            <span className="font-mono text-xs text-muted-foreground">
+              Factura {r.id_factura}
+              {comp ? ` · ${comp}` : ""}
+            </span>
+            <span>{r.nombre_proveedor ?? "—"}</span>
+          </div>
+        );
+      },
       hideable: false,
     },
     {
@@ -341,7 +368,7 @@ function CompraPagoDialog({
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-md">
         <DialogHeader>
           <DialogTitle>{titulo}</DialogTitle>
           {!isView && (
@@ -369,11 +396,16 @@ function CompraPagoDialog({
                 buscar={(q) => buscarCompras(COD_EMPRESA, q)}
                 itemKey={(c) => c.id_factura}
                 itemTitle={(c) => c.nombre_proveedor ?? `Factura ${c.id_factura}`}
-                itemSub={(c) =>
-                  `Factura ${c.id_factura}${
-                    c.nro_comprobante ? ` · Comp. ${c.ser_timbrado ?? ""}-${c.nro_comprobante}` : ""
-                  }`
-                }
+                itemSub={(c) => {
+                  const comp = comprobante(c);
+                  return [
+                    `Factura ${c.id_factura}`,
+                    c.fec_comprobante ? fmtFecha(c.fec_comprobante) : "",
+                    comp ? `Comp. ${comp}` : "",
+                  ]
+                    .filter(Boolean)
+                    .join(" · ");
+                }}
                 onSelect={(c) => {
                   setIdFactura(c.id_factura);
                   setFacturaLabel(labelFactura(c));
@@ -383,7 +415,7 @@ function CompraPagoDialog({
             )}
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="fecha">Fecha</Label>
               <Input
@@ -409,27 +441,27 @@ function CompraPagoDialog({
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="id_forma">Forma de pago</Label>
               {isView ? (
                 <Input value={item?.descripcion_forma ?? ""} disabled />
               ) : (
-                <select
+                <SelectorModal
                   id="id_forma"
-                  value={idForma ?? ""}
-                  onChange={(e) => setIdForma(e.target.value ? Number(e.target.value) : null)}
+                  titulo="Forma de pago"
+                  descripcion="Elegí cómo se paga la factura."
+                  icono={Wallet}
+                  placeholder="Forma de pago..."
+                  opciones={(formas ?? []).map((f) => ({
+                    valor: f.id_forma,
+                    titulo: f.descripcion ?? `Forma ${f.id_forma}`,
+                  }))}
+                  value={idForma}
+                  onSelect={setIdForma}
+                  vacioLabel="No hay formas de pago cargadas."
                   disabled={saving}
-                  required
-                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  <option value="">Seleccionar...</option>
-                  {(formas ?? []).map((f) => (
-                    <option key={f.id_forma} value={f.id_forma}>
-                      {f.descripcion}
-                    </option>
-                  ))}
-                </select>
+                />
               )}
             </div>
             <div className="space-y-2">
@@ -447,11 +479,13 @@ function CompraPagoDialog({
 
           <div className="space-y-2">
             <Label htmlFor="observacion">Observación</Label>
-            <Input
+            <Textarea
               id="observacion"
               value={observacion}
               onChange={(e) => setObservacion(e.target.value)}
               placeholder="Opcional"
+              rows={4}
+              maxLength={1000}
               disabled={isView || saving}
             />
           </div>

@@ -50,9 +50,83 @@
   --font-sans: "Inter", system-ui, sans-serif;
 }
 
+/*
+ * ── Escala fluida de UI ─────────────────────────────────────────────────────
+ * Punto ÚNICO donde viven los tamaños de control y los espaciados del layout.
+ * Los componentes de src/components/ui/ los consumen (h-[var(--control-h)],
+ * text-[length:var(--ui-font)]…), así que ajustar un valor acá reescala toda la
+ * app sin tocar las vistas.
+ *
+ * Tres regímenes, NO un zoom global:
+ *   1. Escritorio (default): clamp() entre 1280px y 1920px. En 1366×768 los
+ *      controles quedan compactos (~32px) y en 1920×1080 cómodos (~36px).
+ *   2. Notebook chico/tablet (<1024px): valores fijos del extremo compacto.
+ *   3. Móvil (<640px): NO es "el escritorio en chico" — los controles crecen a
+ *      44px (área táctil mínima) y los inputs usan 16px de fuente, que es lo que
+ *      evita el zoom automático de iOS al enfocar un campo.
+ */
 :root {
   --radius: 0.75rem;
 
+  /* Tipografía de UI */
+  --ui-font: clamp(0.8125rem, 0.7rem + 0.15vw, 0.875rem);
+  --ui-font-sm: clamp(0.75rem, 0.68rem + 0.09vw, 0.8125rem);
+  --ui-font-lg: clamp(0.9375rem, 0.85rem + 0.12vw, 1rem);
+
+  /* Alturas de control (input, button, trigger de selector) */
+  --control-h: clamp(2rem, 1.55rem + 0.55vw, 2.25rem);
+  --control-h-sm: clamp(1.75rem, 1.4rem + 0.42vw, 2rem);
+  --control-h-lg: clamp(2.25rem, 1.8rem + 0.55vw, 2.5rem);
+  --control-px: clamp(0.625rem, 0.45rem + 0.22vw, 0.75rem);
+
+  /* Layout: paneles, grillas y shell */
+  --panel-p: clamp(0.875rem, 0.5rem + 0.6vw, 1.25rem);
+  --panel-gap: clamp(0.75rem, 0.4rem + 0.7vw, 1.5rem);
+  --cell-px: clamp(0.5rem, 0.35rem + 0.2vw, 0.75rem);
+  --cell-py: clamp(0.4375rem, 0.3rem + 0.2vw, 0.625rem);
+  --topbar-h: clamp(3.25rem, 2.4rem + 1.1vw, 4rem);
+  --sidebar-w: clamp(14rem, 11rem + 4vw, 17rem);
+
+  /* Fuente de los campos: sigue la escala de UI salvo en móvil (ver abajo). */
+  --field-font: var(--ui-font);
+}
+
+/* Notebooks chicos y tablets: se fija el extremo compacto de la escala. */
+@media (max-width: 1023px) {
+  :root {
+    --ui-font: 0.8125rem;
+    --ui-font-sm: 0.75rem;
+    --ui-font-lg: 0.9375rem;
+    --control-h: 2rem;
+    --control-h-sm: 1.75rem;
+    --control-h-lg: 2.25rem;
+    --control-px: 0.625rem;
+    --panel-p: 0.875rem;
+    --panel-gap: 0.875rem;
+    --topbar-h: 3.5rem;
+  }
+}
+
+/* Móvil: interacción táctil. Controles de 44px y 16px de fuente en los campos. */
+@media (max-width: 639px) {
+  :root {
+    --ui-font: 0.875rem;
+    --ui-font-sm: 0.8125rem;
+    --ui-font-lg: 1rem;
+    --control-h: 2.75rem;
+    --control-h-sm: 2.25rem;
+    --control-h-lg: 2.75rem;
+    --control-px: 0.875rem;
+    --field-font: 1rem; /* 16px: sin esto iOS hace zoom al enfocar un input */
+    --panel-p: 1rem;
+    --panel-gap: 1rem;
+    --cell-px: 0.75rem;
+    --cell-py: 0.625rem;
+    --topbar-h: 3.5rem;
+  }
+}
+
+:root {
   /* Light mode: warm off-white + orange + near-black accents */
   --background: oklch(0.99 0.005 80);
   --foreground: oklch(0.18 0.01 50);

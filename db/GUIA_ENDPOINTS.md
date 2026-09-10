@@ -116,6 +116,10 @@ endpoints de solo lectura sin paquete (`ORDS_MENU_PAGINAS.sql`, `ORDS_VENTAS_*.s
     `inventario_sql.sql`, `compras_sql.sql` (`compras-cabecera/buscar-articulos`) y
     `codigos_barras_sql.sql` (`articulos/buscar`, el genérico que usan también
     artículos-proveedores y vehículos-repuestos).
+    La regla no es solo para artículos: `BUSCAR_COMPRAS` de `compras_pagos_sql.sql`
+    (`compras/buscar`, LOV de facturas del pago) también devuelve la lista completa —
+    ahí el front filtra además por **fecha** (`dd/mm/yyyy` e ISO) y por serie-número
+    de comprobante.
     - Al migrar un proc viejo, **dejar `p_q` en la firma** aunque no se use: el handler ORDS ya
       bindea `:q` y cambiar la firma obliga a tocar el script ORDS. Se ignora y se documenta.
   - **`ARTICULOS` tiene DOS columnas de activo — filtrar por `ESTADO`, no por `es_activo`.**
@@ -260,6 +264,13 @@ el bloque `BEGIN ... ORDS.DEFINE_* ... END;`.
 
 - **CRUD simple:** `marcas_sql.sql`, `personas_sql.sql`, `iva_sql.sql`, `rubros_sql.sql`.
 - **Selector de FK:** `codigos_barras_sql.sql`, `articulos_proveedores_sql.sql`.
+- **LOV filtrada por una función de negocio del APEX:** `compras_pagos_sql.sql` (pág 77/78) —
+  la LOV de facturas del pago replica el `WHERE` de la LOV de APEX tal cual, incluida la llamada
+  a `PKG_COMPRAS.FN_SALDO_PROVEEDOR(cod_empresa, id_factura) = 'S'` (solo facturas con saldo).
+  Cuando una LOV del APEX llama a una función del esquema, **usar la misma función** en vez de
+  reimplementar el cálculo: así las dos pantallas nunca se contradicen. `LISTAR`/`OBTENER`
+  devuelven además los campos del JOIN que el front necesita para rearmar la etiqueta de la LOV
+  (`fec_comprobante`, `ser_timbrado`, `nro_comprobante`, proveedor).
 - **Imagen BLOB:** `articulos_sql.sql`, `monedas_sql.sql`.
 - **Reporte facetado de solo lectura (sin paquete):** `compras_articulos_sql.sql`,
   `ficha_existencia_sql.sql`, `articulos_sin_barra_sql.sql`, `existencia_articulos_sql.sql`,

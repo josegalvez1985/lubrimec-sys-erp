@@ -153,6 +153,22 @@ export function DataTable<T>({
   const hayFiltros = search !== "" || Object.values(filtros).some((v) => v.trim() !== "");
   const cellPad = dense ? "py-1.5" : "";
 
+  // Contenido de una celda (compartido por la tabla de escritorio y las tarjetas
+  // de móvil, para que ambas vistas muestren exactamente lo mismo).
+  function celda(row: T, c: Column<T>): ReactNode {
+    if (c.render) return c.render(row);
+    const v = val(row, c);
+    return v == null || v === "" ? <span className="text-muted-foreground">—</span> : String(v);
+  }
+
+  // En móvil cada fila se dibuja como tarjeta: la columna principal es el título
+  // y el resto van como pares etiqueta/valor. Se toma la primera columna marcada
+  // `hideable: false` (la que la vista considera identificatoria) o, si no hay,
+  // la primera visible.
+  const principal = visibles.find((c) => c.hideable === false) ?? visibles[0];
+  const secundarias = visibles.filter((c) => c.key !== principal?.key);
+  const hayFooter = visibles.some((c) => c.footer);
+
   // Excel de lo que se ve: columnas visibles (con accessor) y filas ya filtradas/ordenadas.
   function exportar() {
     const cols = visibles.filter((c) => c.accessor);
@@ -175,13 +191,15 @@ export function DataTable<T>({
       {/* Toolbar */}
       <div className="flex flex-wrap items-center gap-2">
         {globalSearch && (
-          <div className="relative min-w-[180px] flex-1">
+          // En móvil el buscador toma la fila entera (basis-full) y los botones
+          // bajan a la siguiente; desde sm comparten línea.
+          <div className="relative min-w-[180px] flex-1 basis-full sm:basis-auto">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               placeholder={searchPlaceholder}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="h-10 pl-10"
+              className="h-[var(--control-h-lg)] pl-10"
             />
           </div>
         )}
@@ -193,7 +211,7 @@ export function DataTable<T>({
             variant="outline"
             onClick={exportar}
             disabled={procesadas.length === 0}
-            className="h-10 gap-2"
+            className="h-[var(--control-h-lg)] gap-2"
           >
             <FileSpreadsheet className="h-4 w-4" />
             <span className="hidden sm:inline">Excel</span>
@@ -203,7 +221,7 @@ export function DataTable<T>({
         {/* Mostrar/ocultar columnas + densidad */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button type="button" variant="outline" className="h-10 gap-2">
+            <Button type="button" variant="outline" className="h-[var(--control-h-lg)] gap-2">
               <SlidersHorizontal className="h-4 w-4" />
               <span className="hidden sm:inline">Columnas</span>
             </Button>
@@ -258,8 +276,8 @@ export function DataTable<T>({
         )}
       </div>
 
-      {/* Tabla */}
-      <div className="overflow-x-auto">
+      {/* Tabla (escritorio/tablet). En móvil se usan las tarjetas de abajo. */}
+      <div className="hidden overflow-x-auto md:block">
         <Table>
           <TableHeader>
             <TableRow>
@@ -370,7 +388,7 @@ export function DataTable<T>({
               ))
             )}
           </TableBody>
-          {visibles.some((c) => c.footer) && procesadas.length > 0 && (
+          {hayFooter && procesadas.length > 0 && (
             <TableFooter>
               <TableRow>
                 {visibles.map((c) => (
@@ -388,7 +406,83 @@ export function DataTable<T>({
         </Table>
       </div>
 
-      <p className="text-xs text-muted-foreground">
+      {/* Tarjetas (móvil): una fila por tarjeta, sin scroll horizontal. */}
+      <div className="space-y-2 md:hidden">
+        {procesadas.length === 0 ? (
+          <p className="py-10 text-center text-[length:var(--ui-font)] text-muted-foreground">
+            {emptyText}
+          </p>
+        ) : (
+          procesadas.map((row, i) => (
+            <div
+              key={getRowId(row, i)}
+              className="rounded-xl border border-border bg-card p-[var(--panel-p)] shadow-sm"
+            >
+              <div className="flex items-start justify-between gap-3">
+                {principal && (
+                  <div
+                    className={cn(
+                      "min-w-0 flex-1 font-medium",
+                      principal.num && "tabular-nums",
+                      principal.className,
+                    )}
+                  >
+                    {celda(row, principal)}
+                  </div>
+                )}
+                {/* Las vistas dibujan sus acciones con botones de 32px (cómodos con
+                    mouse, chicos para el dedo): en la tarjeta móvil se agrandan a
+                    40px sin que cada vista tenga que saberlo. */}
+                {actions && (
+                  <div className="shrink-0 [&_button]:h-10 [&_button]:w-10">{actions(row)}</div>
+                )}
+              </div>
+
+              {secundarias.length > 0 && (
+                <dl className="mt-3 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1.5 border-t border-border pt-3">
+                  {secundarias.map((c) => (
+                    <div key={c.key} className="contents">
+                      <dt className="text-[length:var(--ui-font-sm)] text-muted-foreground">
+                        {c.header}
+                      </dt>
+                      <dd
+                        className={cn(
+                          "min-w-0 break-words text-right text-[length:var(--ui-font)]",
+                          c.num && "tabular-nums",
+                        )}
+                      >
+                        {celda(row, c)}
+                      </dd>
+                    </div>
+                  ))}
+                </dl>
+              )}
+            </div>
+          ))
+        )}
+
+        {/* Totales al pie, con el mismo cálculo que la fila de la tabla. */}
+        {hayFooter && procesadas.length > 0 && (
+          <div className="rounded-xl border border-border bg-muted/50 p-[var(--panel-p)]">
+            <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1.5">
+              {visibles
+                .filter((c) => c.footer)
+                .map((c) => (
+                  <div key={c.key} className="contents">
+                    <dt className="text-[length:var(--ui-font-sm)] text-muted-foreground">
+                      {c.header}
+                    </dt>
+                    <dd className={cn("min-w-0 text-right font-semibold", c.num && "tabular-nums")}>
+                      {c.footer!(procesadas)}
+                    </dd>
+                  </div>
+                ))}
+            </dl>
+          </div>
+        )}
+      </div>
+
+      <p className="text-[length:var(--ui-font-sm)] text-muted-foreground">
         {procesadas.length} de {rows.length} {rows.length === 1 ? "registro" : "registros"}
       </p>
     </div>
