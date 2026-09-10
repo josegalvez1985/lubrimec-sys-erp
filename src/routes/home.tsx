@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useEffect, useRef, useState, type ReactElement } from "react";
+import { Suspense, lazy, useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { App } from "@capacitor/app";
 import { Capacitor } from "@capacitor/core";
@@ -86,72 +86,18 @@ import {
 } from "@/lib/uso-accesos";
 import { CargarArticulosBoton } from "@/components/cargar-articulos-boton";
 import { CobrosTarjetaView } from "@/components/cobros-tarjeta-view";
-import { MarcasView } from "@/components/marcas-view";
-import { VentasDashboardChart } from "@/components/ventas-dashboard-chart";
-import { CobrosHoyChart } from "@/components/cobros-hoy-chart";
 import { CobrosAcreditarCard } from "@/components/cobros-acreditar-card";
-import { ComprasArticulosView } from "@/components/compras-articulos-view";
-import { FichaArticulosView } from "@/components/ficha-articulos-view";
-import { ArticulosSinBarraView } from "@/components/articulos-sin-barra-view";
-import { ArticulosNoInventariadosView } from "@/components/articulos-no-inventariados-view";
-import { ArticulosInventarioView } from "@/components/articulos-inventario-view";
-import { InventarioView } from "@/components/inventario-view";
-import { AjustarInventariosView } from "@/components/ajustar-inventarios-view";
-import { ParametrosView } from "@/components/parametros-view";
-import { PlanillaInventariosView } from "@/components/planilla-inventarios-view";
-import { SortearView } from "@/components/sortear-view";
-import { RolesPaginasView } from "@/components/roles-paginas-view";
-import { PreciosMayoristasView } from "@/components/precios-mayoristas-view";
-import { CostoInventariosView } from "@/components/costo-inventarios-view";
-import { MarcasVsDescripcionView } from "@/components/marcas-vs-descripcion-view";
-import { PagoComisionesView } from "@/components/pago-comisiones-view";
-import { PagosProveedoresVentasView } from "@/components/pagos-proveedores-ventas-view";
-import { AguinaldosView } from "@/components/aguinaldos-view";
-import { ComisionesBancoView } from "@/components/comisiones-banco-view";
-import { ConsultaPreciosView } from "@/components/consulta-precios-view";
-import { ExistenciaArticulosView } from "@/components/existencia-articulos-view";
-import { ComprasVsVentasView } from "@/components/compras-vs-ventas-view";
-import { SaldosProveedoresView } from "@/components/saldos-proveedores-view";
-import { ConsultaInventariosView } from "@/components/consulta-inventarios-view";
-import { PuntoVentaView } from "@/components/punto-venta-view";
-import { VentasArticulosView } from "@/components/ventas-articulos-view";
-import { ArticulosMasVendidosView } from "@/components/articulos-mas-vendidos-view";
-import { PedidosArticulosView } from "@/components/pedidos-articulos-view";
-import { PersonasView } from "@/components/personas-view";
-import { EmpresasView } from "@/components/empresas-view";
-import { UnidadesMedidasView } from "@/components/unidades-medidas-view";
-import { IvaView } from "@/components/iva-view";
-import { MonedasView } from "@/components/monedas-view";
-import { RubrosView } from "@/components/rubros-view";
-import { CodigosBarrasView } from "@/components/codigos-barras-view";
-import { ArticulosProveedoresView } from "@/components/articulos-proveedores-view";
-import { CondicionesFacturasView } from "@/components/condiciones-facturas-view";
-import { TalonariosView } from "@/components/talonarios-view";
-import { FormasCobroPagoView } from "@/components/formas-cobro-pago-view";
-import { BancosView } from "@/components/bancos-view";
-import { ViscosidadView } from "@/components/viscosidad-view";
-import { WhatsappView } from "@/components/whatsapp-view";
-import { MonedasDetalleView } from "@/components/monedas-detalle-view";
-import { VehiculosRepuestosView } from "@/components/vehiculos-repuestos-view";
-import { ComprasPagosView } from "@/components/compras-pagos-view";
-import { VendedoresView } from "@/components/vendedores-view";
-import { DescuentosEscalonadosView } from "@/components/descuentos-escalonados-view";
-import { PostVentaView } from "@/components/post-venta-view";
-import { SubaPreciosView } from "@/components/suba-precios-view";
-import { ConteoEfectivoView } from "@/components/conteo-efectivo-view";
-import { DescuentosView } from "@/components/descuentos-view";
-import { NumerosVouchersView } from "@/components/numeros-vouchers-view";
-import { CierreDiaView } from "@/components/cierre-dia-view";
-import { RendicionesCajasView } from "@/components/rendiciones-cajas-view";
-import { VentasCobrosView } from "@/components/ventas-cobros-view";
-import { VentasView } from "@/components/ventas-view";
-import { ComprasView } from "@/components/compras-view";
-import { PreciosVentasView } from "@/components/precios-ventas-view";
-import { CobrosAcreditarView } from "@/components/cobros-acreditar-view";
-import { ArticulosView } from "@/components/articulos-view";
-import { LogsWhatsappView } from "@/components/logs-whatsapp-view";
 import { PerfilModal } from "@/components/perfil-modal";
 import { BusquedaGlobal } from "@/components/busqueda-global";
+import { VISTAS } from "@/lib/vistas";
+
+// Gráficos del dashboard: se cargan aparte porque son los únicos que usan recharts.
+const VentasDashboardChart = lazy(() =>
+  import("@/components/ventas-dashboard-chart").then((m) => ({ default: m.VentasDashboardChart })),
+);
+const CobrosHoyChart = lazy(() =>
+  import("@/components/cobros-hoy-chart").then((m) => ({ default: m.CobrosHoyChart })),
+);
 
 // Categorías del menú APEX que no se usan por ahora: se ocultan del sidebar,
 // accesos rápidos y dashboard. Comparación sin tildes ni mayúsculas.
@@ -275,72 +221,6 @@ export const Route = createFileRoute("/home")({
 // La navegación se identifica por page_id (APEX) o "dashboard" (vista local fija).
 type NavKey = "dashboard" | number;
 
-// Vistas del front ya implementadas, mapeadas por page_id de APEX.
-// Al implementar una página nueva: anotar su page_id aquí con su componente.
-// Las páginas del menú sin entrada aquí muestran un Placeholder con su título.
-const VISTAS: Record<number, () => ReactElement> = {
-  2: () => <PersonasView />, // Personas
-  4: () => <ArticulosView />, // Artículos
-  6: () => <MarcasView />, // Marcas
-  10: () => <IvaView />, // IVA
-  12: () => <EmpresasView />, // Empresas
-  18: () => <MonedasView />, // Monedas
-  20: () => <RubrosView />, // Rubros
-  24: () => <CodigosBarrasView />, // Códigos de Barras
-  27: () => <ArticulosProveedoresView />, // Artículos por Proveedor
-  42: () => <CondicionesFacturasView />, // Condiciones de Facturas
-  44: () => <TalonariosView />, // Talonarios
-  48: () => <FormasCobroPagoView />, // Formas de Cobro/Pago
-  50: () => <BancosView />, // Bancos
-  52: () => <ViscosidadView />, // Viscosidad de Lubricantes
-  21: () => <UnidadesMedidasView />, // Unidades de Medidas
-  54: () => <VentasArticulosView />, // Ventas Por Artículos
-  102: () => <ArticulosMasVendidosView />, // Artículos Más Vendidos
-  63: () => <PedidosArticulosView />, // Pedidos de Artículos
-  117: () => <WhatsappView />, // Mensajes a Whatsapp
-  83: () => <MonedasDetalleView />, // Detalle de Monedas
-  94: () => <VehiculosRepuestosView />, // Vehículos-Repuestos
-  120: () => <LogsWhatsappView />, // Logs de WhatsApp
-  77: () => <ComprasPagosView />, // Pagos de Compras
-  30: () => <VendedoresView />, // Vendedores
-  106: () => <DescuentosEscalonadosView />, // Descuentos Escalonados
-  105: () => <PostVentaView />, // Post Venta
-  100: () => <SubaPreciosView />, // Suba de Precios
-  85: () => <ConteoEfectivoView />, // Conteo de Efectivo
-  67: () => <DescuentosView />, // Descuentos
-  71: () => <NumerosVouchersView />, // Números de Vouchers
-  62: () => <CierreDiaView />, // Cierre del Día
-  73: () => <RendicionesCajasView />, // Rendición de Caja
-  65: () => <VentasCobrosView />, // Cobros de Ventas
-  60: () => <VentasView />, // Ventas
-  28: () => <ComprasView />, // Consulta de Compras
-  34: () => <PreciosVentasView />, // Precios de Ventas
-  111: () => <CobrosAcreditarView />, // Acreditación de Cobros
-  55: () => <ComprasArticulosView />, // Compras por Artículos
-  56: () => <FichaArticulosView />, // Ficha de Artículos
-  57: () => <ArticulosSinBarraView />, // Artículos sin Código de Barra
-  81: () => <ArticulosNoInventariadosView />, // Artículos no Inventariados
-  76: () => <ArticulosInventarioView />, // Artículos para Inventario
-  58: () => <InventarioView />, // Inventario (modal Crear Inventario = pág 59)
-  87: () => <AjustarInventariosView />, // Ajustar Inventarios (modal Aplicar = pág 88)
-  89: () => <ParametrosView />, // Parámetros (modal Crear/Editar = pág 90)
-  112: () => <PlanillaInventariosView />, // Planilla para inventarios (113 Crear + 115 Cantidad)
-  108: () => <SortearView />, // Sortear
-  37: () => <RolesPaginasView />, // Roles de Páginas (modal Crear Rol = pág 38)
-  82: () => <PreciosMayoristasView />, // Precios Mayoristas
-  92: () => <CostoInventariosView />, // Costo de Inventarios
-  93: () => <MarcasVsDescripcionView />, // Marcas Vs Descripción de Articulos
-  101: () => <PagoComisionesView />, // Pago de Comisiones
-  103: () => <PagosProveedoresVentasView />, // Pagos a proveedores por ventas
-  104: () => <AguinaldosView />, // Aguinaldos
-  114: () => <ComisionesBancoView />, // Comisiones al Banco
-  61: () => <ConsultaPreciosView />, // Consulta de Precios
-  70: () => <ExistenciaArticulosView />, // Existencia de Artículos
-  75: () => <ComprasVsVentasView />, // Compras Vs Ventas
-  79: () => <SaldosProveedoresView />, // Saldos de Proveedores
-  80: () => <ConsultaInventariosView />, // Consulta de Inventarios
-  39: () => <PuntoVentaView />, // Punto de Venta
-};
 
 // page_id que ya tienen algo implementado (vista propia o acción especial como el
 // cotizador 98). Se usa en el menú para diferenciar páginas listas vs. pendientes.
@@ -574,7 +454,15 @@ function HomePage() {
           {active === "dashboard" ? (
             <DashboardView usuario={usuario} paginas={paginas} onNavigate={handleNav} />
           ) : VISTAS[active as number] ? (
-            VISTAS[active as number]()
+            // Suspense: mientras baja el chunk de la vista se muestra el spinner.
+            // key por page_id para que al cambiar de página reaparezca el fallback
+            // en lugar de dejar la vista anterior congelada en pantalla.
+            <Suspense key={active} fallback={<CargandoVista />}>
+              {(() => {
+                const Vista = VISTAS[active as number];
+                return <Vista />;
+              })()}
+            </Suspense>
           ) : (
             <PlaceholderView label={paginaActiva?.page_title ?? "Página"} />
           )}
@@ -785,12 +673,16 @@ function DashboardView({
 
       {/* Cobranza de hoy por forma de cobro, con los cobros con tarjeta al lado */}
       <div className="grid gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] xl:items-start">
-        <CobrosHoyChart />
+        <Suspense fallback={<CargandoGrafico />}>
+          <CobrosHoyChart />
+        </Suspense>
         <CobrosTarjetaView />
       </div>
 
       {/* Gráfico de ventas por día */}
-      <VentasDashboardChart />
+      <Suspense fallback={<CargandoGrafico />}>
+        <VentasDashboardChart />
+      </Suspense>
 
       {/* Quick actions */}
       <div className="rounded-2xl border border-border bg-card p-5 shadow-elegant">
@@ -869,6 +761,25 @@ function QuickActions({
         </div>
       )}
     </>
+  );
+}
+
+// Fallback de los gráficos del dashboard mientras baja recharts.
+function CargandoGrafico() {
+  return (
+    <div className="grid min-h-[18rem] place-items-center rounded-2xl border border-border bg-card shadow-elegant">
+      <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+    </div>
+  );
+}
+
+// Fallback mientras se descarga el chunk de una vista (React.lazy).
+// Ocupa el mismo alto que el Placeholder para que el layout no salte.
+function CargandoVista() {
+  return (
+    <div className="grid min-h-[60vh] place-items-center">
+      <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+    </div>
   );
 }
 
