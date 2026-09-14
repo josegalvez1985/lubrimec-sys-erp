@@ -5,7 +5,9 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 disabled:cursor-not-allowed [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
+  // Tipografía y alturas desde la escala fluida de src/styles.css (ver ahí): en
+  // 1366×768 los botones quedan compactos y en móvil alcanzan los 44px táctiles.
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-[length:var(--ui-font)] font-medium cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 disabled:cursor-not-allowed [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
   {
     variants: {
       variant: {
@@ -18,10 +20,10 @@ const buttonVariants = cva(
         link: "text-primary underline-offset-4 hover:underline",
       },
       size: {
-        default: "h-9 px-4 py-2",
-        sm: "h-8 rounded-md px-3 text-xs",
-        lg: "h-10 rounded-md px-8",
-        icon: "h-9 w-9",
+        default: "h-[var(--control-h)] px-[calc(var(--control-px)*1.35)] py-2",
+        sm: "h-[var(--control-h-sm)] rounded-md px-[var(--control-px)] text-[length:var(--ui-font-sm)]",
+        lg: "h-[var(--control-h-lg)] rounded-md px-[calc(var(--control-px)*2.5)]",
+        icon: "h-[var(--control-h)] w-[var(--control-h)]",
       },
     },
     defaultVariants: {

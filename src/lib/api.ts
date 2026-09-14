@@ -1328,11 +1328,12 @@ export async function listarLogsWhatsapp(
   return (data.data ?? []) as LogWhatsappRegistro[];
 }
 
-// ─── Compras-Pagos (página 77) ───────────────────────────────────────────────
+// ─── Compras-Pagos (páginas 77 listado + 78 alta/edición) ────────────────────
 // CRUD de COMPRAS_PAGOS. PK id_pago (IDENTITY). nro_recibo lo ingresa el usuario.
 // La factura (id_factura) se elige con buscarCompras; la forma de pago (id_forma)
-// con listarFormasCobroPago (select). descripcion_forma / nro_comprobante /
-// ser_timbrado / tip_comprobante / nombre_proveedor vienen del JOIN (solo lectura).
+// con listarFormasCobroPago (SelectorModal). descripcion_forma / nro_comprobante /
+// ser_timbrado / tip_comprobante / fec_comprobante / nombre_proveedor vienen del
+// JOIN (solo lectura) y arman la etiqueta de la factura como en la LOV del APEX.
 
 export type CompraPago = {
   id_pago: number;
@@ -1347,6 +1348,7 @@ export type CompraPago = {
   nro_comprobante: number | null;
   ser_timbrado: string | null;
   tip_comprobante: string | null;
+  fec_comprobante: string | null; // YYYY-MM-DD
   nombre_proveedor: string | null;
 };
 
@@ -1397,10 +1399,31 @@ export async function eliminarCompraPago(id: number, codEmpresa: number): Promis
   await authFetch(`compras-pagos/${id}?${q}`, { method: "DELETE" });
 }
 
+// LOV de facturas de compra con saldo pendiente (LOV de P78_ID_FACTURA en APEX).
+// REGLA del proyecto: el endpoint devuelve el listado completo (sin `q`, sin tope)
+// y el filtrado flexible vive acá: palabras sueltas en cualquier orden contra
+// proveedor + serie/nro de comprobante + id + fecha (dd/mm/yyyy y YYYY-MM-DD),
+// normalizando separadores para que "0011234" encuentre "001-1234".
 export async function buscarCompras(codEmpresa: number, q: string): Promise<CompraBusqueda[]> {
-  const params = new URLSearchParams({ cod_empresa: String(codEmpresa), q });
+  const params = new URLSearchParams({ cod_empresa: String(codEmpresa) });
   const data = await authFetch(`compras/buscar?${params}`);
-  return (data.data ?? []) as CompraBusqueda[];
+  const todas = (data.data ?? []) as CompraBusqueda[];
+
+  const tokens = q.trim().toUpperCase().split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return todas;
+
+  const sinSep = (s: string) => s.replace(/[-/.\s]/g, "");
+  return todas.filter((c) => {
+    const iso = c.fec_comprobante ?? "";
+    const [a, m, d] = iso.split("-");
+    const fechaLocal = iso ? `${d}/${m}/${a}` : "";
+    const texto = (
+      `${c.nombre_proveedor ?? ""} ${c.ser_timbrado ?? ""} ${c.nro_comprobante ?? ""} ` +
+      `${c.id_factura} ${fechaLocal} ${iso}`
+    ).toUpperCase();
+    const textoSinSep = sinSep(texto);
+    return tokens.every((t) => texto.includes(t) || textoSinSep.includes(sinSep(t)));
+  });
 }
 
 // ─── Vendedores (página 30) ──────────────────────────────────────────────────

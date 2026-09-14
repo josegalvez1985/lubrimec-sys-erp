@@ -64,7 +64,7 @@ export function SelectorModal<T extends string | number>({
         ref={triggerRef}
         onClick={() => setAbierto(true)}
         disabled={disabled}
-        className="flex h-10 w-full items-center gap-2 rounded-md border border-input bg-background px-3 text-sm ring-offset-background transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+        className="flex h-[var(--control-h)] w-full items-center gap-2 rounded-md border border-input bg-background px-[var(--control-px)] text-[length:var(--field-font)] ring-offset-background transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
       >
         {sel?.imagen && (
           <img
