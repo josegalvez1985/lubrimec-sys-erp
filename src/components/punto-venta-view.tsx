@@ -91,15 +91,34 @@ export function PuntoVentaView() {
   // Artículo cuya imagen se está viendo ampliada (click en la miniatura).
   const [imgArticulo, setImgArticulo] = useState<ArticuloPOS | null>(null);
 
-  // Se trae todo el dataset (con el descuento aplicado en el precio); rubro,
-  // marca y búsqueda se filtran en el front (facetas dependientes).
+  // Se trae todo el dataset; rubro, marca y búsqueda se filtran en el front
+  // (facetas dependientes).
+  //
+  // El % de descuento NO va en la queryKey ni al endpoint: recalcularlo del lado
+  // de Oracle obliga a rehacer la suma de stock sobre todo el historial de compras
+  // y ventas (~12 s en frío), y tipear el descuento disparaba esa consulta de nuevo
+  // en cada tecla. Se pide siempre el dataset base y el descuento manual se aplica
+  // acá, que es aritmética pura sobre precio_venta.
   const { data: todos, isLoading } = useQuery({
-    queryKey: ["pos-articulos", COD_EMPRESA, descuento],
-    queryFn: () => listarArticulosPOS(COD_EMPRESA, { descuento }),
+    queryKey: ["pos-articulos", COD_EMPRESA],
+    queryFn: () => listarArticulosPOS(COD_EMPRESA),
     retry: false,
   });
 
-  const filas = useMemo(() => todos ?? [], [todos]);
+  // Con descuento manual (> 0) el precio es precio_venta * (1 - d/100), igual que
+  // hacía el SQL. Con descuento 0 se respeta precio_con_descuento tal cual vino:
+  // ahí el backend aplicó FN_PORC_DESCUENTO (descuento automático por precio y
+  // rubro), lógica que vive en la base y no se replica acá.
+  const filas = useMemo(() => {
+    const base = todos ?? [];
+    if (!descuento) return base;
+    const factor = 1 - descuento / 100;
+    return base.map((a) => ({
+      ...a,
+      precio_con_descuento:
+        a.precio_venta == null ? a.precio_con_descuento : Math.round(a.precio_venta * factor),
+    }));
+  }, [todos, descuento]);
 
   const coincide = (a: ArticuloPOS, ignora: "rubro" | "marca" | null) => {
     const q = busqueda.trim().toLowerCase();

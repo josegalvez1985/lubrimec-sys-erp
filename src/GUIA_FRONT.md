@@ -48,18 +48,28 @@ el binario tal cual, sin forzar JSON. Es **público** (sin token). Endpoint:
 
 ## `VITE_API_URL` por entorno
 
-`src/lib/api.ts` lee `import.meta.env.VITE_API_URL` como base. Debe valer `/api/ords/`
-en **todos** los entornos donde haya servidor Node (dev y prod con Nitro), para que use
-el proxy:
+`src/lib/api.ts` lee `import.meta.env.VITE_API_URL` como base. Su valor depende de si el
+entorno tiene servidor Node (y por lo tanto proxy) o no:
 
-- `.env` (dev) → `VITE_API_URL=/api/ords/`
-- `.env.production` → `VITE_API_URL=/api/ords/` + `ORDS_TARGET=https://oracleapex.com`
+- **Dev y prod con Nitro** → `VITE_API_URL=/api/ords/` (pasa por el proxy: sin CORS y el
+  token no viaja en la URL).
+  - `.env` (dev) → `VITE_API_URL=/api/ords/` + `ORDS_TARGET=https://oracleapex.com`
+  - `.env.production` → lo mismo, para `node .output/server/index.mjs`.
+- **GitHub Pages** (el deploy que se usa hoy, SPA estático **sin** servidor Node) →
+  `VITE_API_URL=https://oracleapex.com/ords/josegalvez/lubrimec/`, es decir el navegador
+  llama a ORDS **directo**. Funciona porque los handlers emiten
+  `Access-Control-Allow-Origin: *`. Lo fija el workflow `.github/workflows/deploy-pages.yml`;
+  si esos headers CORS se sacaran del backend, Pages dejaría de andar y habría que mover el
+  deploy a un host con Node.
 
-> **Deploy:** este front necesita correr con **servidor Node** (`node .output/server/index.mjs`),
-> NO GitHub Pages estático. En Pages no existe el proxy `/api/ords` → el navegador
-> llamaría a ORDS directo y reaparece el CORS. Build: `npm run build` (preset
-> `node-server`). Setear en el host: `VITE_API_URL=/api/ords/`, `VITE_APP_ID`,
-> `ORDS_TARGET`.
+> **`.env` NO se versiona** (está en `.gitignore`): después de clonar hay que crearlo a mano
+> o el front sale sin base de API.
+>
+> **Síntoma de `.env` faltante en dev:** el login dice **"Usuario o contraseña incorrectos"**
+> con credenciales válidas. Con `VITE_API_URL` vacío la llamada va a `/auth/login` del propio
+> dev server, que responde el HTML del SPA; `res.json()` falla, el parser recibe `{}` y como no
+> hay `token` tira ese mensaje. No es el backend ni la contraseña. Vite lee el `.env` **solo al
+> arrancar**: hay que reiniciar `npm run dev` después de crearlo.
 
 ## `src/lib/api.ts` — el cliente
 
@@ -99,9 +109,26 @@ sus permisos. Cada usuario ve un menú distinto.
   secciones colapsables (`NavGrupo`). Dashboard es una entrada fija aparte.
 - **Navegación por page_id:** el estado `active` es `"dashboard" | number` (el `page_id`).
   Click en una entrada → `onNav(page_id)`.
-- **Resolver la vista:** el mapa `VISTAS: Record<number, () => ReactElement>` relaciona
-  `page_id` → componente. Si la página activa está en `VISTAS`, se renderiza; si no,
-  muestra `PlaceholderView` con su `page_title`.
+- **Resolver la vista:** el mapa `VISTAS: Record<number, ComponentType>` (en
+  **`src/lib/vistas.tsx`**, no en `home.tsx`) relaciona `page_id` → componente. Si la
+  página activa está en `VISTAS`, se renderiza dentro de un `<Suspense>`; si no, muestra
+  `PlaceholderView` con su `page_title`.
+- **Las vistas se cargan con `React.lazy` (obligatorio).** Cada entrada del mapa es
+  `vista(() => import("@/components/x-view"), "XView")`. El helper `vista()` existe porque
+  las vistas son *named exports* y `lazy()` espera `{ default }`.
+  **Por qué:** con imports estáticos el bundler mete las 61 vistas en el chunk de `/home`
+  (eran ~1,5 MB / 371 KB gzip) y abrir el dashboard obligaba a bajar y parsear todo el ERP.
+  Con `lazy` el arranque quedó en ~62 KB (17,6 KB gzip) —21× menos— y cada pantalla baja al
+  abrirse. De paso saca del arranque `jspdf`, `html2canvas` y `recharts`, que solo usan
+  algunas vistas. **Al agregar una página nueva: anotarla en `vistas.tsx` con `vista(...)`,
+  nunca con un import estático en `home.tsx`.**
+- **`vistas.tsx` va en `src/lib/`, NO en `src/routes/`.** TanStack Start trata todo archivo
+  bajo `routes/` como una ruta: si no exporta un `Route` rompe el route tree (y con él el
+  proxy `/api/ords/`, con lo que el login empieza a fallar con "usuario o contraseña
+  incorrectos"). Costó descubrirlo; no mover el archivo ahí.
+- **Los 2 gráficos del dashboard también son `lazy`** (`CobrosHoyChart`,
+  `VentasDashboardChart`): son los únicos que usan `recharts` (~300 KB). Cada uno con su
+  propio `<Suspense>` para que uno no bloquee al otro ni al resto del dashboard.
 - **El sidebar arranca SIEMPRE oculto** (`menuColapsado` inicia en `true`): la preferencia **no** se
   recuerda entre recargas (se quitó la clave `menu_colapsado` de `localStorage`). El botón de la
   topbar lo muestra/oculta mientras dure la pantalla. Pedido explícito del usuario.
@@ -203,6 +230,8 @@ botones, con imagen para un aspecto más moderno"). **No** dupliques este compon
   imagen: los billetes de `MONEDAS_DETALLE` en `conteo-efectivo-view.tsx`.
 - `triggerRef` expone el botón para enfocarlo desde afuera (modelo: el modal de facturar del POS
   enfoca la forma de cobro al abrirse con `onOpenAutoFocus`).
+- Al portar un formulario de APEX, **todo `<select>` nativo de catálogo corto va a
+  `SelectorModal`** (modelo: la forma de pago de `compras-pagos-view`, pág 78).
 - **Cuándo NO usarlo:** catálogos grandes (artículos, clientes, proveedores) → `BuscadorSelect`,
   que filtra por texto. La regla de "LOV completa + filtro en el front" (abajo) sigue rigiendo para
   esos.
@@ -231,6 +260,14 @@ usuario, repetido). El filtrado local matchea **palabras sueltas en cualquier or
 migrados: `buscarArticulosInventario` (Inventario, pág 58/59), **`buscarArticulos`** (el genérico:
 códigos de barras, artículos-proveedores, vehículos-repuestos) y **`buscarArticulosCompra`**
 (detalle de compras). NO usar `q` + `FETCH FIRST 30` salvo pedido explícito.
+
+**LOV de documentos (no de artículos):** mismo patrón, cambiando el texto que se arma. Modelo:
+`buscarCompras` (facturas del pago de compras, pág 78) — arma
+`proveedor + serie + nro_comprobante + id_factura + fecha` y agrega la fecha **en los dos
+formatos** (`dd/mm/yyyy` e ISO) para que se pueda tipear como se ve en pantalla o como viene del
+backend. La etiqueta que se muestra replica la de la LOV del APEX
+(`proveedor, dd/mm/yyyy, serie-nro`); para poder rearmarla al **editar**, el `LISTAR` del backend
+tiene que devolver esos campos del JOIN, no solo el id.
 
 **Filtro estándar de artículos** (copiar tal cual en toda LOV de artículos nueva): se arma un
 texto único `descripcion + codigo_oem + id_articulo` en mayúsculas y **cada palabra** del término
@@ -331,6 +368,36 @@ que hacer nada extra**, solo respetar el patrón:
      Fix manual una sola vez: DevTools → Application → Clear site data (unregister SW) + cerrar
      TODAS las pestañas del origen y reabrir con Ctrl+Shift+R.
 
+## Qué NO poner en una `queryKey` (rendimiento)
+
+"Sin caché" significa que **cada consulta va al servidor**: no hay red de seguridad si la
+disparás de más. Por eso la `queryKey` define *cuándo se vuelve a consultar*, y meter ahí un
+valor que cambia tecla a tecla convierte cada pulsación en un viaje a Oracle.
+
+- **Nunca** metas en la `queryKey` un estado que el usuario **tipea** (texto libre, un monto,
+  una fecha escrita a mano) si el endpoint es caro.
+- **Sí** está bien un `<select>`, un `type="date"` o un id elegido de una LOV: cambian una vez
+  por selección, no por carácter.
+- Si el valor solo transforma datos que **ya tenés** (un %, un orden, un filtro de texto),
+  resolvelo en el front con `useMemo`; no vuelvas a pedir el dataset.
+- Si de verdad hace falta consultar con algo que se tipea, esperá a que el valor esté
+  **completo** antes de disparar (`enabled`), en vez de consultar con valores a medio escribir.
+
+**Caso real (POS, pág 39):** `descuento` estaba en la `queryKey` de `pos/articulos`, un
+endpoint que recalcula el stock sumando todo el historial de compras y ventas: **12,5 s en frío**
+(451 artículos, 103 KB — el tiempo es query, no datos). Cada tecla en "% Descuento" relanzaba esa
+consulta entera. Se sacó de la `queryKey` y el descuento manual se aplica en el front, que es
+aritmética pura sobre `precio_venta` (`precio_venta * (1 - d/100)`, redondeado: el guaraní no
+tiene decimales y ese precio va a la factura). Verificado contra Oracle: 451/451 precios idénticos.
+**Ojo:** con descuento 0 el backend aplica `FN_PORC_DESCUENTO` (descuento automático por precio
+y rubro), que vive **solo en la base** — ahí se respeta `precio_con_descuento` tal como vino y
+no se recalcula nada en el front.
+
+**Caso real (Planilla de inventarios, pág 112):** la fecha se tipea como `dd/mm/yyyy` en un input
+de texto y estaba en la `queryKey`, así que escribirla lanzaba ~10 consultas, casi todas con
+fechas inválidas ("2", "25/", "25/0"…). Ahora solo consulta cuando la fecha está completa
+(`enabled: open && (fechaCompleta || !fecha.trim())`).
+
 ## El componente (`src/components/marcas-view.tsx` — modelo)
 
 - **react-query** para todo el estado servidor:
@@ -391,6 +458,65 @@ Notas de `Column<T>`:
 - **Export Excel** (`exportName`): exporta las columnas **visibles** con `accessor` y las filas
   **ya filtradas/ordenadas** (lo que se ve en pantalla), reusando `exportarExcel` de
   `src/lib/export.ts`. Sin `exportName` no se muestra el botón.
+
+## Responsive: escala fluida + Web/Mobile (regla del proyecto)
+
+Requisito explícito del usuario: la app tiene que verse bien en **1920×1080 y 1366×768**
+(el problema original era que en 1366 los campos, botones y espacios se veían enormes) y
+tener una experiencia **móvil propia**, no una versión encogida del escritorio.
+**Prohibido resolverlo con `zoom` global.**
+
+### Dónde se centraliza: `src/styles.css`
+
+Los tamaños de control y los espaciados del layout viven en **variables CSS** (un solo
+lugar). Los componentes de `ui/` las consumen, así que cambiar un valor ahí reescala toda
+la app sin tocar ninguna vista:
+
+| Variable | Para qué |
+|---|---|
+| `--ui-font`, `--ui-font-sm`, `--ui-font-lg` | tipografía de UI |
+| `--field-font` | fuente de los campos (16px en móvil: evita el zoom de iOS) |
+| `--control-h`, `--control-h-sm`, `--control-h-lg`, `--control-px` | alto/padding de input, button y triggers |
+| `--panel-p`, `--panel-gap` | padding y separación de paneles |
+| `--cell-px`, `--cell-py` | celdas de tabla |
+| `--topbar-h`, `--sidebar-w` | shell (`home.tsx`) |
+
+Tres regímenes, no un escalado único:
+
+1. **Escritorio (default):** `clamp()` entre 1280 y 1920px → controles ~32px en 1366 y
+   ~36px en 1920.
+2. **Notebook chico / tablet (`<1024px`):** valores fijos del extremo compacto.
+3. **Móvil (`<640px`):** al revés de lo intuitivo, los controles **crecen** a 44px (área
+   táctil) y los campos usan 16px de fuente.
+
+Uso desde JSX con arbitrary values de Tailwind v4 (verificados en el CSS compilado):
+`h-[var(--control-h)]`, `px-[var(--control-px)]`, `p-[var(--panel-p)]`,
+`text-[length:var(--ui-font)]`.
+
+- **No** vuelvas a poner `h-9`/`h-10`/`text-sm`/`p-4 sm:p-6 lg:p-8` fijos en los
+  componentes de `ui/` ni en el shell: usá las variables.
+- En una vista puntual sí podés usar utilidades normales; lo que no se hace es
+  redefinir la escala.
+
+### Mobile: qué ya es automático
+
+- **`DataTable` cambia de forma solo:** tabla en `md:` y **tarjetas** en móvil (una por
+  fila, columna principal como título y el resto como pares etiqueta/valor, más los
+  totales al pie). Ya no hace falta el doble render manual "tarjetas + grilla" de
+  `ventas-articulos-view`. La columna principal es la primera con `hideable: false`
+  (marcá siempre una).
+- Los botones de acción de la fila se agrandan a 40px dentro de la tarjeta móvil.
+- **`DialogContent`** ya trae `max-h-[90dvh] overflow-y-auto` y deja margen lateral en
+  móvil: no hace falta repetirlo en cada modal.
+
+### Qué sigue siendo responsabilidad de la vista
+
+- Pares de campos en un modal: `grid-cols-1 gap-3 sm:grid-cols-2` (nunca `grid-cols-2` a
+  secas, que en 360px queda ilegible). Modelo: `compras-pagos-view`.
+- Layouts propios: unidades relativas y `minmax(0,1fr)`, nunca anchos fijos mayores al
+  viewport.
+- El `<main>` del shell lleva `min-w-0` (ver "Gotchas de UI").
+- Gráficos: `ResponsiveContainer`.
 
 ## Reglas transversales (obligatorias en toda vista nueva)
 
@@ -478,8 +604,21 @@ búsqueda + lector de código de barra + % descuento + imagen con `imgArticuloUr
 **carrito** (array en `useState`, cantidad ±, total) a la derecha. Al facturar, un modal reúne los
 datos de la factura (cliente con `BuscadorSelect`, vendedor, serie/talonario) y **cobros múltiples**,
 y manda **todo junto** a `pos/registrar` (un POST atómico; ver `db/GUIA_ENDPOINTS.md`, "POST con body
-JSON complejo"). El descuento va al backend (afecta el precio); rubro/marca/búsqueda filtran en el front.
+JSON complejo"). Descuento, rubro, marca y búsqueda se resuelven **en el front**.
 
+- **El % de descuento NO se manda al endpoint** (`pos/articulos` se pide una sola vez, sin
+  `descuento`). Recalcularlo en Oracle rehace la suma de stock sobre todo el historial de compras
+  y ventas (12,5 s en frío) y, estando en la `queryKey`, cada tecla relanzaba esa consulta. El
+  descuento manual (> 0) se aplica en un `useMemo`: `Math.round(precio_venta * (1 - d/100))`
+  —redondeado porque el guaraní no tiene decimales y ese precio va al carrito y a la factura—.
+  Con descuento **0** se respeta `precio_con_descuento` tal como vino: ahí el backend aplicó
+  `FN_PORC_DESCUENTO` (descuento automático por precio y rubro), lógica que vive solo en la base
+  y **no** se replica en el front. Ver "Qué NO poner en una `queryKey`".
+- **Stock:** el filtro de artículos con existencia es del SQL, no del front
+  (`db/punto_venta_sql.sql`, CTE `articulos_con_stock`): entran los que tienen existencia > 0
+  **o** son del rubro 30, sobre artículos con `estado='A'` y `es_activo='N'`. El endpoint no
+  devuelve la cantidad disponible, así que la pantalla **no** limita la cantidad que se agrega al
+  carrito contra el stock.
 - **Cobros y vuelto (efectivo):** en efectivo el cajero ingresa lo **recibido**; se imputa a la venta
   el `min(recibido, restante)` (el `total` del cobro nunca supera el total de la venta), y el excedente
   es el **vuelto** (`recibido − restante`). Se guardan los tres campos: `total` (imputado),
@@ -533,7 +672,8 @@ JSON complejo"). El descuento va al backend (afecta el precio); rubro/marca/bús
 - [ ] ¿El verbo está declarado en el proxy `ords.$.ts`?
 - [ ] ¿El back tiene `DEFINE_PARAMETER` del header Authorization? (si no → "Token invalido")
 - [ ] ¿DELETE/GET van sin body? (si mandan content-type JSON vacío → 400)
-- [ ] ¿`VITE_API_URL` = `/api/ords/` en el entorno donde falla?
+- [ ] ¿`VITE_API_URL` = `/api/ords/` en el entorno donde falla? (en dev, ¿existe el `.env`?
+      si no, el login dice "Usuario o contraseña incorrectos" con credenciales válidas)
 - [ ] ¿La respuesta es JSON? Si llega HTML "Service Unavailable" → error 500 en el handler
       PL/SQL (revisar el bloque del handler en ORDS).
 
