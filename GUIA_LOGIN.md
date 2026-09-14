@@ -31,8 +31,12 @@ Decisiones de fondo, para no re-discutirlas:
   de expiración. Simple, revocable (logout = `ACTIVO='N'`) y sin librerías.
 - **Un solo token activo por usuario:** el login desactiva los anteriores antes de insertar.
 - **Las credenciales las valida APEX**, no una tabla propia: los usuarios son los del workspace
-  APEX. Si el proyecto nuevo tiene su propia tabla de usuarios, lo único que cambia es
-  `credenciales_validas` (ver 1.2).
+  APEX. Si el proyecto nuevo tiene su propia tabla de usuarios, lo que cambia es
+  `credenciales_validas` y `usuario_bloqueado` (ver 1.2).
+- **Cuenta bloqueada ≠ contraseña incorrecta.** `IS_LOGIN_PASSWORD_VALID` **solo** compara la
+  contraseña: no mira el estado de la cuenta. El bloqueo se chequea aparte contra
+  `WWV_FLOW_USERS` (**`ACCOUNT_LOCKED`, y solo esa columna**), en el login **y** en
+  `validar_token` (si no, el ya logueado sigue operando hasta 6 h con su token).
 - **El front nunca llama a ORDS directo** cuando hay servidor Node: siempre `/api/ords/`.
 
 ---
@@ -93,7 +97,8 @@ CREATE OR REPLACE PACKAGE PKG_AUTH_<APP> AS
   -- Desactiva el token (cierre de sesion explicito).
   PROCEDURE logout(p_token IN VARCHAR2);
 
-  -- Devuelve el usuario dueño del token, o NULL si es invalido/expirado.
+  -- Devuelve el usuario dueño del token, o NULL si es invalido/expirado
+  -- O SI LA CUENTA quedo bloqueada despues del login.
   -- La usan TODOS los paquetes de negocio para autorizar.
   FUNCTION validar_token(p_token IN VARCHAR2) RETURN VARCHAR2;
 
@@ -107,9 +112,34 @@ BEGIN
     RETURN UPPER(RAWTOHEX(SYS_GUID()) || RAWTOHEX(SYS_GUID()));
 END generar_token;
 
+-- Motivo de bloqueo de la cuenta, o NULL si el usuario puede operar.
+-- OBLIGATORIA: IS_LOGIN_PASSWORD_VALID (abajo) solo compara la contrasena, NO mira
+-- el estado de la cuenta; sin esto una cuenta bloqueada en APEX entra igual.
+-- Un usuario inexistente devuelve NULL a proposito: cae en el "usuario o contrasena
+-- incorrectos" generico, para no revelar que cuentas existen.
+-- OJO: WWV_FLOW_USERS da 0 filas desde ORDS sin contexto de workspace fijado.
+-- OJO 2: mirar SOLO ACCOUNT_LOCKED. ACCOUNT_EXPIRY puede venir con fecha pasada en
+-- cuentas activas y rechaza usuarios sanos (pasó en Lubrimec). La expiracion de la
+-- SESION la maneja FECHA_EXPIRACION de la tabla de tokens, que es otra cosa.
+FUNCTION usuario_bloqueado(p_usuario IN VARCHAR2) RETURN VARCHAR2 IS
+    l_locked VARCHAR2(1);
+BEGIN
+    SELECT NVL(UPPER(account_locked), 'N')
+      INTO l_locked
+      FROM wwv_flow_users
+     WHERE UPPER(user_name) = UPPER(p_usuario)
+       AND ROWNUM = 1;
+    IF l_locked = 'Y' THEN
+        RETURN 'Usuario bloqueado. Contacte al administrador.';
+    END IF;
+    RETURN NULL;
+EXCEPTION
+    WHEN NO_DATA_FOUND THEN RETURN NULL;
+END usuario_bloqueado;
+
 -- Valida contra los usuarios del workspace APEX.
--- Si el proyecto nuevo tiene su propia tabla de usuarios, ESTA es la unica
--- funcion a cambiar (comparar hash propio, LDAP, etc.).
+-- Si el proyecto nuevo tiene su propia tabla de usuarios, ESTA (junto con
+-- usuario_bloqueado) es la funcion a cambiar (comparar hash propio, LDAP, etc.).
 FUNCTION credenciales_validas(
     p_usuario  IN VARCHAR2,
     p_password IN VARCHAR2
@@ -124,8 +154,9 @@ BEGIN
 END credenciales_validas;
 
 PROCEDURE login(p_usuario IN VARCHAR2, p_password IN VARCHAR2) IS
-    l_token VARCHAR2(128);
-    l_exp   TIMESTAMP;
+    l_token   VARCHAR2(128);
+    l_exp     TIMESTAMP;
+    l_bloqueo VARCHAR2(4000);
 BEGIN
     OWA_UTIL.MIME_HEADER('application/json', FALSE);
     -- Solo si el front va a llamar a ORDS SIN proxy (ej. GitHub Pages estatico):
@@ -142,6 +173,22 @@ BEGIN
     END IF;
 
     IF credenciales_validas(p_usuario, p_password) THEN
+        -- credenciales_validas ya dejo fijado el contexto de workspace, que es lo
+        -- que necesita usuario_bloqueado para ver filas en WWV_FLOW_USERS.
+        l_bloqueo := usuario_bloqueado(p_usuario);
+        IF l_bloqueo IS NOT NULL THEN
+            -- Contrasena correcta pero cuenta bloqueada: NO se emite token, y se
+            -- cortan las sesiones que hubiera dejado abiertas.
+            UPDATE <APP>_TOKENS SET ACTIVO = 'N'
+             WHERE USUARIO = UPPER(p_usuario) AND ACTIVO = 'S';
+            COMMIT;
+            APEX_JSON.OPEN_OBJECT;
+            APEX_JSON.WRITE('success', FALSE);
+            APEX_JSON.WRITE('message', l_bloqueo);
+            APEX_JSON.CLOSE_OBJECT;
+            RETURN;
+        END IF;
+
         l_token := generar_token(p_usuario);
         l_exp   := SYSTIMESTAMP + NUMTODSINTERVAL(6 * 60 * 60, 'SECOND');  -- 6 horas
 
@@ -204,6 +251,18 @@ BEGIN
      WHERE TOKEN = UPPER(p_token)
        AND ACTIVO = 'S'
        AND FECHA_EXPIRACION > SYSTIMESTAMP;
+
+    -- El token sigue vigente, pero la cuenta pudo bloquearse DESPUES del login.
+    -- Sin esto el bloqueado sigue operando hasta que su token expire.
+    -- Aca hay que fijar el workspace explicitamente (en el login lo dejo puesto
+    -- credenciales_validas, pero este camino no pasa por ahi).
+    wwv_flow_api.set_security_group_id(p_security_group_id => <security_group_id>);
+    IF usuario_bloqueado(l_usuario) IS NOT NULL THEN
+        -- NULL basta: cada paquete responde 401 y el front cierra la sesion.
+        -- Sin DML: esto corre en el camino caliente de TODA lectura.
+        RETURN NULL;
+    END IF;
+
     RETURN l_usuario;
 EXCEPTION
     WHEN NO_DATA_FOUND THEN RETURN NULL;
@@ -720,6 +779,9 @@ Si `curl` directo funciona pero el front no, el problema está en el proxy o en 
 | CORS en producción | Deploy estático sin proxy | O servís con Node (proxy) o emitís los headers CORS en ORDS |
 | El usuario sigue "logueado" tras expirar el token | Se chequeó `res.ok` antes que el token | `esTokenInvalido` primero, y que dispare `handleUnauthorized()` |
 | El login funciona pero los permisos no filtran | `app_user` en minúsculas | Normalizar con `.toUpperCase()` al guardar la sesión |
+| Un usuario bloqueado en APEX entra igual | `IS_LOGIN_PASSWORD_VALID` solo compara la contraseña | Chequear `WWV_FLOW_USERS` con `usuario_bloqueado` (1.2) |
+| Lo bloqueé y sigue trabajando | Solo se chequeó en el login; su token ya emitido dura 6 h | Chequear también en `validar_token` (corre en cada request) |
+| `usuario_bloqueado` nunca bloquea a nadie | `WWV_FLOW_USERS` sin contexto de workspace → 0 filas → `NO_DATA_FOUND` → NULL | `wwv_flow_api.set_security_group_id(...)` antes de la consulta |
 | Cambié el `.sql` y no pasa nada | Los `.sql` del repo **no se aplican solos** | Ejecutarlos a mano en la BD como el esquema dueño |
 
 ---
@@ -739,5 +801,12 @@ por request, medí antes).
 (pide la contraseña, la valida con `login()` y recién ahí guarda las credenciales en el Keystore);
 el login solo ofrece el botón si ya está activa. Ver `src/lib/biometric.ts` y `perfil-modal.tsx`.
 
-**Rate limiting.** No hay. Si el endpoint queda expuesto a internet, considerá contar intentos
-fallidos por usuario/IP en una tabla y bloquear temporalmente.
+**Rate limiting.** No hay conteo propio de intentos fallidos. APEX sí bloquea la cuenta por sí solo
+tras N intentos (`ACCOUNT_LOCKED`), y eso el login ya lo respeta (ver `usuario_bloqueado` en 1.2),
+pero no hay límite por IP. Si el endpoint queda expuesto a internet, considerá contar intentos por
+usuario/IP en una tabla y bloquear temporalmente.
+
+**Costo del chequeo de bloqueo.** `validar_token` corre en **cada** request protegido y ahora suma
+una consulta a `WWV_FLOW_USERS`. Con los volúmenes de este ERP no se nota, pero si algún día pesa,
+las salidas son cachear el estado en la propia fila del token (y refrescarlo cada N minutos) o
+mover el chequeo a un `AFTER LOGON`-style refresco periódico. Medir antes de optimizar.
