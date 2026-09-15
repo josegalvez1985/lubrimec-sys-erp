@@ -1010,6 +1010,10 @@ export type ArticuloBusqueda = {
   codigo_oem: string | null;
   precio_venta: number | null;
   costo_ultima_compra: number | null;
+  // Del JOIN a RUBROS. Opcionales: APEX_JSON omite las claves NULL y una BD sin la
+  // versión nueva de BUSCAR_ARTICULOS no los manda.
+  id_rubro?: number | null;
+  rubro?: string | null;
 };
 
 export async function listarCodigosBarras(codEmpresa: number): Promise<CodigoBarra[]> {
@@ -1049,8 +1053,12 @@ export async function eliminarCodigoBarra(idBarra: number, codEmpresa: number): 
 // normalizan en ambos lados para que "9091503001" encuentre "90915-03001".
 export async function buscarArticulos(codEmpresa: number, q: string): Promise<ArticuloBusqueda[]> {
   const data = await authFetch(`articulos/buscar?${qs({ cod_empresa: String(codEmpresa) })}`);
-  const todos = (data.data ?? []) as ArticuloBusqueda[];
+  return filtrarArticulos((data.data ?? []) as ArticuloBusqueda[], q);
+}
 
+// Filtro estándar de artículos, separado para aplicarlo también sobre un subconjunto
+// (Vehículos-Repuestos filtra primero por rubro y después por el texto).
+export function filtrarArticulos(todos: ArticuloBusqueda[], q: string): ArticuloBusqueda[] {
   const tokens = q.trim().toUpperCase().split(/\s+/).filter(Boolean);
   if (tokens.length === 0) return todos;
 
@@ -1133,12 +1141,14 @@ export async function buscarProveedores(codEmpresa: number, q: string): Promise<
 // ─── Vehículos-Repuestos (página 94) ─────────────────────────────────────────
 // CRUD de VEHICULOS_REPUESTOS. PK id_vehiculo (IDENTITY). UK (cod_empresa, modelo,
 // codigo_oem). Relaciona un modelo de vehículo con el código OEM de un repuesto.
+// rubro: del artículo con ese OEM (JOIN en LISTAR, solo lectura, no se guarda).
 
 export type VehiculoRepuesto = {
   id_vehiculo: number;
   cod_empresa: number;
   modelo: string;
   codigo_oem: string;
+  rubro?: string | null;
 };
 
 export type VehiculoRepuestoInput = {

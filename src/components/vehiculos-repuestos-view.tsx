@@ -1,6 +1,7 @@
-import { useState, type FormEvent } from "react";
+import { useMemo, useState, type FormEvent } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, Eye, Pencil, Trash2, Loader2, Car } from "lucide-react";
+import { toast } from "sonner";
+import { Plus, Eye, Pencil, Trash2, Loader2, Car, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -31,12 +32,36 @@ import {
   actualizarVehiculoRepuesto,
   eliminarVehiculoRepuesto,
   buscarArticulos,
+  filtrarArticulos,
+  type ArticuloBusqueda,
   type VehiculoRepuesto,
   type VehiculoRepuestoInput,
 } from "@/lib/api";
 
 // TODO: cod_empresa fijo; reemplazar cuando venga de la sesión.
 const COD_EMPRESA = 24;
+
+// Rubros de filtros (Filtro de aire, Filtro, Filtro de caja). Se reconocen por el
+// nombre —sin mayúsculas ni tildes— y no por id_rubro fijo: los nombres exactos viven
+// solo en la BD, y así un rubro de filtro nuevo aparece sin tocar el código.
+const normalizar = (s: string) =>
+  s
+    .toUpperCase()
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "");
+const esRubroFiltro = (rubro: string | null | undefined): rubro is string =>
+  !!rubro && normalizar(rubro).includes("FILTRO");
+
+// LOV del modal: solo artículos de rubros de filtros, con el filtro de texto estándar.
+// Si NINGÚN artículo trae `rubro`, la BD todavía no tiene la versión nueva de
+// BUSCAR_ARTICULOS (codigos_barras_sql.sql): se ofrece el catálogo completo en vez de
+// dejar el buscador vacío.
+async function buscarArticulosFiltros(q: string): Promise<ArticuloBusqueda[]> {
+  const todos = await buscarArticulos(COD_EMPRESA, "");
+  const conRubro = todos.some((a) => a.rubro != null);
+  const base = conRubro ? todos.filter((a) => esRubroFiltro(a.rubro)) : todos;
+  return filtrarArticulos(base, q);
+}
 
 type ModalState =
   | { mode: "closed" }
@@ -48,6 +73,7 @@ export function VehiculosRepuestosView() {
   const qc = useQueryClient();
   const [modal, setModal] = useState<ModalState>({ mode: "closed" });
   const [aEliminar, setAEliminar] = useState<VehiculoRepuesto | null>(null);
+  const [rubroSel, setRubroSel] = useState<string | null>(null);
 
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ["vehiculos-repuestos", COD_EMPRESA],
@@ -61,9 +87,21 @@ export function VehiculosRepuestosView() {
       qc.invalidateQueries({ queryKey: ["vehiculos-repuestos"] });
       setAEliminar(null);
     },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "No se pudo eliminar"),
   });
 
-  const filas = (data ?? []).slice().sort((a, b) => b.id_vehiculo - a.id_vehiculo);
+  const filas = useMemo(
+    () => (data ?? []).slice().sort((a, b) => b.id_vehiculo - a.id_vehiculo),
+    [data],
+  );
+
+  // Un botón por cada rubro de filtro presente en los datos.
+  const rubrosFiltro = useMemo(
+    () => [...new Set(filas.map((r) => r.rubro).filter(esRubroFiltro))].sort(),
+    [filas],
+  );
+
+  const filasVisibles = rubroSel ? filas.filter((r) => r.rubro === rubroSel) : filas;
 
   const COLUMNAS: Column<VehiculoRepuesto>[] = [
     {
@@ -91,6 +129,17 @@ export function VehiculosRepuestosView() {
       accessor: (r) => r.codigo_oem,
       render: (r) => <span className="font-mono">{r.codigo_oem}</span>,
     },
+    {
+      key: "rubro",
+      header: "Rubro",
+      accessor: (r) => r.rubro ?? "",
+      render: (r) =>
+        r.rubro ? (
+          <Badge variant={esRubroFiltro(r.rubro) ? "secondary" : "outline"}>{r.rubro}</Badge>
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        ),
+    },
   ];
 
   return (
@@ -99,7 +148,9 @@ export function VehiculosRepuestosView() {
         <div>
           <h2 className="font-display text-xl font-bold">Vehículos y repuestos</h2>
           <p className="text-sm text-muted-foreground">
-            {filas.length} {filas.length === 1 ? "registro" : "registros"}
+            {rubroSel
+              ? `${filasVisibles.length} de ${filas.length} registros`
+              : `${filas.length} ${filas.length === 1 ? "registro" : "registros"}`}
           </p>
         </div>
         <Button
@@ -111,6 +162,28 @@ export function VehiculosRepuestosView() {
           <span className="sm:hidden">Nuevo</span>
         </Button>
       </div>
+
+      {rubrosFiltro.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-3 sm:px-5">
+          <span className="text-sm text-muted-foreground">Rubro:</span>
+          {rubrosFiltro.map((rubro) => (
+            <Button
+              key={rubro}
+              size="sm"
+              variant={rubroSel === rubro ? "default" : "outline"}
+              onClick={() => setRubroSel(rubroSel === rubro ? null : rubro)}
+            >
+              {rubro}
+            </Button>
+          ))}
+          {rubroSel && (
+            <Button variant="ghost" size="sm" onClick={() => setRubroSel(null)}>
+              <X className="mr-2 h-4 w-4" />
+              Limpiar
+            </Button>
+          )}
+        </div>
+      )}
 
       {isError ? (
         <p className="p-8 text-center text-sm text-destructive">
@@ -130,7 +203,7 @@ export function VehiculosRepuestosView() {
         <div className="p-4 sm:p-5">
           <DataTable
             columns={COLUMNAS}
-            rows={filas}
+            rows={filasVisibles}
             getRowId={(r) => r.id_vehiculo}
             initialSort={{ key: "id_vehiculo", dir: "desc" }}
             exportName="vehiculos-repuestos"
@@ -225,6 +298,8 @@ function VehiculoRepuestoDialog({
 
   const [modelo, setModelo] = useState("");
   const [codigoOem, setCodigoOem] = useState("");
+  // Solo informativo: el rubro no se guarda, sale del artículo con ese OEM.
+  const [rubro, setRubro] = useState("");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -234,6 +309,7 @@ function VehiculoRepuestoDialog({
     setLastKey(key);
     setModelo(item?.modelo ?? "");
     setCodigoOem(item?.codigo_oem ?? "");
+    setRubro(item?.rubro ?? "");
     setError("");
   }
 
@@ -278,7 +354,7 @@ function VehiculoRepuestoDialog({
           <DialogTitle>{titulo}</DialogTitle>
           {!isView && (
             <DialogDescription>
-              Relaciona un modelo de vehículo con el código OEM del repuesto.
+              Relaciona un modelo de vehículo con el código OEM del filtro.
             </DialogDescription>
           )}
         </DialogHeader>
@@ -309,29 +385,47 @@ function VehiculoRepuestoDialog({
               <Input value={codigoOem} disabled className="font-mono" />
             ) : (
               <>
-                {/* Buscador: elegir un artículo toma su código OEM. */}
+                {/* Buscador: solo artículos de rubros de filtros; elegir uno toma su OEM. */}
                 <BuscadorSelect
-                  placeholder="Buscar artículo por descripción, OEM o ID..."
-                  emptyLabel="Sin artículos"
+                  placeholder="Buscar filtro por descripción, OEM o ID..."
+                  emptyLabel="Sin filtros"
                   value={codigoOem || null}
                   label={codigoOem}
-                  buscar={(q) => buscarArticulos(COD_EMPRESA, q)}
+                  buscar={buscarArticulosFiltros}
                   itemKey={(a) => a.id_articulo}
                   itemTitle={(a) => a.descripcion ?? "—"}
                   itemSub={(a) =>
-                    `ID ${a.id_articulo}${a.codigo_oem ? ` · OEM ${a.codigo_oem}` : " · sin OEM"}`
+                    `ID ${a.id_articulo}${a.codigo_oem ? ` · OEM ${a.codigo_oem}` : " · sin OEM"}${
+                      a.rubro ? ` · ${a.rubro}` : ""
+                    }`
                   }
-                  onSelect={(a) => setCodigoOem(a.codigo_oem ?? "")}
+                  onSelect={(a) => {
+                    setCodigoOem(a.codigo_oem ?? "");
+                    setRubro(a.rubro ?? "");
+                  }}
                   disabled={saving}
                 />
                 {codigoOem && (
                   <p className="text-xs text-muted-foreground">
                     OEM seleccionado: <span className="font-mono text-foreground">{codigoOem}</span>
+                    {rubro && (
+                      <>
+                        {" "}
+                        · Rubro: <span className="text-foreground">{rubro}</span>
+                      </>
+                    )}
                   </p>
                 )}
               </>
             )}
           </div>
+
+          {isView && (
+            <div className="space-y-2">
+              <Label htmlFor="rubro">Rubro</Label>
+              <Input id="rubro" value={rubro || "—"} disabled />
+            </div>
+          )}
 
           {error && (
             <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">

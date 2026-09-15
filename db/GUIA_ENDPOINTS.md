@@ -122,6 +122,13 @@ endpoints de solo lectura sin paquete (`ORDS_MENU_PAGINAS.sql`, `ORDS_VENTAS_*.s
     de comprobante.
     - Al migrar un proc viejo, **dejar `p_q` en la firma** aunque no se use: el handler ORDS ya
       bindea `:q` y cambiar la firma obliga a tocar el script ORDS. Se ignora y se documenta.
+    - **Agregar campos a una LOV compartida es seguro; quitarlos no.** `articulos/buscar`
+      (`codigos_barras_sql.sql`) lo usan tres páginas (códigos de barras, artículos-proveedores,
+      vehículos-repuestos), así que el `BUSCAR_ARTICULOS` devuelve la **unión** de lo que cada una
+      necesita: sumó `id_rubro` y `rubro` (`LEFT JOIN rubros`) para que la pág 94 ofrezca solo
+      artículos de rubros de filtros, y las otras dos simplemente ignoran esas claves. En el front
+      los campos nuevos van **opcionales** (`rubro?: string | null`): `APEX_JSON` omite las claves
+      NULL y una BD sin el paquete nuevo no los manda.
   - **`ARTICULOS` tiene DOS columnas de activo — filtrar por `ESTADO`, no por `es_activo`.**
     `ESTADO = 'A'` es Activo/Inactivo (lo que muestra el APEX y lo que el usuario espera ver);
     `es_activo` (`'S'`/`'N'`) es otra cosa. Filtrar por la equivocada dejaba fuera artículos

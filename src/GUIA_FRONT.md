@@ -261,6 +261,34 @@ migrados: `buscarArticulosInventario` (Inventario, pág 58/59), **`buscarArticul
 códigos de barras, artículos-proveedores, vehículos-repuestos) y **`buscarArticulosCompra`**
 (detalle de compras). NO usar `q` + `FETCH FIRST 30` salvo pedido explícito.
 
+**LOV acotada a un subconjunto (sin romper la regla):** cuando una pantalla solo debe ofrecer
+parte del catálogo (Vehículos-Repuestos, pág 94: solo artículos de rubros de filtros), el recorte
+va **en el front, antes** del filtro de texto; el endpoint sigue devolviendo la lista completa.
+Para no duplicar el filtro estándar, `src/lib/api.ts` exporta **`filtrarArticulos(todos, q)`** y
+`buscarArticulos` no es más que `filtrarArticulos(catálogo, q)`. La vista compone las dos partes:
+
+```ts
+const todos = await buscarArticulos(COD_EMPRESA, ""); // catálogo completo, sin filtrar texto
+const conRubro = todos.some((a) => a.rubro != null);  // ¿la BD ya manda el campo nuevo?
+const base = conRubro ? todos.filter((a) => esRubroFiltro(a.rubro)) : todos;
+return filtrarArticulos(base, q);
+```
+
+- **Recortar por nombre, no por id.** Los rubros de filtros se reconocen con
+  `normalizar(rubro).includes("FILTRO")` (mayúsculas + `NFD` + `replace(/\p{Diacritic}/gu, "")`),
+  no con una lista de `id_rubro` fija: los nombres viven solo en la BD y así un rubro de filtro
+  nuevo entra sin tocar código. El costo es que un rubro no previsto que contenga "filtro" también
+  entra; si hace falta exactitud, fijar los `id_rubro`.
+- **Fallback obligatorio si el campo es nuevo:** mientras la BD no tenga el paquete actualizado,
+  **ningún** artículo trae `rubro` y recortar dejaría el buscador vacío. Por eso se comprueba
+  `some(a => a.rubro != null)` y, si no está, se ofrece el catálogo entero. Misma idea que
+  "ningún dato de la cabecera queda invisible": la pantalla no se rompe por una BD atrasada.
+- **Escapes Unicode en regex:** preferir `\p{Diacritic}` con bandera `u` al rango de marcas
+  combinantes (U+0300 a U+036F). `\p{Diacritic}` es ASCII puro, así que ninguna herramienta de
+  edición lo altera: ese rango se corrompió dos veces seguidas —primero quedó con los caracteres
+  combinantes literales (invisibles en el editor) y después, al intentar arreglarlo con `sed`, como
+  `[0300-036f]`, que en vez de tildes borraba los dígitos 0, 3 y 6—.
+
 **LOV de documentos (no de artículos):** mismo patrón, cambiando el texto que se arma. Modelo:
 `buscarCompras` (facturas del pago de compras, pág 78) — arma
 `proveedor + serie + nro_comprobante + id_factura + fecha` y agrega la fecha **en los dos
