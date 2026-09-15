@@ -293,11 +293,16 @@ CREATE OR REPLACE PACKAGE BODY PKG_CODIGOS_BARRAS_LUBRIMEC AS
     APEX_JSON.WRITE('success', TRUE);
     APEX_JSON.OPEN_ARRAY('data');
     FOR r IN (
-        SELECT id_articulo, descripcion, codigo_oem, precio_venta, costo_ultima_compra
-          FROM articulos
-         WHERE cod_empresa = p_cod_empresa
-           AND UPPER(NVL(estado, 'A')) = 'A'
-         ORDER BY descripcion
+        -- id_rubro / rubro: Vehiculos-Repuestos (pag 94) los usa para listar solo
+        -- articulos de rubros de filtros. Campos extra: el resto de las LOVs los ignora.
+        SELECT a.id_articulo, a.descripcion, a.codigo_oem, a.precio_venta,
+               a.costo_ultima_compra, a.id_rubro, ru.descripcion AS rubro
+          FROM articulos a
+          LEFT JOIN rubros ru
+                 ON ru.id_rubro = a.id_rubro AND ru.cod_empresa = a.cod_empresa
+         WHERE a.cod_empresa = p_cod_empresa
+           AND UPPER(NVL(a.estado, 'A')) = 'A'
+         ORDER BY a.descripcion
     ) LOOP
       APEX_JSON.OPEN_OBJECT;
       APEX_JSON.WRITE('id_articulo', r.id_articulo);
@@ -305,6 +310,8 @@ CREATE OR REPLACE PACKAGE BODY PKG_CODIGOS_BARRAS_LUBRIMEC AS
       APEX_JSON.WRITE('codigo_oem', r.codigo_oem);
       APEX_JSON.WRITE('precio_venta', r.precio_venta);
       APEX_JSON.WRITE('costo_ultima_compra', r.costo_ultima_compra);
+      APEX_JSON.WRITE('id_rubro', r.id_rubro);
+      APEX_JSON.WRITE('rubro', r.rubro);
       APEX_JSON.CLOSE_OBJECT;
     END LOOP;
     APEX_JSON.CLOSE_ARRAY;

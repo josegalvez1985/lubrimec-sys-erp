@@ -178,8 +178,11 @@ dinámicamente desde el endpoint `menu/paginas`.
 - **Detalle de Monedas** (page_id 83) — vista propia del detalle de `monedas_detalle`: selector de
   moneda + denominaciones con imagen. Reutiliza `DetalleMoneda` de la página 18. Sin backend nuevo.
 - **Vehículos-Repuestos** (page_id 94) — CRUD de `vehiculos_repuestos` (modelo ↔ código OEM). El
-  OEM se elige con un buscador que toma el `codigo_oem` de un artículo (endpoint `articulos/buscar`).
-  Backend: `db/vehiculos_repuestos_sql.sql`.
+  OEM se elige con un buscador que toma el `codigo_oem` de un artículo (endpoint `articulos/buscar`)
+  y lista **solo artículos de rubros de filtros** (Filtro de aire, Filtro, Filtro de caja: todo rubro
+  cuyo nombre contenga "filtro"). La grilla muestra el **Rubro** del artículo con ese OEM (JOIN de
+  solo lectura, no se guarda en la tabla) y botones para filtrar por rubro. Backend:
+  `db/vehiculos_repuestos_sql.sql` + `BUSCAR_ARTICULOS` de `db/codigos_barras_sql.sql`.
 - **Rendición de Caja** (page_id 73) — CRUD de `rendiciones_cajas` (cierres de caja por fecha).
   Al elegir la fecha, un endpoint `rendiciones/sugeridos` precarga (editables) caja anterior, venta
   y pago replicando los auto-cálculos del modal APEX; `Total Caja = caja_anterior + venta − retiro

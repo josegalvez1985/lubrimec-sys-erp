@@ -56,16 +56,29 @@ CREATE OR REPLACE PACKAGE BODY PKG_VEHICULOS_REPUESTOS_LUBRIMEC AS
     APEX_JSON.WRITE('success', TRUE);
     APEX_JSON.OPEN_ARRAY('data');
     FOR r IN (
-        SELECT id_vehiculo, cod_empresa, modelo, codigo_oem
-          FROM vehiculos_repuestos
-         WHERE cod_empresa = p_cod_empresa
-         ORDER BY id_vehiculo DESC
+        -- rubro: solo lectura, NO se guarda en la tabla. Sale del articulo que tiene
+        -- ese codigo OEM (Filtro de aire, Filtro, Filtro de caja...). Si el OEM esta
+        -- en varios articulos se toma uno activo (ESTADO='A'), el mas nuevo.
+        SELECT vr.id_vehiculo, vr.cod_empresa, vr.modelo, vr.codigo_oem,
+               (SELECT ru.descripcion
+                  FROM articulos a
+                  JOIN rubros ru
+                    ON ru.id_rubro = a.id_rubro AND ru.cod_empresa = a.cod_empresa
+                 WHERE a.cod_empresa = vr.cod_empresa
+                   AND a.codigo_oem  = vr.codigo_oem
+                 ORDER BY CASE WHEN UPPER(NVL(a.estado, 'A')) = 'A' THEN 0 ELSE 1 END,
+                          a.id_articulo DESC
+                 FETCH FIRST 1 ROW ONLY) AS rubro
+          FROM vehiculos_repuestos vr
+         WHERE vr.cod_empresa = p_cod_empresa
+         ORDER BY vr.id_vehiculo DESC
     ) LOOP
       APEX_JSON.OPEN_OBJECT;
       APEX_JSON.WRITE('id_vehiculo', r.id_vehiculo);
       APEX_JSON.WRITE('cod_empresa', r.cod_empresa);
       APEX_JSON.WRITE('modelo', r.modelo);
       APEX_JSON.WRITE('codigo_oem', r.codigo_oem);
+      APEX_JSON.WRITE('rubro', r.rubro);
       APEX_JSON.CLOSE_OBJECT;
     END LOOP;
     APEX_JSON.CLOSE_ARRAY;
