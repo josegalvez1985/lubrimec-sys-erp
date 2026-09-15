@@ -202,6 +202,22 @@ la BD son legado — no copiarlos en páginas nuevas.
 - La grilla usa `DataTable` y muestra las columnas de solo lectura del JOIN (descripción del
   artículo, nombre del proveedor).
 
+### Cuál de los tres selectores usar
+
+| Componente | Catálogo | Forma |
+|---|---|---|
+| `ui/selector-modal.tsx` (`SelectorModal`) | **corto** (monedas, bancos, vendedores) | modal con grilla de tarjetas, sin buscador |
+| `ui/buscador-select.tsx` (`BuscadorSelect`) | **grande** | dropdown inline debajo del input |
+| `ui/buscador-modal.tsx` (`BuscadorModal`) | **grande** | **modal aparte** con buscador arriba y lista scrolleable |
+
+`BuscadorModal` es para cuando el dropdown inline queda incómodo: formularios chicos, móvil, o
+cuando conviene ver la lista en grande. Mismo contrato que `BuscadorSelect` (prop `buscar` que
+recibe el texto y devuelve el catálogo **completo** ya filtrado en el front), más `titulo` /
+`placeholder` / `buscarPlaceholder` del modal. Muestra el contador de resultados al pie y limpia
+la búsqueda al cerrar. Modelo vivo: el código OEM de `vehiculos-repuestos-view` (pág 94).
+**Los tres respetan la regla de LOVs:** lista completa del backend + filtro en el front. Ninguno
+recorta el catálogo. **No dupliques** ninguno por vista; importá el de `ui/`.
+
 ### LOV corta en modal de botones (`ui/selector-modal.tsx`)
 
 Para catálogos **cortos** (monedas, billetes, vendedores, talonarios, formas de cobro, bancos) el
@@ -261,28 +277,15 @@ migrados: `buscarArticulosInventario` (Inventario, pág 58/59), **`buscarArticul
 códigos de barras, artículos-proveedores, vehículos-repuestos) y **`buscarArticulosCompra`**
 (detalle de compras). NO usar `q` + `FETCH FIRST 30` salvo pedido explícito.
 
-**LOV acotada a un subconjunto (sin romper la regla):** cuando una pantalla solo debe ofrecer
-parte del catálogo (Vehículos-Repuestos, pág 94: solo artículos de rubros de filtros), el recorte
-va **en el front, antes** del filtro de texto; el endpoint sigue devolviendo la lista completa.
-Para no duplicar el filtro estándar, `src/lib/api.ts` exporta **`filtrarArticulos(todos, q)`** y
-`buscarArticulos` no es más que `filtrarArticulos(catálogo, q)`. La vista compone las dos partes:
+**NO recortar el catálogo de una LOV, ni siquiera "para ayudar".** Pasó en Vehículos-Repuestos
+(pág 94): se acotó el buscador a artículos de rubros de filtros y la pantalla dejó de mostrar
+"todos los de la lista de valores". Aunque el recorte se haga en el front y por un criterio
+razonable, **viola la regla**: lo que no está en la lista es inalcanzable desde esa pantalla, y
+nadie puede adivinar por qué falta. Si conviene destacar un atributo (el rubro, el proveedor),
+va **en la etiqueta** del resultado (`itemSub`), no como filtro que esconde filas. Para acotar,
+usar filtros **sobre datos ya traídos** (facetas/botones en la grilla), que el usuario ve y puede
+limpiar.
 
-```ts
-const todos = await buscarArticulos(COD_EMPRESA, ""); // catálogo completo, sin filtrar texto
-const conRubro = todos.some((a) => a.rubro != null);  // ¿la BD ya manda el campo nuevo?
-const base = conRubro ? todos.filter((a) => esRubroFiltro(a.rubro)) : todos;
-return filtrarArticulos(base, q);
-```
-
-- **Recortar por nombre, no por id.** Los rubros de filtros se reconocen con
-  `normalizar(rubro).includes("FILTRO")` (mayúsculas + `NFD` + `replace(/\p{Diacritic}/gu, "")`),
-  no con una lista de `id_rubro` fija: los nombres viven solo en la BD y así un rubro de filtro
-  nuevo entra sin tocar código. El costo es que un rubro no previsto que contenga "filtro" también
-  entra; si hace falta exactitud, fijar los `id_rubro`.
-- **Fallback obligatorio si el campo es nuevo:** mientras la BD no tenga el paquete actualizado,
-  **ningún** artículo trae `rubro` y recortar dejaría el buscador vacío. Por eso se comprueba
-  `some(a => a.rubro != null)` y, si no está, se ofrece el catálogo entero. Misma idea que
-  "ningún dato de la cabecera queda invisible": la pantalla no se rompe por una BD atrasada.
 - **Escapes Unicode en regex:** preferir `\p{Diacritic}` con bandera `u` al rango de marcas
   combinantes (U+0300 a U+036F). `\p{Diacritic}` es ASCII puro, así que ninguna herramienta de
   edición lo altera: ese rango se corrompió dos veces seguidas —primero quedó con los caracteres

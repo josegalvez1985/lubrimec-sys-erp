@@ -90,8 +90,9 @@ responsabilidad de cada vista: [src/GUIA_FRONT.md](src/GUIA_FRONT.md).
 
 - `src/routes/` — rutas (login `index.tsx`, `home.tsx`) y proxy ORDS (`api/ords.$.ts`).
 - `src/components/` — vistas de páginas (`marcas-view.tsx`, `whatsapp-view.tsx`) y UI (`ui/`:
-  `data-table`, `faceta`, `input-monto`, `buscador-select` para catálogos grandes y
-  `selector-modal` para LOVs cortas en modal de botones).
+  `data-table`, `faceta`, `input-monto`, `buscador-select` (catálogos grandes, dropdown inline),
+  `buscador-modal` (catálogos grandes en modal aparte con buscador) y `selector-modal` para LOVs
+  cortas en modal de botones).
 - `src/lib/api.ts` — cliente HTTP: sesión, `authFetch`, funciones por tabla.
 - `src/lib/vistas.tsx` — mapa `page_id` → vista, cargadas con `React.lazy` (una por chunk).
 - `src/hooks/` — hooks (aviso de actualización del APK).
@@ -178,10 +179,11 @@ dinámicamente desde el endpoint `menu/paginas`.
 - **Detalle de Monedas** (page_id 83) — vista propia del detalle de `monedas_detalle`: selector de
   moneda + denominaciones con imagen. Reutiliza `DetalleMoneda` de la página 18. Sin backend nuevo.
 - **Vehículos-Repuestos** (page_id 94) — CRUD de `vehiculos_repuestos` (modelo ↔ código OEM). El
-  OEM se elige con un buscador que toma el `codigo_oem` de un artículo (endpoint `articulos/buscar`)
-  y lista **solo artículos de rubros de filtros** (Filtro de aire, Filtro, Filtro de caja: todo rubro
-  cuyo nombre contenga "filtro"). La grilla muestra el **Rubro** del artículo con ese OEM (JOIN de
-  solo lectura, no se guarda en la tabla) y botones para filtrar por rubro. Backend:
+  OEM se elige con un buscador que toma el `codigo_oem` de un artículo (endpoint `articulos/buscar`,
+  catálogo **completo** como toda LOV) y que muestra el **rubro** de cada artículo en la etiqueta,
+  para distinguir Filtro de aire / Filtro / Filtro de caja al elegir. La grilla muestra el **Rubro**
+  del artículo con ese OEM (JOIN de solo lectura, no se guarda en la tabla) y botones para filtrar
+  por rubro las filas ya cargadas. Backend:
   `db/vehiculos_repuestos_sql.sql` + `BUSCAR_ARTICULOS` de `db/codigos_barras_sql.sql`.
 - **Rendición de Caja** (page_id 73) — CRUD de `rendiciones_cajas` (cierres de caja por fecha).
   Al elegir la fecha, un endpoint `rendiciones/sugeridos` precarga (editables) caja anterior, venta

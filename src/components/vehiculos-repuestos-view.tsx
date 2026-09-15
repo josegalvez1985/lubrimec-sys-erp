@@ -25,15 +25,13 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { DataTable, type Column } from "@/components/ui/data-table";
-import { BuscadorSelect } from "@/components/ui/buscador-select";
+import { BuscadorModal } from "@/components/ui/buscador-modal";
 import {
   listarVehiculosRepuestos,
   crearVehiculoRepuesto,
   actualizarVehiculoRepuesto,
   eliminarVehiculoRepuesto,
   buscarArticulos,
-  filtrarArticulos,
-  type ArticuloBusqueda,
   type VehiculoRepuesto,
   type VehiculoRepuestoInput,
 } from "@/lib/api";
@@ -51,17 +49,6 @@ const normalizar = (s: string) =>
     .replace(/\p{Diacritic}/gu, "");
 const esRubroFiltro = (rubro: string | null | undefined): rubro is string =>
   !!rubro && normalizar(rubro).includes("FILTRO");
-
-// LOV del modal: solo artículos de rubros de filtros, con el filtro de texto estándar.
-// Si NINGÚN artículo trae `rubro`, la BD todavía no tiene la versión nueva de
-// BUSCAR_ARTICULOS (codigos_barras_sql.sql): se ofrece el catálogo completo en vez de
-// dejar el buscador vacío.
-async function buscarArticulosFiltros(q: string): Promise<ArticuloBusqueda[]> {
-  const todos = await buscarArticulos(COD_EMPRESA, "");
-  const conRubro = todos.some((a) => a.rubro != null);
-  const base = conRubro ? todos.filter((a) => esRubroFiltro(a.rubro)) : todos;
-  return filtrarArticulos(base, q);
-}
 
 type ModalState =
   | { mode: "closed" }
@@ -385,13 +372,18 @@ function VehiculoRepuestoDialog({
               <Input value={codigoOem} disabled className="font-mono" />
             ) : (
               <>
-                {/* Buscador: solo artículos de rubros de filtros; elegir uno toma su OEM. */}
-                <BuscadorSelect
-                  placeholder="Buscar filtro por descripción, OEM o ID..."
-                  emptyLabel="Sin filtros"
-                  value={codigoOem || null}
+                {/* Modal aparte con buscador: catálogo COMPLETO (regla de LOVs); elegir un
+                    artículo toma su OEM. El rubro va en la segunda línea para distinguir
+                    Filtro de aire / de caja. */}
+                <BuscadorModal
+                  id="codigo_oem"
+                  titulo="Elegir artículo"
+                  descripcion="Buscá por descripción, código OEM o ID. Se toma el código OEM del artículo elegido."
+                  placeholder="Seleccionar artículo..."
+                  buscarPlaceholder="Buscar artículo por descripción, OEM o ID..."
+                  emptyLabel="Sin artículos"
                   label={codigoOem}
-                  buscar={buscarArticulosFiltros}
+                  buscar={(q) => buscarArticulos(COD_EMPRESA, q)}
                   itemKey={(a) => a.id_articulo}
                   itemTitle={(a) => a.descripcion ?? "—"}
                   itemSub={(a) =>
