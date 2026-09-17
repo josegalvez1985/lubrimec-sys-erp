@@ -79,7 +79,9 @@ type ModalState =
   | { mode: "create" }
   | { mode: "edit"; item: CompraCabecera }
   | { mode: "ver"; item: CompraCabecera }
-  | { mode: "detalle"; item: CompraCabecera };
+  // `recienCreada`: la factura se acaba de insertar, así que su detalle está
+  // vacío con certeza y no hace falta ir a buscarlo a Oracle.
+  | { mode: "detalle"; item: CompraCabecera; recienCreada?: boolean };
 
 const COLUMNAS: Column<CompraCabecera>[] = [
   {
@@ -330,10 +332,12 @@ export function ComprasView() {
         open={modal.mode === "create"}
         onClose={() => setModal({ mode: "closed" })}
         onSaved={(id) => {
-          qc.invalidateQueries({ queryKey: ["compras"] });
           // Abre el detalle de la nueva factura para cargar los artículos.
+          // `recienCreada` evita el viaje a Oracle a buscar el detalle de una
+          // factura que acabamos de crear y por lo tanto está vacía.
+          qc.invalidateQueries({ queryKey: ["compras"] });
           const nueva = { id_factura: id } as CompraCabecera;
-          setModal({ mode: "detalle", item: nueva });
+          setModal({ mode: "detalle", item: nueva, recienCreada: true });
         }}
       />
       <CompraVerDialog state={modal} onClose={() => setModal({ mode: "closed" })} />
@@ -1079,12 +1083,37 @@ function DetalleDialog({ state, onClose }: { state: ModalState; onClose: () => v
   const [aEliminarLinea, setAEliminarLinea] = useState<CompraDetalleLinea | null>(null);
   const [verCabecera, setVerCabecera] = useState(false);
 
+  // Una factura recién creada no tiene líneas: se salta la consulta inicial (el
+  // modal abre al instante). En cuanto se agrega la primera línea, la
+  // invalidación de `compra-detalle` vuelve a habilitar la query normalmente.
+  const recienCreada = open && state.recienCreada === true;
+  const [huboAlta, setHuboAlta] = useState(false);
+  const saltarConsulta = recienCreada && !huboAlta;
+
+  // Al cambiar de factura (o cerrar) se limpia la bandera, así reabrir una
+  // factura ya existente consulta su detalle normalmente. Mismo patrón `lastKey`
+  // que el resto del archivo: la key es un string, así que no hay forma de que
+  // la comparación quede siempre verdadera (con `?? null` sobre un undefined
+  // pasaba eso: setState en cada render → "Too many re-renders").
+  const keyFactura = `${item?.id_factura ?? "none"}`;
+  const [lastKeyFactura, setLastKeyFactura] = useState(keyFactura);
+  if (keyFactura !== lastKeyFactura) {
+    setLastKeyFactura(keyFactura);
+    if (huboAlta) setHuboAlta(false);
+  }
+
   const { data, isLoading, isError } = useQuery({
     queryKey: ["compra-detalle", item?.id_factura],
     queryFn: () => listarCompraDetalle(item!.id_factura),
-    enabled: open && item != null,
+    enabled: open && item != null && !saltarConsulta,
     retry: false,
   });
+
+  // La LOV de IVA se consulta acá y no dentro de LineaDialog: así viaja mientras
+  // el usuario mira el detalle, en vez de hacerlo esperar al abrir "Agregar
+  // artículo". Se monta en este componente porque con gcTime 0 el dato se
+  // descarta al desmontar, y este modal sigue abierto durante toda la carga.
+  useQuery({ queryKey: ["iva"], queryFn: listarIva, enabled: open, retry: false });
 
   const eliminarLineaMut = useMutation({
     mutationFn: (nroLinea: number) => eliminarCompraDetalle(item!.id_factura, nroLinea),
@@ -1096,6 +1125,9 @@ function DetalleDialog({ state, onClose }: { state: ModalState; onClose: () => v
 
   const lineas = data ?? [];
   const total = lineas.reduce((a, l) => a + (l.total ?? 0), 0);
+  // Con la query deshabilitada `isLoading` queda en true: sin esto el modal de
+  // una factura recién creada mostraría un spinner para siempre.
+  const cargando = isLoading && !saltarConsulta;
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
@@ -1120,7 +1152,7 @@ function DetalleDialog({ state, onClose }: { state: ModalState; onClose: () => v
           </Button>
         </div>
 
-        {isLoading ? (
+        {cargando ? (
           <div className="grid place-items-center py-10">
             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
           </div>
@@ -1219,10 +1251,12 @@ function DetalleDialog({ state, onClose }: { state: ModalState; onClose: () => v
           state={lineaModal}
           onClose={() => setLineaModal({ mode: "closed" })}
           onSaved={() => {
+            setHuboAlta(true); // ya hay líneas: la query del detalle vuelve a correr
             qc.invalidateQueries({ queryKey: ["compra-detalle"] });
             setLineaModal({ mode: "closed" });
           }}
           onSavedKeepOpen={() => {
+            setHuboAlta(true);
             qc.invalidateQueries({ queryKey: ["compra-detalle"] });
             qc.invalidateQueries({ queryKey: ["compras"] }); // el total de la cabecera cambia
           }}

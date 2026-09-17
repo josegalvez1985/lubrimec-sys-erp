@@ -470,6 +470,7 @@ function VentaEditDialog({
               value={codPersona}
               label={clienteLabel}
               buscar={(q) => buscarPersonas(COD_EMPRESA, q)}
+              filtraEnServidor // personas/buscar es LOV legado: filtra por q y recorta a 30
               itemKey={(p) => p.cod_persona}
               itemTitle={(p) => p.nombre ?? `Persona ${p.cod_persona}`}
               itemSub={(p) => [p.nro_ruc, p.nro_ci].filter(Boolean).join(" · ") || "—"}

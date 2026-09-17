@@ -415,6 +415,7 @@ export function VentaCobroDialog({
                 value={idFactura}
                 label={facturaLabel}
                 buscar={(q) => buscarVentas(COD_EMPRESA, q)}
+                filtraEnServidor // ventas/buscar es LOV legado: filtra por q en el backend
                 itemKey={(v) => v.id_factura}
                 itemTitle={(v) => v.nombre_cliente ?? `Factura ${v.id_factura}`}
                 itemSub={(v) =>

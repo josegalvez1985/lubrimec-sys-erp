@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useMemo, useState, type FormEvent } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Plus, Eye, Pencil, Trash2, Loader2, Tags, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -169,6 +169,11 @@ export function PreciosVentasView() {
   const [filtroArticulo, setFiltroArticulo] = useState<number | null>(null);
   const [filtroArticuloLabel, setFiltroArticuloLabel] = useState("");
 
+  // Cuántos meses (desde el más reciente con datos) se pintan. "Mostrar más"
+  // agrega uno hacia atrás. El historial completo son ~2000 precios: dibujarlos
+  // todos hacía lenta la pantalla, y cada alta la re-dibujaba entera.
+  const [mesesVisibles, setMesesVisibles] = useState(1);
+
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ["precios-ventas", COD_EMPRESA, filtroArticulo],
     queryFn: () => listarPreciosVentas(COD_EMPRESA, filtroArticulo ?? undefined),
@@ -183,7 +188,34 @@ export function PreciosVentasView() {
     },
   });
 
-  const filas = data ?? [];
+  const todos = useMemo(() => data ?? [], [data]);
+
+  // Meses con datos (yyyy-mm) del más reciente al más antiguo.
+  const meses = useMemo(() => {
+    const set = new Set<string>();
+    for (const r of todos) if (r.fecha) set.add(r.fecha.slice(0, 7));
+    return [...set].sort((a, b) => b.localeCompare(a));
+  }, [todos]);
+
+  const mesesMostrados = useMemo(
+    () => new Set(meses.slice(0, mesesVisibles)),
+    [meses, mesesVisibles],
+  );
+  const hayMasMeses = mesesVisibles < meses.length;
+
+  // Al filtrar por un artículo el historial es corto: se muestra completo.
+  const filas = useMemo(
+    () =>
+      filtroArticulo != null
+        ? todos
+        : todos.filter((r) => r.fecha && mesesMostrados.has(r.fecha.slice(0, 7))),
+    [todos, mesesMostrados, filtroArticulo],
+  );
+
+  const fmtMes = (m: string) => {
+    const [y, mes] = m.split("-");
+    return `${mes}/${y}`;
+  };
 
   return (
     <div className="rounded-2xl border border-border bg-card shadow-elegant">
@@ -191,7 +223,13 @@ export function PreciosVentasView() {
         <div>
           <h2 className="font-display text-xl font-bold">Precios de Ventas</h2>
           <p className="text-sm text-muted-foreground">
-            {filas.length} {filas.length === 1 ? "precio registrado" : "precios registrados"}
+            {filas.length} {filas.length === 1 ? "precio" : "precios"}
+            {filtroArticulo == null && meses.length > 0 && (
+              <>
+                {" "}
+                de {todos.length} · desde {fmtMes(meses[Math.min(mesesVisibles, meses.length) - 1])}
+              </>
+            )}
           </p>
         </div>
         <Button
@@ -242,7 +280,7 @@ export function PreciosVentasView() {
           <p className="p-8 text-center text-sm text-destructive">
             {error instanceof Error ? error.message : "No se pudieron cargar los precios"}
           </p>
-        ) : filas.length === 0 && !isLoading ? (
+        ) : todos.length === 0 && !isLoading ? (
           <div className="grid place-items-center py-16 text-center">
             <div className="grid h-14 w-14 place-items-center rounded-2xl bg-primary/10 text-primary">
               <Tags className="h-6 w-6" />
@@ -253,44 +291,57 @@ export function PreciosVentasView() {
             </p>
           </div>
         ) : (
-          <DataTable
-            columns={COLUMNAS}
-            rows={filas}
-            getRowId={(r) => r.id_precio}
-            initialSort={{ key: "id_precio", dir: "desc" }}
-            exportName="precios-ventas"
-            actions={(r) => (
-              <div className="flex items-center justify-end gap-1">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8 text-muted-foreground hover:text-primary"
-                  onClick={() => setModal({ mode: "view", item: r })}
-                  aria-label="Ver"
-                >
-                  <Eye className="h-4 w-4" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8 text-muted-foreground hover:text-primary"
-                  onClick={() => setModal({ mode: "edit", item: r })}
-                  aria-label="Editar"
-                >
-                  <Pencil className="h-4 w-4" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                  onClick={() => setAEliminar(r)}
-                  aria-label="Eliminar"
-                >
-                  <Trash2 className="h-4 w-4" />
+          <>
+            <DataTable
+              columns={COLUMNAS}
+              rows={filas}
+              getRowId={(r) => r.id_precio}
+              initialSort={{ key: "id_precio", dir: "desc" }}
+              exportName="precios-ventas"
+              actions={(r) => (
+                <div className="flex items-center justify-end gap-1">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-muted-foreground hover:text-primary"
+                    onClick={() => setModal({ mode: "view", item: r })}
+                    aria-label="Ver"
+                  >
+                    <Eye className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-muted-foreground hover:text-primary"
+                    onClick={() => setModal({ mode: "edit", item: r })}
+                    aria-label="Editar"
+                  >
+                    <Pencil className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                    onClick={() => setAEliminar(r)}
+                    aria-label="Eliminar"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              )}
+            />
+            {filtroArticulo == null && hayMasMeses && (
+              <div className="mt-4 flex flex-col items-center gap-1">
+                <p className="text-xs text-muted-foreground">
+                  Mostrando {mesesVisibles} {mesesVisibles === 1 ? "mes" : "meses"} de{" "}
+                  {meses.length}
+                </p>
+                <Button variant="outline" size="sm" onClick={() => setMesesVisibles((n) => n + 1)}>
+                  Mostrar más
                 </Button>
               </div>
             )}
-          />
+          </>
         )}
       </div>
 

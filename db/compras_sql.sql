@@ -103,11 +103,30 @@ CREATE OR REPLACE PACKAGE BODY PKG_COMPRAS_LUBRIMEC AS
     -- TODOS los comprobantes; con anio y/o mes acota.
     l_anio    NUMBER := NULLIF(p_anio, 0);
     l_mes     NUMBER := NULLIF(p_mes, 0);
+    -- Rango [l_desde, l_hasta) equivalente al filtro anio/mes. Se compara la
+    -- columna SIN funcion encima para que el indice de FEC_COMPROBANTE se pueda
+    -- usar: con EXTRACT(YEAR FROM fec_comprobante) = :anio Oracle no puede
+    -- indexar y hacia un full scan de COMPRAS_CABECERA aunque el resultado
+    -- fuesen 8 filas.
+    -- Solo se arma cuando hay anio; el caso "mes suelto sin anio" (ej. todos los
+    -- septiembres) no es un rango contiguo y sigue resolviendose con EXTRACT.
+    l_desde   DATE;
+    l_hasta   DATE;
   BEGIN
     l_usuario := f_usuario(p_token);
     IF l_usuario IS NULL THEN
       p_error(401, 'Unauthorized', 'Token invalido o expirado');
       RETURN;
+    END IF;
+
+    IF l_anio IS NOT NULL THEN
+      IF l_mes IS NOT NULL THEN
+        l_desde := TO_DATE(l_anio || LPAD(l_mes, 2, '0') || '01', 'YYYYMMDD');
+        l_hasta := ADD_MONTHS(l_desde, 1);
+      ELSE
+        l_desde := TO_DATE(l_anio || '0101', 'YYYYMMDD');
+        l_hasta := ADD_MONTHS(l_desde, 12);
+      END IF;
     END IF;
 
     APEX_JSON.OPEN_OBJECT;
@@ -148,8 +167,13 @@ CREATE OR REPLACE PACKAGE BODY PKG_COMPRAS_LUBRIMEC AS
           LEFT JOIN vendedores ve ON ve.cod_vendedor = b.id_comprador
                                   AND ve.cod_empresa = b.cod_empresa
          WHERE b.cod_empresa = p_cod_empresa
-           AND (l_anio IS NULL OR EXTRACT(YEAR FROM b.fec_comprobante) = l_anio)
-           AND (l_mes IS NULL OR EXTRACT(MONTH FROM b.fec_comprobante) = l_mes)
+           -- Con anio: rango sobre la columna cruda (usa el indice). El mes ya
+           -- viene incluido en el rango, por eso el EXTRACT de abajo solo actua
+           -- en el caso "mes sin anio".
+           AND (l_desde IS NULL OR (b.fec_comprobante >= l_desde
+                                AND b.fec_comprobante <  l_hasta))
+           AND (l_mes IS NULL OR l_anio IS NOT NULL
+                OR EXTRACT(MONTH FROM b.fec_comprobante) = l_mes)
          ORDER BY b.id_factura DESC
     ) LOOP
       APEX_JSON.OPEN_OBJECT;

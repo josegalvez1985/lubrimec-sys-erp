@@ -353,6 +353,7 @@ function ArticuloProveedorDialog({
                 value={codPersona}
                 label={proveedorLabel}
                 buscar={(q) => buscarProveedores(COD_EMPRESA, q)}
+                filtraEnServidor // proveedores/buscar es LOV legado: filtra por q y recorta a 30
                 itemKey={(p) => p.cod_persona}
                 itemTitle={(p) => p.nombre ?? "—"}
                 itemSub={(p) =>

@@ -196,6 +196,20 @@ la BD son legado — no copiarlos en páginas nuevas.
   Trae `placeholderData: (prev) => prev`: como la LOV filtra en el front, mientras llega el
   resultado del texto nuevo se sigue mostrando el anterior (sin esto parpadeaba "Sin artículos"
   en cada tecla).
+- **El término tipeado NO va en la `queryKey`** (regla general del proyecto, ver más abajo). El
+  componente consulta **una sola vez por apertura** (`buscar("")`) y el texto **solo filtra en
+  memoria**, con el criterio flexible de siempre (multi-palabra en cualquier orden, con y sin
+  separadores, sin tope) aplicado sobre `itemTitle`/`itemSub`. Antes `qDebounced` estaba en la
+  `queryKey`: como las LOVs migradas ignoran su `q` al llamar al backend, **se re-descargaba el
+  mismo catálogo completo en cada tecla**. Pesaba sobre todo en LOVs con subconsultas caras, como
+  la de facturas de Precios de Ventas (pág 34), cuyo `BUSCAR_COMPRAS` recorre `compras_cabecera`
+  con un `EXISTS` anidado de tres niveles.
+  - Por eso lo que se muestra en `itemTitle`/`itemSub` **es** lo que se puede buscar: si un campo
+    tiene que ser filtrable (OEM, ID, RUC), tiene que aparecer en la etiqueta.
+  - Prop **`filtraEnServidor`**: solo para las LOVs **legado** cuyo endpoint filtra por `q` y
+    recorta a 30 filas (`personas/buscar`, `proveedores/buscar`, `ventas/buscar`). Ahí el catálogo
+    no se puede traer entero, así que se sigue consultando por término. Una LOV nueva (que sigue la
+    REGLA de lista completa) **no** debe declararla.
 - **Gotcha:** no pongas un `<Input>` de "fallback manual" con el mismo valor **debajo** del
   `BuscadorSelect` — su dropdown es `absolute` y el input siguiente compite/lo tapa, y parecía "no
   funcionar" (pasó en la pág 94). Si necesitás mostrar el valor elegido, usá un `<p>` de texto.

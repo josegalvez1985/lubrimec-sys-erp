@@ -341,6 +341,7 @@ function VoucherDialog({
                 value={idPersona}
                 label={personaLabel}
                 buscar={(q) => buscarPersonas(COD_EMPRESA, q)}
+                filtraEnServidor // personas/buscar es LOV legado: filtra por q y recorta a 30
                 itemKey={(p) => p.cod_persona}
                 itemTitle={(p) => p.nombre ?? "—"}
                 itemSub={(p) =>
