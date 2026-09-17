@@ -13,6 +13,7 @@ import appCss from "../styles.css?url";
 import { ThemeProvider } from "../components/theme-provider";
 import { Toaster } from "../components/ui/sonner";
 import { ApkUpdateBanner } from "../components/apk-update-banner";
+import { iniciarLatidoSesion } from "../lib/api";
 
 function NotFoundComponent() {
   return (
@@ -123,6 +124,10 @@ function RootShell({ children }: { children: ReactNode }) {
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
+
+  // Latido de la sesión: mientras haya una pestaña abierta, la sesión efímera (login
+  // sin "Recordarme") sigue viva. Al arrancar sin latido reciente se descarta sola.
+  useEffect(() => iniciarLatidoSesion(), []);
 
   useEffect(() => {
     if (!("serviceWorker" in navigator)) return;

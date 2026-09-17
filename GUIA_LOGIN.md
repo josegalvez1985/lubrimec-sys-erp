@@ -19,7 +19,7 @@ Login form (React)
   → handler ORDS plano → PKG_AUTH_<APP>.LOGIN
       → APEX_UTIL.IS_LOGIN_PASSWORD_VALID (valida contra los usuarios del workspace APEX)
       → genera token, lo guarda en <APP>_TOKENS (6 h), responde { success, data: { token, ... } }
-  → el front guarda la sesión en localStorage / sessionStorage
+  → el front guarda la sesión en localStorage (compartida entre pestañas)
   → cada llamada protegida manda Authorization: Bearer <token>
   → cada handler ORDS mapea ese header al bind :authorization y el paquete lo valida
     con PKG_AUTH_<APP>.VALIDAR_TOKEN → devuelve el usuario o NULL (401)
@@ -570,22 +570,33 @@ export type Sesion = {
 
 export function getSesion(): Sesion | null {
   if (typeof window === "undefined") return null; // SSR: no hay storage
-  const raw = localStorage.getItem("sesion") ?? sessionStorage.getItem("sesion");
+  const raw = localStorage.getItem("sesion");
   return raw ? (JSON.parse(raw) as Sesion) : null;
 }
 
-// "Recordar" = localStorage (sobrevive al cierre del navegador).
-// Sin recordar = sessionStorage (muere con la pestaña). Nunca los dos a la vez.
+// SIEMPRE localStorage: es común a todas las pestañas del origen. Con sessionStorage
+// (que es por pestaña) abrir una pantalla en otra pestaña arranca sin token y rebota
+// al login. "Recordar" no decide DÓNDE se guarda sino cuánto dura: sin recordar la
+// sesión queda marcada como efímera y se descarta al arrancar si el navegador estuvo
+// cerrado (ver el latido en la versión completa de api.ts).
 function guardarSesion(s: Sesion, recordar: boolean) {
-  const store = recordar ? localStorage : sessionStorage;
-  const otro = recordar ? sessionStorage : localStorage;
-  otro.removeItem("sesion");
-  store.setItem("sesion", JSON.stringify(s));
+  localStorage.setItem("sesion", JSON.stringify({ ...s, efimera: !recordar }));
 }
 
 export function cerrarSesion() {
   localStorage.removeItem("sesion");
-  sessionStorage.removeItem("sesion");
+}
+
+// El evento 'storage' solo lo reciben las OTRAS pestañas: cerrar sesión en una las
+// echa a todas. Montarlo en la pantalla protegida con useEffect(() => escucharSesion(), []).
+export function escucharSesion(): () => void {
+  if (typeof window === "undefined") return () => {};
+  const onStorage = (e: StorageEvent) => {
+    if (e.key !== "sesion" && e.key !== null) return;
+    if (!localStorage.getItem("sesion")) window.location.href = import.meta.env.BASE_URL || "/";
+  };
+  window.addEventListener("storage", onStorage);
+  return () => window.removeEventListener("storage", onStorage);
 }
 
 function handleUnauthorized() {

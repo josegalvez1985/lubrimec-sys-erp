@@ -21,29 +21,109 @@ export type Sesion = {
   app_id: string;
 };
 
+// --- Sesión compartida entre pestañas ---------------------------------------
+// La sesión vive SIEMPRE en localStorage, que es común a todas las pestañas del
+// origen. Antes, sin "Recordarme", iba a sessionStorage —que es por pestaña—, así
+// que abrir una página en una pestaña nueva (Ctrl+click en el menú) arrancaba sin
+// token y rebotaba al login. "Recordarme" ya no decide DÓNDE se guarda sino si la
+// sesión sobrevive al cierre del navegador:
+//   - recordar = true  → queda hasta que se cierre sesión.
+//   - recordar = false → es efímera: mientras haya al menos una pestaña abierta se
+//     mantiene viva con un latido; si el navegador estuvo cerrado más de
+//     TOLERANCIA_LATIDO, el próximo arranque la descarta.
+const CLAVE_SESION = "sesion";
+const CLAVE_LATIDO = "sesion_latido";
+const LATIDO_MS = 30_000;
+const TOLERANCIA_LATIDO = 120_000;
+
+function marcarLatido() {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(CLAVE_LATIDO, String(Date.now()));
+  } catch {
+    /* almacenamiento lleno o bloqueado: el latido es best-effort */
+  }
+}
+
+// Latido de la pestaña: se llama una vez desde __root.tsx. Mantiene viva la sesión
+// efímera mientras la app esté abierta y devuelve la función de limpieza.
+export function iniciarLatidoSesion(): () => void {
+  if (typeof window === "undefined") return () => {};
+  // Evaluar ANTES del primer latido: si no, este mismo latido "revive" la sesión
+  // efímera que debía descartarse porque el navegador había estado cerrado.
+  evaluarArranque();
+  marcarLatido();
+  const id = setInterval(marcarLatido, LATIDO_MS);
+  return () => clearInterval(id);
+}
+
+// Descarta la sesión efímera si el navegador estuvo cerrado (nadie latió en
+// TOLERANCIA_LATIDO). Se ejecuta una sola vez por arranque, antes del primer
+// getSesion() que decide si mostrar el login.
+let arranqueEvaluado = false;
+function evaluarArranque() {
+  if (arranqueEvaluado || typeof window === "undefined") return;
+  arranqueEvaluado = true;
+  const raw = localStorage.getItem(CLAVE_SESION);
+  if (!raw) return;
+  try {
+    if (!(JSON.parse(raw) as { efimera?: boolean }).efimera) return;
+  } catch {
+    return;
+  }
+  const latido = Number(localStorage.getItem(CLAVE_LATIDO) ?? 0);
+  if (Date.now() - latido > TOLERANCIA_LATIDO) cerrarSesion();
+}
+
 export function getSesion(): Sesion | null {
   if (typeof window === "undefined") return null;
-  const raw = localStorage.getItem("sesion") ?? sessionStorage.getItem("sesion");
-  return raw ? (JSON.parse(raw) as Sesion) : null;
+  evaluarArranque();
+  const raw = localStorage.getItem(CLAVE_SESION);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as Sesion;
+  } catch {
+    return null;
+  }
 }
 
 function guardarSesion(s: Sesion, recordar: boolean) {
-  const store = recordar ? localStorage : sessionStorage;
-  const otro = recordar ? sessionStorage : localStorage;
-  otro.removeItem("sesion");
-  store.setItem("sesion", JSON.stringify(s));
+  // sessionStorage ya no se usa: se limpia por si quedó una sesión de la versión
+  // anterior (si no, getSesion la ignoraría y quedaría basura para siempre).
+  sessionStorage.removeItem(CLAVE_SESION);
+  localStorage.setItem(CLAVE_SESION, JSON.stringify({ ...s, efimera: !recordar }));
+  marcarLatido();
 }
 
 export function cerrarSesion() {
-  localStorage.removeItem("sesion");
-  sessionStorage.removeItem("sesion");
+  localStorage.removeItem(CLAVE_SESION);
+  localStorage.removeItem(CLAVE_LATIDO);
+  sessionStorage.removeItem(CLAVE_SESION);
+}
+
+// Cierre de sesión en CUALQUIER pestaña → todas las demás se enteran y salen. El
+// evento 'storage' solo lo reciben las otras pestañas del mismo origen, nunca la
+// que hizo el cambio. Sin esto, cerrar sesión en una dejaba a las otras con un
+// token muerto hasta el primer 401.
+export function escucharSesion(): () => void {
+  if (typeof window === "undefined") return () => {};
+  function onStorage(e: StorageEvent) {
+    if (e.key !== CLAVE_SESION && e.key !== null) return;
+    if (!localStorage.getItem(CLAVE_SESION)) irAlLogin();
+  }
+  window.addEventListener("storage", onStorage);
+  return () => window.removeEventListener("storage", onStorage);
+}
+
+function irAlLogin() {
+  if (typeof window !== "undefined") {
+    window.location.href = import.meta.env.BASE_URL || "/";
+  }
 }
 
 function handleUnauthorized() {
   cerrarSesion();
-  if (typeof window !== "undefined") {
-    window.location.href = import.meta.env.BASE_URL || "/";
-  }
+  irAlLogin();
 }
 
 // Detecta el rechazo de token del backend aun cuando el status HTTP no llegó como

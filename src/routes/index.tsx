@@ -8,7 +8,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { App } from "@capacitor/app";
 import { ApkInstallGuide } from "@/components/apk-install-guide";
 import { ThemeToggle } from "@/components/theme-toggle";
-import { login } from "@/lib/api";
+import { login, getSesion } from "@/lib/api";
 import { descargarEInstalarApk } from "@/lib/apk-install";
 import {
   esNativo,
@@ -47,6 +47,12 @@ function LoginPage() {
   // El APK se sirve desde GitHub Pages (public/lubrimesys.apk), mismo origen que la web.
   const APK_URL = `${import.meta.env.BASE_URL}lubrimesys.apk`;
 
+  // Con sesión abierta el login no tiene nada que hacer: pasa derecho al panel. Sirve
+  // para la pestaña nueva que alguien abre en la raíz del sitio estando logueado.
+  useEffect(() => {
+    if (getSesion()) navigate({ to: "/home", replace: true });
+  }, [navigate]);
+
   // Versión publicada del sistema (para el pie del login).
   useEffect(() => {
     fetch(`${import.meta.env.BASE_URL}apk-version.json`, { cache: "no-store" })
@@ -72,7 +78,9 @@ function LoginPage() {
     setLoading(true);
     try {
       await login(usuario, password, recordar);
-      navigate({ to: "/home" });
+      // replace: el login no queda en el historial, así el botón atrás del dashboard
+      // no vuelve al formulario con la sesión ya abierta.
+      navigate({ to: "/home", replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : "No se pudo iniciar sesión");
     } finally {
@@ -88,7 +96,9 @@ function LoginPage() {
     setLoading(true);
     try {
       await login(cred.usuario, cred.password, true);
-      navigate({ to: "/home" });
+      // replace: el login no queda en el historial, así el botón atrás del dashboard
+      // no vuelve al formulario con la sesión ya abierta.
+      navigate({ to: "/home", replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : "No se pudo iniciar sesión");
     } finally {

@@ -75,15 +75,64 @@ entorno tiene servidor Node (y por lo tanto proxy) o no:
 
 Centraliza sesión + fetch. Piezas:
 
-- **Sesión:** `getSesion()` / `guardarSesion()` / `cerrarSesion()`. Token en
-  `localStorage` (recordar) o `sessionStorage` (no recordar). Tipo `Sesion`:
-  `{ token, usuario, app_user, app_id }`.
+- **Sesión:** `getSesion()` / `guardarSesion()` / `cerrarSesion()`. Token **siempre** en
+  `localStorage` (clave `sesion`). Tipo `Sesion`: `{ token, usuario, app_user, app_id }`.
+  **No usar `sessionStorage`:** es por pestaña, así que abrir una página en otra pestaña
+  (Ctrl+click en el menú) arrancaba sin token y rebotaba al login.
+  `recordar` ya no decide dónde se guarda sino **cuánto dura**: sin recordar la sesión se
+  marca `efimera` y un latido (`iniciarLatidoSesion()`, arrancado en `__root.tsx`, escribe
+  `sesion_latido` cada 30 s) la mantiene viva mientras haya alguna pestaña abierta; si al
+  arrancar nadie latió en los últimos 2 min (navegador cerrado), se descarta sola.
+- **`escucharSesion()`:** listener del evento `storage` montado en `home.tsx`. Cerrar sesión
+  (o un 401) en **cualquier** pestaña echa a todas las demás; sin esto quedaban con un token
+  muerto hasta su próximo 401.
 - **`login(usuario, password, recordar)`:** POST a `auth/login` con `{ usuario, password }`.
   El back responde plano `{ success, token, usuario, ... }` (sin envoltura `data`); el
   parser usa `json?.data ?? json` para soportar ambas formas.
 - **`authFetch(path, init)`:** inyecta `Authorization: Bearer <token>`, y en **401**
   llama `handleUnauthorized()` (cierra sesión + redirige a login). Usarla en TODA llamada
   protegida; nunca `fetch` directo.
+
+## Una URL por página (varias pestañas a la vez)
+
+La app sigue siendo una SPA, pero **la página activa vive en la URL**, no en estado de React:
+`/home?p=<page_id>` (sin `?p=` → dashboard). Eso es lo que permite tener varias pantallas del
+ERP abiertas en pestañas distintas, recargar sin volver al dashboard y pasar un enlace a otro
+usuario. Piezas:
+
+- **`validateSearch` en la ruta `/home`** (`home.tsx`): valida `p` como entero > 0 y lo
+  descarta si no lo es (`/home?p=abc` = dashboard, no pantalla rota).
+- **`active` sale de `Route.useSearch()`**, nunca de un `useState`. `handleNav` (buscador
+  global, botones del dashboard, botón Home) hace `navigate({ to: "/home", search })`.
+- **Las entradas del menú y los accesos rápidos son `<Link>` (un `<a>` real), no `<button>`.**
+  Ahí está el punto: el `href` es lo que le da al navegador "Abrir en pestaña nueva",
+  Ctrl+click y click del medio. Un `onClick` que navega a mano NO ofrece nada de eso.
+  Componente: `EnlacePagina` en `home.tsx`. Su prop `onAbrir` es **solo para efectos**
+  (cerrar el menú móvil, contar el uso del acceso): no debe navegar, o el Ctrl+click movería
+  también la pestaña actual. Al agregar un lanzador nuevo, usar `EnlacePagina`.
+- **Excepción:** el cotizador (`page_id` 98) es un modal con un iframe, no una página con URL
+  propia: sigue siendo botón.
+- **`basepath` del router:** lo deriva TanStack Start del `base` de Vite, así que en GitHub
+  Pages los `href` salen con `/lubrimec-sys-erp/` solos. No hardcodear el prefijo.
+- **Deep link en Pages:** funciona porque el workflow publica `404.html` = shell de la SPA.
+  Si se cambiara ese paso, `/home?p=58` pegado en la barra devolvería el 404 de GitHub.
+- **Cada pestaña arranca de cero:** baja el chunk de su vista y repite `menu/paginas`. Es lo
+  correcto con la regla "sin caché"; solo tener presente que N pestañas = N consultas de menú.
+
+### Botón atrás
+
+- **Web: no se toca.** Cada página es una URL, así que el historial del navegador ya es el
+  historial de la app. **No volver a interceptar `popstate` con `pushState`** (había una pila
+  propia `historial` + `pushState(null, "")`): con URLs reales eso impide volver atrás.
+- **APK:** ahí no hay barra de direcciones, así que el botón físico de Android se mapea a mano
+  con `App.addListener("backButton")`: cierra modales → `router.history.back()` → en el
+  dashboard `App.exitApp()`.
+- **Login fuera del historial:** tras `login()` se navega con `replace: true`, y si el login se
+  abre con sesión activa redirige a `/home`. Si no, el atrás del dashboard mostraba el
+  formulario con la sesión ya abierta.
+- **Hooks después del guard de sesión:** en `HomePage` el `return null` por falta de sesión va
+  **después de todos los hooks** (la redirección, en un `useEffect`). Cortar el render antes
+  deja los hooks de abajo en una rama condicional, que es justo lo que React prohíbe.
 
 ### Agregar una tabla nueva (lado front)
 
@@ -133,8 +182,8 @@ sus permisos. Cada usuario ve un menú distinto.
   recuerda entre recargas (se quitó la clave `menu_colapsado` de `localStorage`). El botón de la
   topbar lo muestra/oculta mientras dure la pantalla. Pedido explícito del usuario.
 - **Botón Home en la topbar:** ícono de casa a la izquierda del usuario, visible **solo** cuando
-  `active !== "dashboard"`. Usa el mismo `handleNav("dashboard")` que el menú, así el botón atrás
-  (web y APK) sigue funcionando: apila dashboard en el historial en vez de resetearlo.
+  `active !== "dashboard"`. Usa el mismo `handleNav("dashboard")` que el menú: navega a `/home`
+  sin `?p=`, así queda como una entrada más del historial del navegador.
 - **Paneles del dashboard que se ocultan sin datos:** un panel sin registros devuelve `null` en vez
   de dibujar un estado vacío (`if (query.isSuccess && filas.length === 0) return null`). Condicionar
   por `isSuccess`, **no** por `!isLoading`: si el endpoint falla hay que seguir mostrando el error,

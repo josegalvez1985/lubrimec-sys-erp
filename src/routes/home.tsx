@@ -1,5 +1,5 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { Suspense, lazy, useEffect, useRef, useState } from "react";
+import { createFileRoute, useNavigate, useRouter, Link } from "@tanstack/react-router";
+import { Suspense, lazy, useEffect, useRef, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { App } from "@capacitor/app";
 import { Capacitor } from "@capacitor/core";
@@ -77,7 +77,13 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { cn } from "@/lib/utils";
-import { getSesion, cerrarSesion, getMenuPaginas, type PaginaMenu } from "@/lib/api";
+import {
+  getSesion,
+  cerrarSesion,
+  escucharSesion,
+  getMenuPaginas,
+  type PaginaMenu,
+} from "@/lib/api";
 import {
   leerUsoAccesos,
   registrarUsoAcceso,
@@ -208,7 +214,25 @@ function iconoCategoria(titulo: string): LucideIcon {
   return ListChecks;
 }
 
+// La navegación se identifica por page_id (APEX) o "dashboard" (vista local fija).
+type NavKey = "dashboard" | number;
+
+// La página activa viaja en la URL (?p=<page_id>), NO en estado de React: así cada
+// pantalla tiene un enlace propio que se puede copiar, recargar o abrir en otra
+// pestaña (Ctrl+click en el menú). Sin ?p= se muestra el dashboard. En GitHub Pages
+// el deep link funciona porque el workflow publica 404.html = shell de la SPA.
+type HomeSearch = { p?: number };
+
+// Search de una entrada del menú: el dashboard es la URL limpia, sin ?p=.
+function searchDe(key: NavKey): HomeSearch {
+  return key === "dashboard" ? {} : { p: key };
+}
+
 export const Route = createFileRoute("/home")({
+  validateSearch: (search: Record<string, unknown>): HomeSearch => {
+    const p = Number(search.p);
+    return Number.isInteger(p) && p > 0 ? { p } : {};
+  },
   head: () => ({
     meta: [
       { title: "Panel — Lubrimesys" },
@@ -218,18 +242,16 @@ export const Route = createFileRoute("/home")({
   component: HomePage,
 });
 
-// La navegación se identifica por page_id (APEX) o "dashboard" (vista local fija).
-type NavKey = "dashboard" | number;
-
 
 // page_id que ya tienen algo implementado (vista propia o acción especial como el
 // cotizador 98). Se usa en el menú para diferenciar páginas listas vs. pendientes.
 const PAGINAS_IMPLEMENTADAS = new Set<number>([...Object.keys(VISTAS).map(Number), 98]);
 
 function HomePage() {
-  // Pila de vistas visitadas para el botón atrás (nunca vacía: la base es dashboard).
-  const [historial, setHistorial] = useState<NavKey[]>(["dashboard"]);
-  const active = historial[historial.length - 1];
+  // La vista activa sale de la URL (?p=), no de un estado local: recargar, compartir
+  // el enlace o abrirlo en otra pestaña caen en la misma pantalla.
+  const { p: pageId } = Route.useSearch();
+  const active: NavKey = pageId ?? "dashboard";
   const [mobileOpen, setMobileOpen] = useState(false);
   const [perfilOpen, setPerfilOpen] = useState(false);
   const [cotizadorOpen, setCotizadorOpen] = useState(false);
@@ -253,21 +275,27 @@ function HomePage() {
     (p) => !CATEGORIAS_OCULTAS.includes(normalizarCategoria(p.parent_entry_text ?? "")),
   );
 
-  // Redirige al login si no hay sesión
+  // Sin sesión se vuelve al login. La redirección va en un efecto y el return null
+  // baja DESPUÉS de todos los hooks: cortar el render acá dejaba los hooks de abajo
+  // (botón atrás, listener de sesión) colgando de una condición, que es justo lo que
+  // React no permite.
   const sesion = getSesion();
-  if (!sesion) {
-    navigate({ to: "/" });
-    return null;
-  }
-
-  const usuario = sesion.usuario || "Usuario";
+  const haySesion = sesion !== null;
+  const usuario = sesion?.usuario || "Usuario";
   const iniciales = usuario.slice(0, 2).toUpperCase();
+
+  useEffect(() => {
+    if (!haySesion) navigate({ to: "/" });
+  }, [haySesion, navigate]);
 
   function logout() {
     cerrarSesion();
     navigate({ to: "/" });
   }
 
+  // Navegación desde controles que NO son enlaces (buscador global, botones del
+  // dashboard, botón Home). Las entradas del menú y los accesos rápidos usan <Link>,
+  // que navega solo: ver EnlacePagina.
   function handleNav(key: NavKey) {
     // Cotización (page_id 98): abre el cotizador externo en un modal (iframe).
     if (key === 98) {
@@ -276,63 +304,52 @@ function HomePage() {
       return;
     }
     setMobileOpen(false);
-    setHistorial((h) => (h[h.length - 1] === key ? h : [...h, key]));
+    if (key === active) return;
+    navigate({ to: "/home", search: searchDe(key) });
   }
 
-  // Botón atrás (navegador web y APK): retrocede una vista en lugar de salir/cerrar
-  // sesión. Se mantiene una ref con el historial vivo para leerlo en los listeners.
-  const historialRef = useRef(historial);
-  historialRef.current = historial;
+  // Efectos del click en un <Link> del menú: cerrar el panel móvil. No navega (de
+  // eso se encarga el enlace), así Ctrl+click abre la pestaña nueva sin mover esta.
+  function alAbrirEnlace() {
+    setMobileOpen(false);
+  }
+
+  // Cerrar sesión en CUALQUIER pestaña echa también a esta (evento storage).
+  useEffect(() => escucharSesion(), []);
+
+  // Botón atrás. En la web ya no hay nada que hacer: como cada página es una URL,
+  // el historial del navegador ES el historial de la app. Antes se interceptaba con
+  // pushState + una pila propia; con URLs reales eso impediría volver atrás.
+  // En el APK no hay barra de direcciones ni gesto de atrás del navegador, así que el
+  // botón físico de Android se mapea a mano: primero cierra modales, después retrocede
+  // en el historial, y ya en el dashboard sale de la app (como antes).
+  const router = useRouter();
+  const estadoRef = useRef({ active, cotizadorOpen, perfilOpen, mobileOpen });
+  estadoRef.current = { active, cotizadorOpen, perfilOpen, mobileOpen };
 
   useEffect(() => {
-    // Si hay algún modal abierto, el botón atrás lo cierra primero.
-    function retroceder(): boolean {
-      if (cotizadorOpen) {
-        setCotizadorOpen(false);
-        return true;
-      }
-      if (perfilOpen) {
-        setPerfilOpen(false);
-        return true;
-      }
-      if (mobileOpen) {
-        setMobileOpen(false);
-        return true;
-      }
-      if (historialRef.current.length > 1) {
-        setHistorial((h) => h.slice(0, -1));
-        return true;
-      }
-      return false; // ya en el dashboard base
-    }
-
-    // --- Web: interceptar el botón atrás del navegador via history/popstate ---
-    window.history.pushState(null, "");
-    function onPopState() {
-      const consumido = retroceder();
-      // Reponer siempre un entry para seguir capturando el próximo "atrás".
-      if (consumido || historialRef.current.length >= 1) {
-        window.history.pushState(null, "");
-      }
-    }
-    window.addEventListener("popstate", onPopState);
-
-    // --- APK: botón físico de Android via Capacitor ---
+    if (!Capacitor.isNativePlatform()) return;
     let quitarNativo: (() => void) | undefined;
-    if (Capacitor.isNativePlatform()) {
-      App.addListener("backButton", () => {
-        if (!retroceder()) App.exitApp(); // en dashboard sí cierra la app
-      }).then((h) => {
-        quitarNativo = () => h.remove();
-      });
-    }
+    App.addListener("backButton", () => {
+      const e = estadoRef.current;
+      if (e.cotizadorOpen) {
+        setCotizadorOpen(false);
+      } else if (e.perfilOpen) {
+        setPerfilOpen(false);
+      } else if (e.mobileOpen) {
+        setMobileOpen(false);
+      } else if (e.active !== "dashboard") {
+        router.history.back();
+      } else {
+        App.exitApp(); // ya en el dashboard base
+      }
+    }).then((h) => {
+      quitarNativo = () => h.remove();
+    });
+    return () => quitarNativo?.();
+  }, [router]);
 
-    return () => {
-      window.removeEventListener("popstate", onPopState);
-      quitarNativo?.();
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cotizadorOpen, perfilOpen, mobileOpen]);
+  if (!sesion) return null; // el efecto de arriba ya está redirigiendo al login
 
   const paginaActiva =
     typeof active === "number" ? paginas.find((p) => p.page_id === active) : null;
@@ -349,6 +366,7 @@ function HomePage() {
         <SidebarContent
           active={active}
           onNav={handleNav}
+          onAbrir={alAbrirEnlace}
           paginas={paginas}
           loading={paginasQuery.isLoading}
         />
@@ -361,6 +379,7 @@ function HomePage() {
           <SidebarContent
             active={active}
             onNav={handleNav}
+            onAbrir={alAbrirEnlace}
             paginas={paginas}
             loading={paginasQuery.isLoading}
           />
@@ -491,11 +510,13 @@ function HomePage() {
 function SidebarContent({
   active,
   onNav,
+  onAbrir,
   paginas,
   loading,
 }: {
   active: NavKey;
   onNav: (k: NavKey) => void;
+  onAbrir: () => void;
   paginas: PaginaMenu[];
   loading: boolean;
 }) {
@@ -535,8 +556,10 @@ function SidebarContent({
       {/* Nav */}
       <nav className="flex-1 space-y-1 overflow-y-auto p-3">
         {/* Dashboard fijo */}
-        <button
-          onClick={() => onNav("dashboard")}
+        <Link
+          to="/home"
+          search={{}}
+          onClick={onAbrir}
           className={cn(
             "group flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all",
             active === "dashboard"
@@ -546,7 +569,7 @@ function SidebarContent({
         >
           <LayoutDashboard className="h-[18px] w-[18px] shrink-0" />
           <span className="truncate">Dashboard</span>
-        </button>
+        </Link>
 
         {loading && (
           <div className="grid place-items-center py-6 text-sidebar-foreground/50">
@@ -562,10 +585,56 @@ function SidebarContent({
             paginas={g.paginas}
             active={active}
             onNav={onNav}
+            onAbrir={onAbrir}
           />
         ))}
       </nav>
     </div>
+  );
+}
+
+// Entrada navegable del menú y de los accesos rápidos. Es un <a> de verdad (el <Link>
+// de TanStack), no un <button>: eso es lo que le da al navegador "Abrir en pestaña
+// nueva", Ctrl+click y click del medio, o sea poder tener varias páginas del ERP
+// abiertas a la vez. El click normal navega en esta pestaña como siempre.
+// Excepción: el cotizador (page_id 98) no es una página del ERP sino un modal con un
+// iframe, así que no tiene URL propia y sigue siendo un botón.
+function EnlacePagina({
+  pageId,
+  className,
+  title,
+  onNav,
+  onAbrir,
+  children,
+}: {
+  pageId: number;
+  className: string;
+  title?: string;
+  onNav: (k: NavKey) => void;
+  // Efectos del click (cerrar el menú móvil, contar el uso). NO navega: de eso se
+  // encarga el <Link>, para que Ctrl+click abra la pestaña nueva sin mover esta.
+  onAbrir?: () => void;
+  children: ReactNode;
+}) {
+  if (pageId === 98) {
+    return (
+      <button
+        type="button"
+        onClick={() => {
+          onAbrir?.();
+          onNav(98);
+        }}
+        title={title}
+        className={className}
+      >
+        {children}
+      </button>
+    );
+  }
+  return (
+    <Link to="/home" search={{ p: pageId }} title={title} className={className} onClick={onAbrir}>
+      {children}
+    </Link>
   );
 }
 
@@ -574,11 +643,13 @@ function NavGrupo({
   paginas,
   active,
   onNav,
+  onAbrir,
 }: {
   titulo: string;
   paginas: PaginaMenu[];
   active: NavKey;
   onNav: (k: NavKey) => void;
+  onAbrir: () => void;
 }) {
   // Abierto por defecto si contiene la página activa.
   const [open, setOpen] = useState(() => paginas.some((p) => p.page_id === active));
@@ -603,9 +674,11 @@ function NavGrupo({
             const isActive = p.page_id === active;
             const lista = PAGINAS_IMPLEMENTADAS.has(p.page_id);
             return (
-              <button
+              <EnlacePagina
                 key={`${p.application_id}-${p.page_id}`}
-                onClick={() => onNav(p.page_id)}
+                pageId={p.page_id}
+                onNav={onNav}
+                onAbrir={onAbrir}
                 title={lista ? undefined : "Página aún no implementada"}
                 className={cn(
                   "group flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all",
@@ -624,7 +697,7 @@ function NavGrupo({
                     aria-hidden
                   />
                 )}
-              </button>
+              </EnlacePagina>
             );
           })}
         </div>
@@ -706,9 +779,10 @@ function QuickActions({
   // dispositivo, con la estadística del backend como desempate.
   const [uso, setUso] = useState<UsoAccesos>(() => leerUsoAccesos());
 
-  function abrir(p: PaginaMenu) {
+  // Solo cuenta el uso: la navegación la hace el <Link> de EnlacePagina (así el
+  // Ctrl+click cuenta el acceso igual, pero abre pestaña nueva en vez de mover esta).
+  function contarUso(p: PaginaMenu) {
     setUso(registrarUsoAcceso(p.application_id, p.page_id));
-    onNavigate(p.page_id);
   }
 
   if (paginas.length === 0) {
@@ -746,16 +820,18 @@ function QuickActions({
           {filtradas.map((p) => {
             const I = iconoParaPagina(p);
             return (
-              <button
+              <EnlacePagina
                 key={`${p.application_id}-${p.page_id}`}
-                onClick={() => abrir(p)}
+                pageId={p.page_id}
+                onNav={onNavigate}
+                onAbrir={() => contarUso(p)}
                 className="flex flex-col items-start gap-2 rounded-xl border border-border bg-background p-4 text-left transition-all hover:-translate-y-0.5 hover:border-primary hover:shadow-glow"
               >
                 <div className="grid h-9 w-9 place-items-center rounded-lg bg-primary/10 text-primary">
                   <I className="h-4 w-4" />
                 </div>
                 <span className="text-sm font-semibold">{p.page_title}</span>
-              </button>
+              </EnlacePagina>
             );
           })}
         </div>
