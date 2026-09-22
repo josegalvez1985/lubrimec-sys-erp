@@ -2,7 +2,7 @@
 -- SUBA DE PRECIOS (pagina APEX 100) — endpoint ORDS de solo lectura (sin paquete).
 --
 -- Ultimo precio (MAX id_precio) de cada articulo activo de la empresa, con margen,
--- precio anterior y stock. Modelo plano de solo lectura (ver ORDS_VENTAS_ARTICULOS).
+-- precio anterior y stock. Modelo plano de solo lectura (ver ventas_articulos_sql).
 --
 --   GET /ords/josegalvez/lubrimec/suba-precios?cod_empresa=24
 --       -> data: [{ id_precio, id_articulo, articulo, marca, rubro, fecha,

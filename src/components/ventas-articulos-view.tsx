@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
+  getSesion,
   listarVentasArticulos,
   listarAniosVentas,
   listarMesesVentas,
@@ -33,31 +34,40 @@ import { ArticuloImgModal } from "@/components/articulo-img-modal";
 
 const COD_EMPRESA = 24;
 
-const fmtN = (n: number | null) => (n == null ? "" : Math.round(n).toLocaleString("es-PY"));
-const fmtP = (n: number | null) =>
+const fmtN = (n: number | null | undefined) =>
+  n == null ? "" : Math.round(n).toLocaleString("es-PY");
+const fmtP = (n: number | null | undefined) =>
   n == null ? "" : n.toLocaleString("es-PY", { maximumFractionDigits: 2 });
 
 // Columnas de la grilla (mismo orden que la página 54 de APEX). Se reusan para
 // la tabla y las exportaciones a Excel/PDF.
-const COLUMNAS: {
+//
+// `restringida`: en el APEX esa columna tiene la condición de display
+// pkg_apex_admin.fn_verifica_campo(app_id, 54, app_user) → solo la ve quien
+// tiene ROLES_PAGINAS.ver_campos = 'S'. El backend ni siquiera manda el dato
+// (ver db/ventas_articulos_sql.sql); acá se saca también la columna.
+type ColumnaVenta = {
   titulo: string;
   valor: (v: VentaArticulo) => string;
   num?: boolean; // alineado a la derecha
-}[] = [
+  restringida?: boolean;
+};
+
+const COLUMNAS: ColumnaVenta[] = [
   { titulo: "Descripción", valor: (v) => v.descripcion ?? "" },
-  { titulo: "Stock", valor: (v) => fmtN(v.existencia), num: true },
+  { titulo: "Stock", valor: (v) => fmtN(v.existencia), num: true, restringida: true },
   { titulo: "Fecha", valor: (v) => v.fec_comprobante },
   { titulo: "Cant.", valor: (v) => fmtN(v.cantidad), num: true },
-  { titulo: "Costo", valor: (v) => fmtN(v.costo_ultimo), num: true },
-  { titulo: "Total Costo", valor: (v) => fmtN(v.total_costo), num: true },
-  { titulo: "Precio Lista", valor: (v) => fmtN(v.precio_lista), num: true },
+  { titulo: "Costo", valor: (v) => fmtN(v.costo_ultimo), num: true, restringida: true },
+  { titulo: "Total Costo", valor: (v) => fmtN(v.total_costo), num: true, restringida: true },
+  { titulo: "Precio Lista", valor: (v) => fmtN(v.precio_lista), num: true, restringida: true },
   { titulo: "Precio", valor: (v) => fmtN(v.precio), num: true },
-  { titulo: "%", valor: (v) => fmtN(v.por_descuento), num: true },
-  { titulo: "Descuento", valor: (v) => fmtN(v.diferencia), num: true },
+  { titulo: "%", valor: (v) => fmtN(v.por_descuento), num: true, restringida: true },
+  { titulo: "Descuento", valor: (v) => fmtN(v.diferencia), num: true, restringida: true },
   { titulo: "Total Venta", valor: (v) => fmtN(v.total), num: true },
-  { titulo: "Rent.", valor: (v) => fmtN(v.rentabilidad), num: true },
-  { titulo: "%Rent.", valor: (v) => fmtP(v.rentabilidad_porc), num: true },
-  { titulo: "Factura", valor: (v) => String(v.id_factura ?? "") },
+  { titulo: "Rent.", valor: (v) => fmtN(v.rentabilidad), num: true, restringida: true },
+  { titulo: "%Rent.", valor: (v) => fmtP(v.rentabilidad_porc), num: true, restringida: true },
+  { titulo: "Factura", valor: (v) => String(v.id_factura ?? ""), restringida: true },
   { titulo: "Teléfono", valor: (v) => v.nro_telefono ?? "" },
   { titulo: "Modelo Vehículo", valor: (v) => v.modelo_vehiculo ?? "" },
 ];
@@ -72,9 +82,11 @@ function totales(ventas: VentaArticulo[]) {
   };
 }
 
-// Fila de totales alineada a las columnas (celdas vacías donde no hay total).
-function filaTotales(t: ReturnType<typeof totales>): string[] {
-  return COLUMNAS.map((c) => {
+// Fila de totales alineada a las columnas VISIBLES (celdas vacías donde no hay
+// total). Los totales de columnas restringidas desaparecen solos: si la columna
+// no está en la lista, su celda tampoco.
+function filaTotales(t: ReturnType<typeof totales>, columnas: ColumnaVenta[]): string[] {
+  return columnas.map((c) => {
     switch (c.titulo) {
       case "Total Costo": return fmtN(t.total_costo);
       case "Descuento": return fmtN(t.diferencia);
@@ -86,13 +98,13 @@ function filaTotales(t: ReturnType<typeof totales>): string[] {
 }
 
 // Arma el TablaExport para los helpers compartidos de src/lib/export.ts.
-function tablaExport(ventas: VentaArticulo[], subtitulo: string) {
+function tablaExport(ventas: VentaArticulo[], subtitulo: string, columnas: ColumnaVenta[]) {
   return {
     titulo: "Lubrimesys — Ventas Por Artículos",
     subtitulo,
-    columnas: COLUMNAS.map((c) => c.titulo),
-    filas: ventas.map((v) => COLUMNAS.map((c) => c.valor(v))),
-    pie: filaTotales(totales(ventas)),
+    columnas: columnas.map((c) => c.titulo),
+    filas: ventas.map((v) => columnas.map((c) => c.valor(v))),
+    pie: filaTotales(totales(ventas), columnas),
   };
 }
 
@@ -105,8 +117,9 @@ export function VentasArticulosView() {
   // Venta cuya imagen se muestra en el modal (null = cerrado).
   const [imgVenta, setImgVenta] = useState<VentaArticulo | null>(null);
 
+  const appUser = getSesion()?.app_user ?? "";
   const ventasQuery = useQuery({
-    queryKey: ["ventas-articulos", COD_EMPRESA, filtros],
+    queryKey: ["ventas-articulos", COD_EMPRESA, appUser, filtros],
     queryFn: () => listarVentasArticulos(filtros, COD_EMPRESA),
     retry: false,
   });
@@ -125,6 +138,9 @@ export function VentasArticulosView() {
 
   const ventas = ventasQuery.data?.ventas ?? [];
   const fechaDefault = ventasQuery.data?.fechaDefault ?? null;
+  // ver_campos lo resuelve el backend con fn_verifica_campo (pág 54 del APEX).
+  const veCampos = ventasQuery.data?.veCampos ?? false;
+  const columnas = useMemo(() => COLUMNAS.filter((c) => veCampos || !c.restringida), [veCampos]);
   const t = useMemo(() => totales(ventas), [ventas]);
   const hayFiltros = Object.values(filtros).some((v) => v);
   const tituloExport = `ventas-articulos-${(filtros.fecha ?? fechaDefault ?? "todos").replace(/\//g, "-")}`;
@@ -166,7 +182,7 @@ export function VentasArticulosView() {
           <Button
             type="button"
             variant="outline"
-            onClick={() => exportarExcel(tablaExport(ventas, tituloExport))}
+            onClick={() => exportarExcel(tablaExport(ventas, tituloExport, columnas))}
             disabled={ventas.length === 0}
             className="gap-2"
           >
@@ -176,7 +192,7 @@ export function VentasArticulosView() {
           <Button
             type="button"
             variant="outline"
-            onClick={() => exportarPdf(tablaExport(ventas, tituloExport))}
+            onClick={() => exportarPdf(tablaExport(ventas, tituloExport, columnas))}
             disabled={ventas.length === 0}
             className="gap-2"
           >
@@ -289,7 +305,7 @@ export function VentasArticulosView() {
           {/* Móvil: tarjetas (la grilla de 16 columnas no entra en un teléfono) */}
           <div className="space-y-2 md:hidden">
             {ventas.map((v, i) => (
-              <div key={`${v.id_factura}-${i}`} className="rounded-xl border border-border bg-background p-3">
+              <div key={`${v.id_articulo ?? ""}-${i}`} className="rounded-xl border border-border bg-background p-3">
                 <div className="flex items-start justify-between gap-2">
                   <p className="flex min-w-0 flex-1 items-start gap-2 text-sm font-semibold">
                     <button
@@ -302,12 +318,15 @@ export function VentasArticulosView() {
                     </button>
                     <span className="min-w-0">{v.descripcion}</span>
                   </p>
-                  <span className="shrink-0 rounded-md bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
-                    Stock {fmtN(v.existencia)}
-                  </span>
+                  {veCampos && (
+                    <span className="shrink-0 rounded-md bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
+                      Stock {fmtN(v.existencia)}
+                    </span>
+                  )}
                 </div>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  {v.fec_comprobante} · Fact. {v.id_factura}
+                  {v.fec_comprobante}
+                  {veCampos ? ` · Fact. ${v.id_factura}` : ""}
                   {v.vendedor ? ` · ${v.vendedor}` : ""}
                 </p>
                 <div className="mt-2 grid grid-cols-3 gap-x-2 gap-y-1 text-xs">
@@ -317,12 +336,16 @@ export function VentasArticulosView() {
                   <span className="tabular-nums">{fmtN(v.cantidad)}</span>
                   <span className="tabular-nums">{fmtN(v.precio)}</span>
                   <span className="font-semibold tabular-nums">{fmtN(v.total)}</span>
-                  <span className="text-muted-foreground">Desc. {fmtN(v.por_descuento)}%</span>
-                  <span className="text-muted-foreground">Rent.</span>
-                  <span className="text-muted-foreground">%Rent.</span>
-                  <span className="tabular-nums">{fmtN(v.diferencia)}</span>
-                  <span className="tabular-nums">{fmtN(v.rentabilidad)}</span>
-                  <span className="tabular-nums">{fmtP(v.rentabilidad_porc)}</span>
+                  {veCampos && (
+                    <>
+                      <span className="text-muted-foreground">Desc. {fmtN(v.por_descuento)}%</span>
+                      <span className="text-muted-foreground">Rent.</span>
+                      <span className="text-muted-foreground">%Rent.</span>
+                      <span className="tabular-nums">{fmtN(v.diferencia)}</span>
+                      <span className="tabular-nums">{fmtN(v.rentabilidad)}</span>
+                      <span className="tabular-nums">{fmtP(v.rentabilidad_porc)}</span>
+                    </>
+                  )}
                 </div>
               </div>
             ))}
@@ -330,14 +353,22 @@ export function VentasArticulosView() {
             <div className="rounded-xl border border-primary/30 bg-primary/5 p-3 text-sm">
               <p className="mb-1 font-semibold">Totales</p>
               <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
-                <span className="text-muted-foreground">Total Costo</span>
-                <span className="text-right tabular-nums">{fmtN(t.total_costo)}</span>
-                <span className="text-muted-foreground">Descuento</span>
-                <span className="text-right tabular-nums">{fmtN(t.diferencia)}</span>
+                {veCampos && (
+                  <>
+                    <span className="text-muted-foreground">Total Costo</span>
+                    <span className="text-right tabular-nums">{fmtN(t.total_costo)}</span>
+                    <span className="text-muted-foreground">Descuento</span>
+                    <span className="text-right tabular-nums">{fmtN(t.diferencia)}</span>
+                  </>
+                )}
                 <span className="text-muted-foreground">Total Venta</span>
                 <span className="text-right font-semibold tabular-nums">{fmtN(t.total)}</span>
-                <span className="text-muted-foreground">Rentabilidad</span>
-                <span className="text-right tabular-nums">{fmtN(t.rentabilidad)}</span>
+                {veCampos && (
+                  <>
+                    <span className="text-muted-foreground">Rentabilidad</span>
+                    <span className="text-right tabular-nums">{fmtN(t.rentabilidad)}</span>
+                  </>
+                )}
               </div>
             </div>
           </div>
@@ -347,7 +378,7 @@ export function VentasArticulosView() {
           <Table>
             <TableHeader>
               <TableRow>
-                {COLUMNAS.map((c) => (
+                {columnas.map((c) => (
                   <TableHead key={c.titulo} className={c.num ? "text-right" : ""}>
                     {c.titulo}
                   </TableHead>
@@ -356,8 +387,8 @@ export function VentasArticulosView() {
             </TableHeader>
             <TableBody>
               {ventas.map((v, i) => (
-                <TableRow key={`${v.id_factura}-${i}`}>
-                  {COLUMNAS.map((c) => (
+                <TableRow key={`${v.id_articulo ?? ""}-${i}`}>
+                  {columnas.map((c) => (
                     <TableCell
                       key={c.titulo}
                       className={c.num ? "text-right tabular-nums" : "whitespace-nowrap"}
@@ -384,7 +415,7 @@ export function VentasArticulosView() {
             </TableBody>
             <TableFooter>
               <TableRow>
-                {filaTotales(t).map((s, i) => (
+                {filaTotales(t, columnas).map((s, i) => (
                   <TableCell key={i} className="text-right font-semibold tabular-nums">
                     {s}
                   </TableCell>

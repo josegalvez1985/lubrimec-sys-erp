@@ -17,6 +17,14 @@
 -- LISTAR: filtros opcionales fecha_desde/fecha_hasta (YYYY-MM-DD). Sin filtros
 -- carga el ULTIMO DIA con compras y lo informa en fecha_default. JOIN a PERSONAS
 -- (proveedor) y MONEDAS. total = SUM(cantidad*precio) del detalle.
+-- AJS EXCLUIDOS DEL LISTADO: los comprobantes con tip_comprobante = 'AJS' son
+-- ajustes de stock/inventario (los genera ajustar_inventarios_sql.sql como AJS-E),
+-- no compras a un proveedor. LISTAR y el filtro de anios los dejan afuera, mismo
+-- criterio que compras_articulos_sql.sql (pag 55) y precios_ventas_sql.sql (pag 34).
+-- OJO: el filtro va SOLO en los listados. OBTENER y las operaciones por id_factura
+-- no lo llevan (buscan una fila concreta), y el algoritmo de huecos del
+-- nro_comprobante tampoco: tiene que seguir numerando las series AJS.
+--
 -- ACTUALIZAR: campos editables de la pagina 28/36 (tip_comprobante,
 -- nro_comprobante, fec_comprobante, fec_vencimiento, cod_persona, id_condicion,
 -- id_comprador).
@@ -139,6 +147,7 @@ CREATE OR REPLACE PACKAGE BODY PKG_COMPRAS_LUBRIMEC AS
         SELECT DISTINCT EXTRACT(YEAR FROM fec_comprobante) anio
           FROM compras_cabecera
          WHERE cod_empresa = p_cod_empresa
+           AND tip_comprobante NOT IN ('AJS')  -- ajustes de stock, no compras
          ORDER BY 1 DESC
     ) LOOP
       APEX_JSON.WRITE(a.anio);
@@ -167,6 +176,8 @@ CREATE OR REPLACE PACKAGE BODY PKG_COMPRAS_LUBRIMEC AS
           LEFT JOIN vendedores ve ON ve.cod_vendedor = b.id_comprador
                                   AND ve.cod_empresa = b.cod_empresa
          WHERE b.cod_empresa = p_cod_empresa
+           -- Ajustes de stock/inventario: no son compras, no van en la lista.
+           AND b.tip_comprobante NOT IN ('AJS')
            -- Con anio: rango sobre la columna cruda (usa el indice). El mes ya
            -- viene incluido en el rango, por eso el EXTRACT de abajo solo actua
            -- en el caso "mes sin anio".

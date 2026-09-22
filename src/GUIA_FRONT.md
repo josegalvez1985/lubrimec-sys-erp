@@ -633,6 +633,19 @@ Uso desde JSX con arbitrary values de Tailwind v4 (verificados en el CSS compila
   backend recibe `app_user` como query param para decidir el filtro/visibilidad. Modelo: `conteo-efectivo`
   (JOSEG filtra por fecha y ve el panel de totales; el resto solo ve el día de hoy, sin panel);
   `existencia-articulos-view` (columnas de costo solo para JOSEG).
+  - **Columnas ocultas por `fn_verifica_campo` (flag `ver_campos`):** el permiso **no es "JOSEG"**,
+    es el flag `ROLES_PAGINAS.ver_campos` que se administra en la pág 37 — quien lo tenga ve las
+    columnas. El backend decide y **no manda los campos**; el front los declara opcionales y quita
+    la columna entera. Patrón (modelo `ventas-articulos-view`, pág 54): marcar las columnas con
+    `restringida: true` en el array `COLUMNAS` y derivar las visibles con
+    `COLUMNAS.filter((c) => veCampos || !c.restringida)`.
+  - **Al derivar las columnas, hay que recorrer la lista filtrada en TODOS lados**, no solo en el
+    `<thead>`: cuerpo, **fila de totales**, tarjetas de móvil y los **exports a Excel/PDF**. Si el
+    pie o el export siguen mapeando el array completo, las celdas se desalinean y el dato
+    restringido reaparece en el archivo descargado. Derivar el pie de la misma lista
+    (`filaTotales(t, columnas)`) hace que el total de una columna oculta desaparezca solo.
+  - **Ojo con lo que se usa de `key`:** la pág 54 usaba `id_factura` como key de fila y esa
+    columna es restringida (llega `undefined`): pasar a un campo siempre presente (`id_articulo`).
 - **Fechas — SIEMPRE `dd/mm/yyyy`.** El backend devuelve fechas como `YYYY-MM-DD` (ISO); en el front
   convertir con un helper `fmtFecha` (`iso.split("-")` → `${d}/${m}/${y}`). NO mostrar un campo de
   fecha de texto libre de la vista Oracle sin normalizar (puede venir en cualquier formato); usar
@@ -737,6 +750,64 @@ JSON complejo"). Descuento, rubro, marca y búsqueda se resuelven **en el front*
 > `q` nunca** (lista completa + filtro en el front, ver la REGLA). De hecho mandarlo está roto para
 > texto con espacios — `URLSearchParams` los codifica como `+` y `UTL_URL.UNESCAPE` no los
 > revierte.
+
+## Dataset con grano mixto: qué se suma y qué no
+
+Cuando un endpoint devuelve el producto de dos granos —en Pedidos de Artículos (pág 63), una fila
+por **(OEM, proveedor)**— las columnas **no** tienen todas el mismo grano, y agrupar en el front
+sumando todo multiplica los números:
+
+| Campo | Grano | Al agrupar |
+|---|---|---|
+| `compras` | del proveedor (distinto en cada fila) | sumar **por fila** |
+| `ventas_articulo`, `existencia_articulo` | del artículo | sumar **por artículo distinto** |
+| `ventas`, `existencia` | del OEM (el MISMO valor repetido en cada fila) | no sumar: solo respaldo |
+
+Modelo: `sumaPorArticulo()` + `armarGrupo()` en `pedidos-articulos-view.tsx`.
+
+**La regla que ordena todo esto: agregar desde el grano MÁS FINO, no desde el total.** Es tentador
+tomar el valor del OEM (viene listo, repetido en cada fila) con un `max`. Funciona mientras no se
+filtre; en cuanto una faceta acota el grupo, ese valor queda entero mientras las otras columnas se
+acotan, y la fila deja de cerrar consigo misma. Pedir al backend el mismo cálculo un nivel más
+abajo (`ventas_oem` → `ventas_art`, `existencias_totales` → `existencia_art`) lo resuelve: como
+la suma sobre **todos** los artículos del OEM da exactamente el total del OEM, sin filtro no
+cambia nada y con filtro queda acotado solo.
+
+- **Sumar por clave distinta, no por fila.** Un artículo que se le compra a dos proveedores viene
+  en **dos filas con el mismo `id_articulo`**: sumarlas lo cuenta dos veces. `sumaPorArticulo`
+  mete los valores en un `Map` por `id_articulo` y recién después suma.
+- **Marcar el grano en el tipo.** En `api.ts` cada campo lleva un comentario que dice de qué es
+  y cómo se agrega: es lo único que impide que el próximo cambio lo sume mal.
+- **Dejar respaldo para una BD desactualizada.** Los campos por artículo son opcionales (el
+  paquete viejo no los manda): si no vino ninguno se cae al valor del OEM, así la pantalla no
+  muestra ceros mientras el `.sql` no se re-ejecutó.
+- **Lo que se saca de la grilla tiene que seguir siendo buscable.** Al reemplazar la columna
+  Artículo por Rubro, la búsqueda pasó a mirar igual las descripciones de todos los artículos del
+  grupo; si no, un artículo se vuelve inencontrable por nombre (misma idea que la regla de LOVs:
+  lo que se muestra es lo que se busca, y acá lo que se muestra dejó de incluirlo).
+- **Etiqueta según el grano del grupo.** La columna "Rubro / Artículo" muestra el **artículo**
+  cuando el grupo tiene un solo proveedor y el **rubro** cuando tiene varios: con un proveedor no
+  hay ambigüedad y el nombre dice mucho más; con varios, el rubro es la única etiqueta común.
+  Cuando una columna cambia de contenido así, `valor` y `sort` tienen que salir de **la misma
+  función** (`etiquetaPrincipal`), o la grilla ordena por algo distinto de lo que se ve.
+- **Una faceta sobre un campo multivaluado** (un OEM tiene varios proveedores) filtra con
+  `some()`, y al contar las opciones se pasa por un `Set` para no contar dos veces el mismo
+  proveedor dentro del mismo grupo.
+- **Esa faceta además ACOTA el grupo, no solo elige cuáles se muestran.** Si el usuario ya dijo
+  qué proveedor mira, el grupo se re-arma con las filas de ese proveedor (`acotarAProveedores`)
+  llamando a la MISMA función que lo armó (`armarGrupo`). Por eso no hay código aparte para el
+  filtrado: la etiqueta pasa a mostrar el artículo, desaparece el badge "N prov." y las tres
+  magnitudes se recalculan sobre lo que quedó. Cuatro detalles de orden:
+  - Las facetas se evalúan sobre el grupo **completo** y recién después se acota; al revés, la
+    faceta de proveedor se auto-excluiría.
+  - El **texto** se evalúa sobre el grupo **ya acotado**: con un proveedor filtrado, buscar el
+    artículo de otro proveedor del mismo OEM no debe traer la fila.
+  - Las **opciones** de las facetas se siguen contando sobre los grupos sin acotar (es el cálculo
+    de facetas dependientes de siempre); acotarlas ahí sería circular.
+  - **Acotar todo o nada.** Si una columna queda acotada y las de al lado no, los números de la
+    fila se contradicen entre sí y es peor que no filtrar. Cuando el filtro cambia lo que muestran
+    las columnas, **decirlo en pantalla**: acá el subtítulo avisa "existencia, ventas y compras
+    acotadas al proveedor filtrado".
 
 ## Gotchas de UI
 

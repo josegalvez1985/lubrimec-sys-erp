@@ -919,8 +919,13 @@ export async function acreditarCobroTarjeta(
 }
 
 // ─── Ventas Por Artículos (página 54) ────────────────────────────────────────
-// GET ventas/articulos (db/ORDS_VENTAS_ARTICULOS.sql). Sin filtros de fecha el
+// GET ventas/articulos (db/ventas_articulos_sql.sql). Sin filtros de fecha el
 // backend carga por defecto el último día con ventas (fecha_default en la respuesta).
+//
+// PERMISO ver_campos: la página 54 del APEX condiciona 9 columnas a
+// pkg_apex_admin.fn_verifica_campo (ROLES_PAGINAS.ver_campos). El backend
+// directamente NO las manda cuando el usuario no tiene el permiso, así que van
+// OPCIONALES acá y `ver_campos` dice si se pueden mostrar.
 
 export type VentaArticulo = {
   id_articulo: string | null;
@@ -929,26 +934,27 @@ export type VentaArticulo = {
   fec_comprobante: string; // "DD/MM/YYYY HH24:MI"
   fec_comprobante_filtro: string; // "DD/MM/YYYY"
   cod_empresa: number;
-  costo_ultimo: number | null;
-  rentabilidad: number | null;
-  rentabilidad_porc: number | null;
   mes_anio: string | null;
   cantidad: number;
   precio: number;
-  total_costo: number | null;
   anio: string;
   mes: string;
   semana: string;
   vendedor: string | null;
-  precio_lista: number | null;
-  diferencia: number | null;
   codigo_oem: string | null;
-  existencia: number | null;
-  por_descuento: number | null;
-  id_factura: number;
   nro_telefono: string | null;
   porc_comis_bancario: number | null;
   modelo_vehiculo: string | null;
+  // Condicionadas por ver_campos: ausentes del JSON si el usuario no las ve.
+  costo_ultimo?: number | null;
+  total_costo?: number | null;
+  precio_lista?: number | null;
+  por_descuento?: number | null;
+  diferencia?: number | null;
+  rentabilidad?: number | null;
+  rentabilidad_porc?: number | null;
+  existencia?: number | null;
+  id_factura?: number | null;
 };
 
 export type FiltrosVentasArticulos = {
@@ -963,8 +969,14 @@ export type FiltrosVentasArticulos = {
 export async function listarVentasArticulos(
   filtros: FiltrosVentasArticulos = {},
   codEmpresa = 24,
-): Promise<{ ventas: VentaArticulo[]; fechaDefault: string | null }> {
-  const params: Record<string, string> = { cod_empresa: String(codEmpresa) };
+): Promise<{ ventas: VentaArticulo[]; fechaDefault: string | null; veCampos: boolean }> {
+  const s = getSesion();
+  const params: Record<string, string> = {
+    cod_empresa: String(codEmpresa),
+    // Permisos: el backend decide con fn_verifica_campo(app_id, 54, app_user).
+    app_user: (s?.app_user ?? "").toUpperCase(),
+    app_id: s?.app_id ?? DEFAULT_APP_ID,
+  };
   for (const [k, v] of Object.entries(filtros)) {
     if (v != null && v !== "") params[k] = v;
   }
@@ -972,11 +984,12 @@ export async function listarVentasArticulos(
   return {
     ventas: (data.data ?? []) as VentaArticulo[],
     fechaDefault: (data.fecha_default as string | undefined) ?? null,
+    veCampos: data.ver_campos === "S",
   };
 }
 
 // ─── Artículos Más Vendidos (página 102) ─────────────────────────────────────
-// GET articulos/mas-vendidos (db/ORDS_ARTICULOS_MAS_VENDIDOS.sql). Orden fijo:
+// GET articulos/mas-vendidos (db/articulos_mas_vendidos_sql.sql). Orden fijo:
 // cantidad_ventas desc. Filtros = facetas de la página 102.
 
 export type ArticuloMasVendido = {
@@ -993,6 +1006,9 @@ export type ArticuloMasVendido = {
   cod_unidad_medida: string | null;
   marca: string | null;
   viscosidad: string | null;
+  // Codigo(s) del proveedor para ese articulo (id_cod_proveedor). Va en el texto
+  // del pedido. Opcional: no viene si la BD tiene el handler viejo.
+  cod_proveedor?: string | null;
 };
 
 // Facetas: arrays (multi-selección, se envían como CSV). search/descripcion: texto.
@@ -1023,7 +1039,7 @@ export async function listarArticulosMasVendidos(
 }
 
 // ─── Pedidos de Artículos (página 63) ────────────────────────────────────────
-// GET pedidos/articulos (db/ORDS_PEDIDOS_ARTICULOS.sql). Devuelve TODO el dataset;
+// GET pedidos/articulos (db/pedidos_articulos_sql.sql). Devuelve TODO el dataset;
 // búsqueda, facetas y orden se hacen en el front.
 
 export type PedidoArticulo = {
@@ -1034,7 +1050,19 @@ export type PedidoArticulo = {
   costo_ultimo: number | null;
   proveedor: string | null;
   rubro: string | null;
+  // Ventas del OEM (mismo valor en todas las filas del OEM): NO sumar entre
+  // proveedores. La grilla agrupa por OEM y toma este valor una sola vez.
   ventas: number;
+  // Ventas y existencia del ARTICULO. Son el mismo calculo que `ventas` y
+  // `existencia` pero un nivel mas abajo, asi que sumadas sobre los articulos
+  // DISTINTOS de un OEM dan el total del OEM. Eso permite acotarlas al filtrar
+  // por proveedor. Opcionales: no vienen si la BD tiene el paquete viejo.
+  ventas_articulo?: number | null;
+  existencia_articulo?: number | null;
+  // Codigo(s) con que ESE proveedor identifica el articulo en su catalogo
+  // (ARTICULOS_PROVEEDORES.id_cod_proveedor). Varios van separados por " / ".
+  cod_proveedor?: string | null;
+  // Compras a ESTE proveedor: es lo unico que se suma entre filas del OEM.
   compras: number;
   rotacion: number | null;
   faltantes: string; // 'En Falta' | 'Stock'

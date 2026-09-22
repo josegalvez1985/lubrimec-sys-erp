@@ -143,6 +143,47 @@ BEGIN
     APEX_JSON.OPEN_ARRAY('data');
 
     FOR r IN (
+        WITH codigos_prov AS (
+            -- Codigo(s) con que el proveedor identifica el articulo
+            -- (ARTICULOS_PROVEEDORES.id_cod_proveedor), para el texto del pedido.
+            --
+            -- OJO: se colapsa a UNA fila por (empresa, articulo, nombre) ANTES de
+            -- unirla. Joinear articulos_proveedores directo duplica filas cuando
+            -- un articulo tiene mas de un codigo cargado para el mismo proveedor:
+            -- es el fan-out que tenia Pedidos de Articulos (ver la nota en
+            -- db/GUIA_ENDPOINTS.md y en db/pedidos_articulos_sql.sql).
+            --
+            -- El vinculo va por NOMBRE porque articulos_mas_vendidos guarda
+            -- nombre_proveedor, no cod_persona. Se generan filas para nombre y
+            -- para nombre_fantasia, asi matchea sin importar cual haya guardado
+            -- el job que arma la tabla.
+            SELECT cp_cod_empresa, cp_id_articulo, cp_nombre,
+                   LISTAGG(cp_codigo, ' / ')
+                       WITHIN GROUP (ORDER BY cp_codigo) AS cp_codigos
+            FROM (
+                SELECT DISTINCT ap.cod_empresa AS cp_cod_empresa,
+                       ap.id_articulo          AS cp_id_articulo,
+                       pe.nombre               AS cp_nombre,
+                       ap.id_cod_proveedor     AS cp_codigo
+                  FROM articulos_proveedores ap
+                  JOIN personas pe ON pe.cod_persona = ap.cod_persona
+                                  AND pe.cod_empresa = ap.cod_empresa
+                 WHERE ap.cod_empresa = TO_NUMBER(l_cod_empresa)
+                   AND ap.id_cod_proveedor IS NOT NULL
+                UNION
+                SELECT DISTINCT ap.cod_empresa,
+                       ap.id_articulo,
+                       pe.nombre_fantasia,
+                       ap.id_cod_proveedor
+                  FROM articulos_proveedores ap
+                  JOIN personas pe ON pe.cod_persona = ap.cod_persona
+                                  AND pe.cod_empresa = ap.cod_empresa
+                 WHERE ap.cod_empresa = TO_NUMBER(l_cod_empresa)
+                   AND ap.id_cod_proveedor IS NOT NULL
+                   AND pe.nombre_fantasia IS NOT NULL
+            )
+            GROUP BY cp_cod_empresa, cp_id_articulo, cp_nombre
+        )
         SELECT a.cantidad_ventas,
                a.stock,
                a.descripcion_articulo                          descripcion,
@@ -155,8 +196,12 @@ BEGIN
                a.id_viscosidad,
                a.cod_unidad_medida,
                a.descripcion_marca                             marca,
-               a.descripcion_viscosidad                        viscosidad
+               a.descripcion_viscosidad                        viscosidad,
+               cp.cp_codigos                                   cod_proveedor
           FROM articulos_mas_vendidos a
+          LEFT JOIN codigos_prov cp ON cp.cp_cod_empresa = a.cod_empresa
+                                   AND cp.cp_id_articulo = a.id_articulo
+                                   AND cp.cp_nombre      = a.nombre_proveedor
          WHERE a.cod_empresa = TO_NUMBER(l_cod_empresa)
            -- OR GLOBAL entre facetas: si no hay ninguna faceta activa pasan todos;
            -- si hay, basta con coincidir en CUALQUIERA de las facetas elegidas.
@@ -188,6 +233,7 @@ BEGIN
         APEX_JSON.WRITE('cod_unidad_medida', r.cod_unidad_medida);
         APEX_JSON.WRITE('marca', r.marca);
         APEX_JSON.WRITE('viscosidad', r.viscosidad);
+        APEX_JSON.WRITE('cod_proveedor', r.cod_proveedor);
         APEX_JSON.CLOSE_OBJECT;
     END LOOP;
 

@@ -55,7 +55,7 @@ Se ejecuta completo de una vez (el paquete queda compilado antes de que los hand
 referencien). Excepciones que **sí** quedan en archivos aparte: piezas compartidas o sin paquete
 CRUD — `PKG_AUTH_LUBRIMEC.sql`, `PROC_ENVIAR_MENSAJES_WHATSAPP.sql`, `WHATSAPP_DDL.sql`, y los
 endpoints de solo lectura sin paquete (`ORDS_MENU_PAGINAS.sql`, `ORDS_VENTAS_*.sql`,
-`ORDS_PEDIDOS_ARTICULOS.sql`, `ORDS_ARTICULOS_MAS_VENDIDOS.sql`).
+`pedidos_articulos_sql.sql`, `articulos_mas_vendidos_sql.sql`).
 
 ### Sección 1) Paquete
 
@@ -246,6 +246,32 @@ Gotcha de PL/SQL (paquete):
 
 Cuando el APEX restringe qué ve cada usuario (ej. solo `JOSEG` ve todo o ciertos campos), replicarlo
 en el paquete: recibir `p_app_user IN VARCHAR2` y decidir el filtro/visibilidad dentro del PL/SQL.
+
+**Preferir la función del APEX antes que hardcodear un usuario.** Cuando el IR oculta columnas con
+la condición `pkg_apex_admin.fn_verifica_campo(p_app_id, p_app_page_id, p_app_user_id)` (que lee el
+flag `ROLES_PAGINAS.ver_campos`), el permiso es **dato**, no una constante: se administra desde la
+página 37 y puede dárselo a cualquier usuario. Llamar a la misma función —igual que con
+`FN_SALDO_PROVEEDOR` en las LOVs— en vez de escribir `= 'JOSEG'`, que deja fuera a cualquier otro
+usuario habilitado. Modelo: `ventas_articulos_sql.sql` (pág 54):
+
+```plsql
+BEGIN
+    l_ve_campos := PKG_APEX_ADMIN.FN_VERIFICA_CAMPO(
+                       p_app_id => TO_NUMBER(l_app_id), p_app_page_id => 54,
+                       p_app_user_id => UPPER(l_app_user));
+EXCEPTION WHEN OTHERS THEN l_ve_campos := FALSE;   -- fail-closed, como el APEX
+END;
+IF l_ve_campos IS NULL THEN l_ve_campos := FALSE; END IF;
+```
+
+- **Fail-closed:** ante cualquier error se oculta. El APEX hace lo mismo (su `EXCEPTION` devuelve
+  `NULL`, que como condición de display no muestra la columna).
+- **No escribir la clave en el JSON** cuando no hay permiso (`APEX_JSON` omite lo no escrito):
+  ocultar la columna solo en el front deja el costo y la rentabilidad viajando al navegador, donde
+  cualquiera los ve en la pestaña Red. El front declara esos campos **opcionales**.
+- Devolver además un flag (`ver_campos` = `'S'` / `'N'`) para que el front sepa si dibujar la columna.
+- `existencia_articulos_sql.sql` (pág 70) y `conteo_efectivo_sql.sql` (pág 85) todavía comparan
+  contra `'JOSEG'`: es una aproximación previa a esta regla, no el modelo a copiar.
 - El front pasa `app_user` como **query param** (`?app_user=JOSEG&...`); leerlo con `get_qs` como
   cualquier otro query param. Viene en MAYÚSCULAS (igual que en `menu/paginas`).
 - Ejemplo de regla (pág 85 conteo-efectivo): `l_es_admin := (UPPER(NVL(p_app_user,'-')) = 'JOSEG')`;
@@ -305,7 +331,7 @@ el bloque `BEGIN ... ORDS.DEFINE_* ... END;`.
   `roles_paginas_sql.sql` (pág 37/38/64, PK compuesta + LOVs de vistas APEX con workspace fix).
 
 > Los `ORDS_*.sql` en mayúsculas son la convención vieja (quedan algunos: `ORDS_MENU_PAGINAS`,
-> `ORDS_VENTAS_*`, `ORDS_PEDIDOS_ARTICULOS`, `ORDS_ARTICULOS_MAS_VENDIDOS`, `ORDS_CIERRE_DIA`); al
+> `ORDS_VENTAS_*`, `pedidos_articulos_sql`, `articulos_mas_vendidos_sql`, `ORDS_CIERRE_DIA`); al
 > tocarlos, renombrarlos con `git mv` a minúsculas.
 
 ## Reporte facetado de solo lectura (front filtra todo)
@@ -394,7 +420,7 @@ Front (React):
 - `db/ORDS_MENU_PAGINAS.sql` — endpoint de solo lectura (sin paquete), también modelo plano.
 - `db/ORDS_VENTAS_DASHBOARD.sql` — 3 GET de solo lectura para los gráficos del dashboard
   (`ventas/anios|meses|por-dia`), `cod_empresa` opcional con default 24.
-- `db/ORDS_VENTAS_ARTICULOS.sql` — GET con múltiples filtros opcionales (patrón
+- `db/ventas_articulos_sql.sql` — GET con múltiples filtros opcionales (patrón
   `l_x IS NULL OR ...`) y **default calculado** (sin filtros de fecha carga el último día con
   ventas y lo informa en `fecha_default`). Funciones costosas (`fn_precio_venta`,
   `fn_existencia_oem`) en CTEs sobre las filas ya filtradas, una vez por artículo.
@@ -437,6 +463,67 @@ anónimo que antes se ejecutaba a mano en la BD.
   que `conteo-efectivo`/`existencia-articulos`.
 
 ## Notas / gotchas
+
+- **Un JOIN que multiplica filas duplica todos los `SUM` de la query (fan-out).** Antes de
+  sumar, revisar que CADA join de la query sea 1:1 con el grano de la fila. Basta una tabla
+  auxiliar con dos filas para la misma clave y todos los totales salen multiplicados, sin ningún
+  error: el número simplemente está mal.
+  - Caso real (pág 63): `base_movimientos` traía un `LEFT JOIN articulos_proveedores d ON
+    (cod_empresa, id_articulo, cod_persona)`. Esa tabla tiene **PK propia**
+    (`id_articulo_proveedor`), **no** una clave por artículo+proveedor, y el paquete no valida
+    duplicados, así que un artículo cargado dos veces para el mismo proveedor hacía que cada
+    línea de compra se contara **dos veces**. Para colmo el join era **código muerto**: lo único
+    que sacaba (`d.id_cod_proveedor`) no lo usaba nadie aguas abajo. Venía del APEX.
+  - **Chequear la PK real antes de confiar en un join.** "Parece una clave natural" no alcanza:
+    varias tablas del esquema tienen PK sustituta y permiten repetidos (`articulos_proveedores`
+    por `id_articulo_proveedor`, `compras_detalle` por `nro_linea` global — ver la nota de PK
+    compuesta vs global más arriba).
+  - **Sacar un `LEFT JOIN` nunca pierde filas**, solo deja de multiplicarlas: si sus columnas no
+    se usan, se borra sin pensarlo. Si hiciera falta el dato, va agregado aparte (un CTE con
+    `GROUP BY`) o con `DISTINCT`, nunca colgado de la query que suma.
+  - **Cómo detectarlo sin acceso a la BD:** buscar en la pantalla dos magnitudes que se calculen
+    por caminos distintos y tengan que cerrar entre sí. En la pág 63, `existencia` sale de un CTE
+    que NO tiene ese join, así que `compras - ventas = existencia` sirvió de control: la pantalla
+    mostraba 22 - 6 con existencia 5, y 11 - 6 = 5 delató que las compras venían al doble. Un OEM
+    de la misma pantalla cerraba bien (3 - 1 = 2) porque ese artículo estaba cargado una sola vez:
+    que el error aparezca en unas filas y en otras no es la firma del fan-out.
+
+- **`tip_comprobante = 'AJS'` NO es una compra.** Los ajustes de stock e inventario se guardan
+  en `COMPRAS_CABECERA`/`COMPRAS_DETALLE` (los genera `ajustar_inventarios_sql.sql` como serie
+  AJS-E), así que aparecen en cualquier query que lea esas tablas sin filtrar. Toda **lista o
+  total de compras** tiene que llevar `AND tip_comprobante NOT IN ('AJS')`. Ya lo aplican
+  `compras_sql.sql` (pág 28, listado y filtro de años), `compras_articulos_sql.sql` (pág 55),
+  `precios_ventas_sql.sql` (pág 34) y `pedidos_articulos_sql.sql` (pág 63).
+  - **Dónde NO ponerlo:** en los cálculos de **existencia**. Un ajuste no es una compra pero sí
+    mueve el stock; filtrarlo ahí da saldos equivocados (por eso el CTE `existencias` de la
+    pág 63 los incluye a propósito). Tampoco en `OBTENER` ni en nada que busque por
+    `id_factura`, ni en el algoritmo de huecos del `nro_comprobante`, que tiene que seguir
+    numerando las series AJS.
+  - Un ajuste **tampoco es una venta**: el APEX de la pág 63 tenía una rama que sumaba
+    `ABS(cantidad)` de los AJS a la columna Ventas. Se sacó.
+
+- **La query del APEX puede estar rota: verificarla, no solo copiarla.** Al portar una página se
+  asume que el SQL del Interactive Report es la verdad, pero puede traer un bug de origen que
+  nadie notó. Pasó con **Pedidos de Artículos (pág 63)**: la columna Ventas daba 0 para todos los
+  artículos, en el APEX y en el port. Dos defectos clásicos, que conviene buscar en toda query
+  portada:
+  - **Se comparó la persona equivocada.** `VENTAS_CABECERA.cod_persona` es el **cliente**;
+    `ARTICULOS_PROVEEDORES.cod_persona` es el **proveedor**. La rama de ventas los igualaba
+    (`d.cod_persona = a.cod_persona`), así que no matcheaba nunca. Varias tablas del esquema
+    tienen una columna `cod_persona` que significa cosas distintas: confirmar cuál es cuál
+    (`ventas_sql.sql` la usa para `nombre_cliente`; `compras_sql.sql` para el proveedor).
+  - **Un `JOIN` posterior sobre las columnas de un `LEFT JOIN` lo convierte en `INNER`.** Si
+    `d` es `LEFT JOIN` y después viene `JOIN personas e ON e.cod_persona = d.cod_persona`, las
+    filas sin match en `d` tienen `d.cod_persona` NULL y el inner las descarta: el `LEFT` no
+    sirve de nada. O el segundo join también es `LEFT`, o se toma la columna de una tabla que
+    siempre está (en la pág 63 el proveedor sale de `a`, el comprobante).
+  - **Síntoma para detectarlo sin correr nada:** una columna numérica que da 0 o vacío en TODAS
+    las filas, mientras las columnas que se calculan en otro CTE (ahí la existencia) sí andan.
+- **Un dato que no pertenece al grano de la fila no se fuerza al `GROUP BY`.** En la pág 63 las
+  filas son artículo+proveedor, pero **una venta no tiene proveedor**. Intentar atribuirla a uno
+  es lo que rompió la query. La salida limpia es calcular ese dato en su **propio CTE** con la
+  clave que sí le corresponde (ahí `codigo_oem`) y `LEFT JOIN`-earlo al final —el mismo patrón
+  que ya usaba `existencias_totales`—, agregando la columna al `GROUP BY`.
 
 - **Síntoma "el código está bien pero la app se comporta viejo":** los `.sql` de este repo **no** se
   aplican solos, hay que ejecutarlos a mano en la BD. Si el front manda un parámetro que el handler

@@ -11,6 +11,22 @@
 --       &mes=MM                  (opcional)
 --       &anio=YYYY               (opcional)
 --       &vendedor=<nombre>       (opcional)
+--       &app_user=<USUARIO>      (permisos; MAYUSCULAS)
+--       &app_id=<n>              (opcional, default 86972)
+--
+--   PERMISO POR USUARIO (ver_campos). La pagina 54 del APEX oculta 9 columnas
+--   con la condicion "PL/SQL Function Body":
+--       pkg_apex_admin.fn_verifica_campo(app_id, 54, app_user)
+--   que lee ROLES_PAGINAS.ver_campos ('S'/'N'). Columnas condicionadas:
+--       costo_ultimo, total_costo, precio_lista, por_descuento, diferencia
+--       (Descuento), rentabilidad, rentabilidad_porc, existencia (Stock) e
+--       id_factura (Factura).
+--   Se llama a LA MISMA funcion del APEX: no se reimplementa la regla ni se
+--   hardcodea un usuario, asi las dos pantallas no pueden contradecirse.
+--   Las columnas sin permiso NO SE ESCRIBEN en el JSON: ocultarlas solo en el
+--   front dejaria el costo y la rentabilidad viajando al navegador.
+--   Si la funcion falla se asume 'N', igual que el APEX (su EXCEPTION devuelve
+--   null, que como condicion de display oculta la columna).
 --
 --   Sin ningun filtro de fecha (fecha/semana/mes/anio) se carga por defecto el
 --   ULTIMO DIA con ventas (el dia actual si hoy hubo ventas).
@@ -48,6 +64,9 @@ DECLARE
     l_mes         VARCHAR2(2);
     l_anio        VARCHAR2(4);
     l_vendedor    VARCHAR2(200);
+    l_app_user    VARCHAR2(255);
+    l_app_id      VARCHAR2(20);
+    l_ve_campos   BOOLEAN;
 
     FUNCTION get_qs(p_qs IN VARCHAR2, p_key IN VARCHAR2) RETURN VARCHAR2 IS
         l_p PLS_INTEGER;
@@ -95,6 +114,20 @@ BEGIN
     l_mes         := get_qs(l_query, 'mes');
     l_anio        := get_qs(l_query, 'anio');
     l_vendedor    := get_qs(l_query, 'vendedor');
+    l_app_user    := get_qs(l_query, 'app_user');
+    l_app_id      := NVL(get_qs(l_query, 'app_id'), '86972');
+
+    -- Misma funcion que usa la condicion de display de las columnas en la pag 54.
+    -- Fail-closed: ante cualquier error (usuario nulo, funcion ausente) se oculta.
+    BEGIN
+        l_ve_campos := PKG_APEX_ADMIN.FN_VERIFICA_CAMPO(
+                           p_app_id      => TO_NUMBER(l_app_id),
+                           p_app_page_id => 54,
+                           p_app_user_id => UPPER(l_app_user));
+    EXCEPTION
+        WHEN OTHERS THEN l_ve_campos := FALSE;
+    END;
+    IF l_ve_campos IS NULL THEN l_ve_campos := FALSE; END IF;
 
     -- Default: sin filtros de fecha se carga el ultimo dia con ventas
     -- (equivale al dia actual si hoy hubo movimientos).
@@ -108,6 +141,7 @@ BEGIN
     APEX_JSON.OPEN_OBJECT;
     APEX_JSON.WRITE('success', TRUE);
     APEX_JSON.WRITE('fecha_default', l_fecha);
+    APEX_JSON.WRITE('ver_campos', CASE WHEN l_ve_campos THEN 'S' ELSE 'N' END);
     APEX_JSON.OPEN_ARRAY('data');
 
     FOR r IN (
@@ -178,32 +212,37 @@ BEGIN
          ORDER BY va.fec_comprobante DESC
     ) LOOP
         APEX_JSON.OPEN_OBJECT;
+        -- Columnas sin condicion de permiso en la pagina 54.
         APEX_JSON.WRITE('id_articulo', r.id_articulo);
         APEX_JSON.WRITE('descripcion', r.descripcion);
         APEX_JSON.WRITE('total', r.total);
         APEX_JSON.WRITE('fec_comprobante', r.fec_comprobante);
         APEX_JSON.WRITE('fec_comprobante_filtro', r.fec_comprobante_filtro);
         APEX_JSON.WRITE('cod_empresa', r.cod_empresa);
-        APEX_JSON.WRITE('costo_ultimo', r.costo_ultimo);
-        APEX_JSON.WRITE('rentabilidad', r.rentabilidad);
-        APEX_JSON.WRITE('rentabilidad_porc', r.rentabilidad_porc);
         APEX_JSON.WRITE('mes_anio', r.mes_anio);
         APEX_JSON.WRITE('cantidad', r.cantidad);
         APEX_JSON.WRITE('precio', r.precio);
-        APEX_JSON.WRITE('total_costo', r.total_costo);
         APEX_JSON.WRITE('anio', r.anio);
         APEX_JSON.WRITE('mes', r.mes);
         APEX_JSON.WRITE('semana', r.semana);
         APEX_JSON.WRITE('vendedor', r.vendedor);
-        APEX_JSON.WRITE('precio_lista', r.precio_lista);
-        APEX_JSON.WRITE('diferencia', r.diferencia);
         APEX_JSON.WRITE('codigo_oem', r.codigo_oem);
-        APEX_JSON.WRITE('existencia', r.existencia);
-        APEX_JSON.WRITE('por_descuento', r.por_descuento);
-        APEX_JSON.WRITE('id_factura', r.id_factura);
         APEX_JSON.WRITE('nro_telefono', r.nro_telefono);
         APEX_JSON.WRITE('porc_comis_bancario', r.porc_comis_bancario);
         APEX_JSON.WRITE('modelo_vehiculo', r.modelo_vehiculo);
+        -- Columnas con fn_verifica_campo: la clave ni se escribe si el usuario
+        -- no tiene ver_campos (APEX_JSON omite lo no escrito).
+        IF l_ve_campos THEN
+            APEX_JSON.WRITE('costo_ultimo', r.costo_ultimo);
+            APEX_JSON.WRITE('total_costo', r.total_costo);
+            APEX_JSON.WRITE('precio_lista', r.precio_lista);
+            APEX_JSON.WRITE('por_descuento', r.por_descuento);
+            APEX_JSON.WRITE('diferencia', r.diferencia);
+            APEX_JSON.WRITE('rentabilidad', r.rentabilidad);
+            APEX_JSON.WRITE('rentabilidad_porc', r.rentabilidad_porc);
+            APEX_JSON.WRITE('existencia', r.existencia);
+            APEX_JSON.WRITE('id_factura', r.id_factura);
+        END IF;
         APEX_JSON.CLOSE_OBJECT;
     END LOOP;
 

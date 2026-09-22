@@ -137,15 +137,38 @@ dinámicamente desde el endpoint `menu/paginas`.
   teléfono) y columna de acciones (ver/editar/borrar); formulario en modal para crear/editar
   (selects tipo F/J, cliente-proveedor C/P/A, sexo, fecha). "Nombre de fantasía" se autocopia del
   "Nombre" hasta que se edite a mano. Backend: `db/personas_sql.sql`.
-- **Pedidos de Artículos** (page_id 63) — grilla de compras/ventas/existencia/costo por artículo.
-  Filtrado 100% en el front: búsqueda + facetas dependientes en sidebar (En Falta, Rubro, Proveedor)
-  y orden por columnas. Check + cantidad por fila y botón "Copiar pedido" al portapapeles. Backend:
-  `db/ORDS_PEDIDOS_ARTICULOS.sql` (query cruda, devuelve todo el dataset).
+- **Pedidos de Artículos** (page_id 63) — **una fila por `codigo_oem`** con Existencia y los
+  totales Vendidas/Compradas; la segunda columna es **"Rubro / Artículo"**: muestra el nombre del
+  artículo cuando el OEM tiene **un solo proveedor** (no hay ambigüedad) y el rubro cuando tiene
+  varios (única etiqueta común). Tocando el OEM se abre un **modal con el desglose por proveedor**
+  (artículo, costo último, compradas, vendidas del artículo). El endpoint devuelve una fila por
+  (OEM, proveedor), así que la grilla repetía cada OEM tantas veces como proveedores tuviera: el
+  agrupado se hace en el front (`agrupar()`) desde el grano **artículo**: el backend devuelve
+  `ventas_articulo` y `existencia_articulo` además de los totales por OEM, y el front los suma por
+  artículo distinto. Gracias a eso **filtrar por proveedor acota las tres columnas a la vez**
+  (existencia, ventas y compras de los artículos de ese proveedor), en lugar de mezclar una
+  columna acotada con dos enteras (ver "Dataset con grano mixto" en
+  [src/GUIA_FRONT.md](src/GUIA_FRONT.md)). Filtrado 100% en el front: búsqueda (incluye las
+  descripciones de los artículos, que ya no son columna) + facetas dependientes en sidebar (En
+  Falta, Rubro, Proveedor — esta última multivaluada: el OEM pasa si cualquiera de sus proveedores
+  está tildado) y orden por columnas. Check + cantidad por fila y botón "Copiar pedido" al
+  portapapeles. Backend:
+  `db/pedidos_articulos_sql.sql` (query cruda, devuelve todo el dataset).
+  **La columna Ventas se corrige respecto del APEX**, que la tiene rota (daba 0 para todo): la
+  rama VENTAS del UNION cruzaba el cliente de `ventas_cabecera` contra el proveedor de
+  `articulos_proveedores`, y un `JOIN personas` inner sobre ese `LEFT JOIN` descartaba el resto.
+  Acá las ventas se calculan por `codigo_oem` en un CTE propio (`ventas_oem`), igual que la
+  existencia. Los comprobantes **AJS** (ajustes de stock/inventario) ya no se cuentan como venta
+  ni como compra, aunque sí siguen moviendo la existencia. Una venta no tiene proveedor: cada fila
+  artículo+proveedor muestra el total vendido de ese OEM, al lado del stock del mismo OEM.
 - **Ventas Por Artículos** (page_id 54) — grilla con filtros (búsqueda, fecha, año/mes,
   vendedor), totales, export a Excel/PDF y vista de tarjetas en móvil. Por defecto carga el
-  último día con ventas. Backend: `db/ORDS_VENTAS_ARTICULOS.sql`.
+  último día con ventas. **Permiso `ver_campos`:** 9 columnas (Stock, Costo, Total Costo,
+  Precio Lista, %, Descuento, Rent., %Rent. y Factura) solo se ven si
+  `pkg_apex_admin.fn_verifica_campo(app_id, 54, app_user)` es verdadero; el backend ni siquiera
+  las manda. Backend: `db/ventas_articulos_sql.sql`.
 - **Artículos Más Vendidos** (page_id 102) — ranking por cantidad de ventas. El backend
-  (`db/ORDS_ARTICULOS_MAS_VENDIDOS.sql`) devuelve **todo el dataset de una vez** y el filtrado se
+  (`db/articulos_mas_vendidos_sql.sql`) devuelve **todo el dataset de una vez** y el filtrado se
   hace **100% en el front** (sin round-trips por filtro):
   - **Búsqueda** dinámica (al escribir, sobre descripción/OEM/proveedor/marca).
   - **Facetas dependientes** multi-select (proveedor, rubro, viscosidad, marca, unidad) con

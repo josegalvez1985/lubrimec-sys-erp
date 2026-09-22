@@ -11,7 +11,7 @@
 --
 -- LISTAR: filtros opcionales fecha_desde/fecha_hasta (YYYY-MM-DD). Sin filtros
 -- carga el ULTIMO DIA con ventas y lo informa en fecha_default (mismo patron
--- que ORDS_VENTAS_ARTICULOS). JOIN a PERSONAS (cliente) y VENDEDORES (nombre).
+-- que ventas_articulos_sql). JOIN a PERSONAS (cliente) y VENDEDORES (nombre).
 -- ACTUALIZAR: solo los campos editables de la pagina 60 (tip_comprobante,
 -- nro_comprobante, fec_comprobante, cod_persona, cod_vendedor, nro_telefono).
 -- ELIMINAR: los cobros caen en cascada (FK ON DELETE CASCADE); si el detalle
