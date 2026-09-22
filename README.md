@@ -174,10 +174,31 @@ dinámicamente desde el endpoint `menu/paginas`.
   - **Facetas dependientes** multi-select (proveedor, rubro, viscosidad, marca, unidad) con
     checklist desplegable: OR dentro de una faceta, AND entre facetas distintas; las opciones de
     cada faceta se recalculan según lo ya filtrado (no se ofrecen valores incompatibles).
-  - **Armar pedido:** check + cantidad por artículo y botón "Copiar pedido" que copia al
-    portapapeles el listado (`N x descripción`) para enviarlo al proveedor por WhatsApp (copia con
-    fallback a `execCommand` para HTTP/WebView sin `navigator.clipboard`).
+  - **Orden por columna:** las 7 columnas ordenan (click en el header, asc/desc). Arranca en
+    Cantidad Ventas desc, que es el orden que ya devuelve el backend. El `sort` usa el valor
+    **crudo**, no el formateado (con `fmtN` el orden saldría alfabético), la fecha se invierte a
+    `yyyymmdd` para comparar, y se ordena **antes de paginar** (si no, cada página se ordenaría
+    por separado). Cambiar el orden vuelve a la página 1.
+  - **30 filas por página** (`POR_PAGINA`).
+  - **Armar pedido:** check + cantidad por artículo, botón "Copiar pedido" y botón **"Limpiar"**
+    que vacía el pedido (aparece solo si hay algo cargado). El texto copiado antepone el **código
+    del proveedor**: `N x <id_cod_proveedor> · <OEM> <descripción>` — el OEM solo si la
+    descripción no lo trae ya adentro. Copia con fallback a `execCommand` para HTTP/WebView sin
+    `navigator.clipboard`.
+  - **`cod_proveedor`** (columna "Cód. Prov."): el/los código(s) con que el proveedor identifica
+    el artículo. Se calcula en el CTE `codigos_prov`, **colapsado a una fila antes de unirlo** —
+    joinear `articulos_proveedores` directo duplica filas (ver "fan-out" en
+    [db/GUIA_ENDPOINTS.md](db/GUIA_ENDPOINTS.md)). El vínculo va por **nombre**, porque
+    `articulos_mas_vendidos` guarda `nombre_proveedor` y no `cod_persona`.
+  - **Solo proveedores** (CTE `prov_valido`): se listan únicamente artículos cuyo proveedor tiene
+    `ind_cliente_proveedor` en (P, A), mismo criterio que la pág 63 y que las LOVs de proveedores.
+    Es un INNER JOIN: un artículo cuyo proveedor esté marcado solo como Cliente **no aparece**.
   - Export a Excel/PDF.
+
+  > **Ojo con `cantidad_ventas` y `stock`:** la página **no los calcula**, los lee tal cual de la
+  > tabla `articulos_mas_vendidos`, que arma el job `JOB_ARTICULOS_MAS_VENDIDOS` (fuera de este
+  > repo). Si algún número sale inflado, el origen está en ese job — probablemente el mismo
+  > fan-out de `articulos_proveedores`, no en el handler ni en el front.
 - **Cotización** (page_id 98) — no es una vista propia: abre el cotizador externo
   (`https://www.lubrimec.shop/cotizador`) embebido en un modal (iframe). Se intercepta en
   `handleNav` de `src/routes/home.tsx`.

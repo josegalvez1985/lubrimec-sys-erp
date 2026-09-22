@@ -41,3 +41,8 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Config local de herramientas de desarrollo
+.claude/
+.lovable/
+CLAUDE.md

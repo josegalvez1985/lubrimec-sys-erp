@@ -330,9 +330,10 @@ el bloque `BEGIN ... ORDS.DEFINE_* ... END;`.
 - **Otros:** `parametros_sql.sql` (pág 89/90), `sortear_sql.sql` (pág 108),
   `roles_paginas_sql.sql` (pág 37/38/64, PK compuesta + LOVs de vistas APEX con workspace fix).
 
-> Los `ORDS_*.sql` en mayúsculas son la convención vieja (quedan algunos: `ORDS_MENU_PAGINAS`,
-> `ORDS_VENTAS_*`, `pedidos_articulos_sql`, `articulos_mas_vendidos_sql`, `ORDS_CIERRE_DIA`); al
-> tocarlos, renombrarlos con `git mv` a minúsculas.
+> Los `ORDS_*.sql` en mayúsculas son la convención vieja (quedan `ORDS_MENU_PAGINAS`,
+> `ORDS_VENTAS_DASHBOARD`, `ORDS_POST_VENTA`, `ORDS_SUBA_PRECIOS`, `ORDS_CIERRE_DIA`); al
+> tocarlos, renombrarlos con `git mv` a minúsculas. Ya migrados así: `ventas_articulos_sql.sql`
+> (pág 54), `pedidos_articulos_sql.sql` (pág 63), `articulos_mas_vendidos_sql.sql` (pág 102).
 
 ## Reporte facetado de solo lectura (front filtra todo)
 
@@ -478,6 +479,20 @@ anónimo que antes se ejecutaba a mano en la BD.
     varias tablas del esquema tienen PK sustituta y permiten repetidos (`articulos_proveedores`
     por `id_articulo_proveedor`, `compras_detalle` por `nro_linea` global — ver la nota de PK
     compuesta vs global más arriba).
+  - **Si el dato SÍ hace falta, colapsar antes de unir.** Es lo que se hizo después para traer
+    `id_cod_proveedor` al texto del pedido, en las páginas 63 y 102: un CTE que reduce
+    `articulos_proveedores` a UNA fila por clave (`GROUP BY` + `LISTAGG` de los códigos) y recién
+    eso se une. El join queda 1:1 por construcción, y de paso se ven todos los códigos en vez de
+    elegir uno a dedo. Modelos: `codigos_prov` en `pedidos_articulos_sql.sql` (une por
+    `cod_persona`) y en `articulos_mas_vendidos_sql.sql` (une por **nombre**, porque esa tabla
+    guarda `nombre_proveedor` y no el código de la persona; genera filas para `nombre` y para
+    `nombre_fantasia` para no depender de cuál haya guardado el job).
+  - **Una tabla precalculada por un job puede traer el fan-out adentro.**
+    `articulos_mas_vendidos` la llena `JOB_ARTICULOS_MAS_VENDIDOS`, que **no está en este repo**:
+    el handler de la pág 102 solo lee sus columnas (`cantidad_ventas`, `stock`), no calcula nada.
+    Si esos números salen inflados hay que revisar el job, no el endpoint ni el front. El control
+    es el mismo de siempre: comparar contra un `SUM` directo sobre `ventas_detalle` agrupado por
+    `id_articulo`.
   - **Sacar un `LEFT JOIN` nunca pierde filas**, solo deja de multiplicarlas: si sus columnas no
     se usan, se borra sin pensarlo. Si hiciera falta el dato, va agregado aparte (un CTE con
     `GROUP BY`) o con `DISTINCT`, nunca colgado de la query que suma.
@@ -487,6 +502,23 @@ anónimo que antes se ejecutaba a mano en la BD.
     mostraba 22 - 6 con existencia 5, y 11 - 6 = 5 delató que las compras venían al doble. Un OEM
     de la misma pantalla cerraba bien (3 - 1 = 2) porque ese artículo estaba cargado una sola vez:
     que el error aparezca en unas filas y en otras no es la firma del fan-out.
+
+- **"Proveedor" es `ind_cliente_proveedor` en (P, A), no cualquiera que aparezca en una compra.**
+  `PERSONAS.ind_cliente_proveedor` vale `C` (Cliente), `P` (Proveedor) o `A` (Ambos), y el
+  criterio del proyecto es `NVL(ind_cliente_proveedor, '-') IN ('P', 'A')` — el `NVL` a `'-'`
+  deja fuera a quien no lo tenga cargado. Usarlo **tal cual** en toda pantalla que liste
+  proveedores, para que no se contradigan entre sí. Ya lo aplican `compras_sql.sql` (LOV),
+  `articulos_proveedores_sql.sql` (LOV), `pedidos_articulos_sql.sql` (pág 63) y
+  `articulos_mas_vendidos_sql.sql` (pág 102).
+  - **Es un INNER JOIN: no filtra columnas, borra filas enteras.** Una compra cargada a una
+    persona marcada solo como Cliente desaparece del reporte, totales incluidos. Antes de
+    aplicarlo a una pantalla nueva conviene mirar a quién deja afuera:
+    `... WHERE NVL(p.ind_cliente_proveedor,'-') NOT IN ('P','A')` sobre las personas que sí
+    tienen movimientos. Lo que salga ahí son proveedores mal clasificados, no ruido.
+  - **Cuidado cuando solo se tiene el NOMBRE.** `articulos_mas_vendidos` guarda
+    `nombre_proveedor`, no `cod_persona`, así que el vínculo va por nombre (CTE `prov_valido`) y
+    hay que contemplar `nombre` **y** `nombre_fantasia`: distintas pantallas guardan uno u otro
+    (`compras_sql.sql` usa `NVL(nombre_fantasia, nombre)`, la pág 63 usa `nombre` pelado).
 
 - **`tip_comprobante = 'AJS'` NO es una compra.** Los ajustes de stock e inventario se guardan
   en `COMPRAS_CABECERA`/`COMPRAS_DETALLE` (los genera `ajustar_inventarios_sql.sql` como serie

@@ -25,6 +25,20 @@
 --
 --   Orden fijo: cantidad_ventas DESC, descripcion ASC (los mas vendidos primero).
 --
+-- CAMBIOS TRAIDOS DE pedidos_articulos_sql.sql (pag 63), donde se descubrieron:
+--
+--   * cod_proveedor: el/los codigo(s) con que el proveedor identifica el
+--     articulo (ARTICULOS_PROVEEDORES.id_cod_proveedor), para el texto del
+--     pedido. Se colapsa en el CTE codigos_prov ANTES de unirlo: joinear esa
+--     tabla directo DUPLICA filas cuando un articulo tiene mas de un codigo
+--     cargado para el mismo proveedor (fan-out; ver db/GUIA_ENDPOINTS.md).
+--
+--   * Solo proveedores (CTE prov_valido): se listan unicamente articulos cuyo
+--     nombre_proveedor corresponde a una persona con ind_cliente_proveedor en
+--     (P, A). Mismo criterio que las LOVs de proveedores y que la pag 63.
+--     Es un INNER JOIN: un articulo cuyo proveedor esta marcado solo como
+--     Cliente, o sin indicador, NO aparece.
+--
 -- Ejecutar como el esquema JOSEGALVEZ. Requiere PKG_AUTH_LUBRIMEC.
 --------------------------------------------------------------------------------
 
@@ -183,6 +197,25 @@ BEGIN
                    AND pe.nombre_fantasia IS NOT NULL
             )
             GROUP BY cp_cod_empresa, cp_id_articulo, cp_nombre
+        ),
+        prov_valido AS (
+            -- Solo proveedores: ind_cliente_proveedor P (Proveedor) o A (Ambos),
+            -- mismo criterio que las LOVs de proveedores y que pedidos_articulos.
+            -- Va por NOMBRE porque articulos_mas_vendidos guarda nombre_proveedor,
+            -- no cod_persona; se generan las dos formas del nombre para que
+            -- matchee sin importar cual haya guardado el job.
+            SELECT DISTINCT pv_cod_empresa, pv_nombre FROM (
+                SELECT cod_empresa AS pv_cod_empresa, nombre AS pv_nombre
+                  FROM personas
+                 WHERE cod_empresa = TO_NUMBER(l_cod_empresa)
+                   AND NVL(ind_cliente_proveedor, '-') IN ('P', 'A')
+                UNION
+                SELECT cod_empresa, nombre_fantasia
+                  FROM personas
+                 WHERE cod_empresa = TO_NUMBER(l_cod_empresa)
+                   AND NVL(ind_cliente_proveedor, '-') IN ('P', 'A')
+                   AND nombre_fantasia IS NOT NULL
+            )
         )
         SELECT a.cantidad_ventas,
                a.stock,
@@ -202,6 +235,8 @@ BEGIN
           LEFT JOIN codigos_prov cp ON cp.cp_cod_empresa = a.cod_empresa
                                    AND cp.cp_id_articulo = a.id_articulo
                                    AND cp.cp_nombre      = a.nombre_proveedor
+          JOIN prov_valido pv ON pv.pv_cod_empresa = a.cod_empresa
+                             AND pv.pv_nombre      = a.nombre_proveedor
          WHERE a.cod_empresa = TO_NUMBER(l_cod_empresa)
            -- OR GLOBAL entre facetas: si no hay ninguna faceta activa pasan todos;
            -- si hay, basta con coincidir en CUALQUIERA de las facetas elegidas.
