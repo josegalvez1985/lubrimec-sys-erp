@@ -160,6 +160,23 @@ export function ArticulosView() {
       render: (r) => <span className="tabular-nums">{fmt(r.existencia)}</span>,
     },
     {
+      // OJO: `estado` y `es_activo` son columnas DISTINTAS de ARTICULOS, no dos
+      // nombres de lo mismo. `estado` ('A'/'I') es el Activo/Inactivo que muestra
+      // el APEX y el que usan los filtros de las LOVs; `es_activo` ('S'/'N') es
+      // otra cosa. Por eso van las dos columnas y con etiquetas diferenciadas.
+      key: "estado",
+      header: "Estado",
+      accessor: (r) => (r.estado ?? "A").toUpperCase(),
+      render: (r) =>
+        (r.estado ?? "A").toUpperCase() === "A" ? (
+          <Badge className="bg-primary/15 text-primary hover:bg-primary/15">Activo</Badge>
+        ) : (
+          <Badge variant="outline" className="text-muted-foreground">
+            Inactivo
+          </Badge>
+        ),
+    },
+    {
       key: "es_activo",
       header: "Activo",
       accessor: (r) => r.es_activo ?? "",

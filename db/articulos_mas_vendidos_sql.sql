@@ -157,102 +157,120 @@ BEGIN
     APEX_JSON.OPEN_ARRAY('data');
 
     FOR r IN (
-        WITH codigos_prov AS (
-            -- Codigo(s) con que el proveedor identifica el articulo
-            -- (ARTICULOS_PROVEEDORES.id_cod_proveedor), para el texto del pedido.
-            --
-            -- OJO: se colapsa a UNA fila por (empresa, articulo, nombre) ANTES de
-            -- unirla. Joinear articulos_proveedores directo duplica filas cuando
-            -- un articulo tiene mas de un codigo cargado para el mismo proveedor:
-            -- es el fan-out que tenia Pedidos de Articulos (ver la nota en
-            -- db/GUIA_ENDPOINTS.md y en db/pedidos_articulos_sql.sql).
-            --
-            -- El vinculo va por NOMBRE porque articulos_mas_vendidos guarda
-            -- nombre_proveedor, no cod_persona. Se generan filas para nombre y
-            -- para nombre_fantasia, asi matchea sin importar cual haya guardado
-            -- el job que arma la tabla.
-            SELECT cp_cod_empresa, cp_id_articulo, cp_nombre,
-                   LISTAGG(cp_codigo, ' / ')
-                       WITHIN GROUP (ORDER BY cp_codigo) AS cp_codigos
-            FROM (
-                SELECT DISTINCT ap.cod_empresa AS cp_cod_empresa,
-                       ap.id_articulo          AS cp_id_articulo,
-                       pe.nombre               AS cp_nombre,
-                       ap.id_cod_proveedor     AS cp_codigo
-                  FROM articulos_proveedores ap
-                  JOIN personas pe ON pe.cod_persona = ap.cod_persona
-                                  AND pe.cod_empresa = ap.cod_empresa
-                 WHERE ap.cod_empresa = TO_NUMBER(l_cod_empresa)
-                   AND ap.id_cod_proveedor IS NOT NULL
-                UNION
-                SELECT DISTINCT ap.cod_empresa,
-                       ap.id_articulo,
-                       pe.nombre_fantasia,
-                       ap.id_cod_proveedor
-                  FROM articulos_proveedores ap
-                  JOIN personas pe ON pe.cod_persona = ap.cod_persona
-                                  AND pe.cod_empresa = ap.cod_empresa
-                 WHERE ap.cod_empresa = TO_NUMBER(l_cod_empresa)
-                   AND ap.id_cod_proveedor IS NOT NULL
-                   AND pe.nombre_fantasia IS NOT NULL
-            )
-            GROUP BY cp_cod_empresa, cp_id_articulo, cp_nombre
+        WITH articulos_base AS (
+            -- FUENTE: ARTICULOS, no la tabla precalculada articulos_mas_vendidos.
+            -- Esa tabla solo tiene lo VENDIDO: de 960 articulos activos traia 547,
+            -- dejando afuera 412 que nunca se vendieron (y 30 mas por otras
+            -- razones del job). Para armar pedidos hace falta el catalogo entero:
+            -- lo que no se vendio nunca y lo que nunca se inventario tambien se
+            -- pide. Ademas, calculando aca las ventas dejamos de heredar lo que
+            -- haga el job, que no esta en este repo.
+            SELECT a.id_articulo, a.cod_empresa, a.descripcion,
+                   NVL(a.codigo_oem, TO_CHAR(a.id_articulo)) AS codigo_oem,
+                   a.id_rubro, a.id_marca, a.id_viscosidad, a.cod_unidad_medida
+              FROM articulos a
+             WHERE a.cod_empresa = TO_NUMBER(l_cod_empresa)
+               AND UPPER(NVL(a.estado, 'A')) = 'A'
         ),
-        prov_valido AS (
-            -- Solo proveedores: ind_cliente_proveedor P (Proveedor) o A (Ambos),
-            -- mismo criterio que las LOVs de proveedores y que pedidos_articulos.
-            -- Va por NOMBRE porque articulos_mas_vendidos guarda nombre_proveedor,
-            -- no cod_persona; se generan las dos formas del nombre para que
-            -- matchee sin importar cual haya guardado el job.
-            SELECT DISTINCT pv_cod_empresa, pv_nombre FROM (
-                SELECT cod_empresa AS pv_cod_empresa, nombre AS pv_nombre
-                  FROM personas
-                 WHERE cod_empresa = TO_NUMBER(l_cod_empresa)
-                   AND NVL(ind_cliente_proveedor, '-') IN ('P', 'A')
-                UNION
-                SELECT cod_empresa, nombre_fantasia
-                  FROM personas
-                 WHERE cod_empresa = TO_NUMBER(l_cod_empresa)
-                   AND NVL(ind_cliente_proveedor, '-') IN ('P', 'A')
-                   AND nombre_fantasia IS NOT NULL
+        ventas_art AS (
+            -- Ventas por ARTICULO. Sin joins a articulos_proveedores: ese join
+            -- es el que duplicaba los totales en la pag 63 (fan-out).
+            SELECT vd.id_articulo, vc.cod_empresa, SUM(NVL(vd.cantidad, 0)) AS cantidad_ventas
+              FROM ventas_cabecera vc
+              JOIN ventas_detalle  vd ON vd.id_factura = vc.id_factura
+             WHERE vc.cod_empresa = TO_NUMBER(l_cod_empresa)
+             GROUP BY vd.id_articulo, vc.cod_empresa
+        ),
+        stock_art AS (
+            -- Existencia = compras - ventas por articulo (mismo criterio que el
+            -- CTE existencias de punto_venta_sql.sql y pedidos_articulos_sql.sql).
+            SELECT id_articulo, cod_empresa, SUM(cant) AS stock
+            FROM (
+                SELECT cd.id_articulo, cc.cod_empresa, NVL(cd.cantidad, 0) AS cant
+                  FROM compras_cabecera cc
+                  JOIN compras_detalle  cd ON cd.id_factura = cc.id_factura
+                 WHERE cc.cod_empresa = TO_NUMBER(l_cod_empresa)
+                UNION ALL
+                SELECT vd.id_articulo, vc.cod_empresa, NVL(vd.cantidad, 0) * -1
+                  FROM ventas_cabecera vc
+                  JOIN ventas_detalle  vd ON vd.id_factura = vc.id_factura
+                 WHERE vc.cod_empresa = TO_NUMBER(l_cod_empresa)
             )
+            GROUP BY id_articulo, cod_empresa
+        ),
+        inventario_art AS (
+            -- Fecha del ultimo inventario. Un articulo nunca inventariado no
+            -- tiene fila aca: queda NULL y se muestra vacio, pero SIGUE EN LA
+            -- LISTA (antes desaparecia).
+            SELECT id_articulo, cod_empresa, MAX(fecha) AS fecha_ultimo_inventario
+              FROM inventario
+             WHERE cod_empresa = TO_NUMBER(l_cod_empresa)
+             GROUP BY id_articulo, cod_empresa
+        ),
+        prov_art AS (
+            -- Proveedor(es) del articulo. Colapsado a UNA fila por articulo ANTES
+            -- de unirlo: joinear articulos_proveedores directo duplica filas
+            -- cuando hay mas de un codigo para el mismo proveedor (fan-out, ver
+            -- db/GUIA_ENDPOINTS.md). Se filtra aca por ind_cliente_proveedor en
+            -- (P, A): un proveedor mal clasificado no aporta nombre ni codigo,
+            -- pero el articulo igual se lista.
+            SELECT pa_id_articulo, pa_cod_empresa,
+                   LISTAGG(pa_nombre, ' / ') WITHIN GROUP (ORDER BY pa_nombre) AS pa_nombres,
+                   LISTAGG(pa_codigo, ' / ') WITHIN GROUP (ORDER BY pa_codigo) AS pa_codigos
+            FROM (
+                SELECT DISTINCT ap.id_articulo AS pa_id_articulo,
+                       ap.cod_empresa          AS pa_cod_empresa,
+                       pe.nombre               AS pa_nombre,
+                       ap.id_cod_proveedor     AS pa_codigo
+                  FROM articulos_proveedores ap
+                  JOIN personas pe ON pe.cod_persona = ap.cod_persona
+                                  AND pe.cod_empresa = ap.cod_empresa
+                 WHERE ap.cod_empresa = TO_NUMBER(l_cod_empresa)
+                   AND NVL(pe.ind_cliente_proveedor, '-') IN ('P', 'A')
+            )
+            GROUP BY pa_id_articulo, pa_cod_empresa
         )
-        SELECT a.cantidad_ventas,
-               a.stock,
-               a.descripcion_articulo                          descripcion,
-               a.codigo_oem,
-               a.costo_ultimo,
-               TO_CHAR(a.fecha_ultimo_inventario, 'DD/MM/YYYY') fecha_ultimo_inventario,
-               a.nombre_proveedor                              proveedor,
-               a.descripcion_rubro                             rubro,
-               a.id_articulo,
-               a.id_viscosidad,
-               a.cod_unidad_medida,
-               a.descripcion_marca                             marca,
-               a.descripcion_viscosidad                        viscosidad,
-               cp.cp_codigos                                   cod_proveedor
-          FROM articulos_mas_vendidos a
-          LEFT JOIN codigos_prov cp ON cp.cp_cod_empresa = a.cod_empresa
-                                   AND cp.cp_id_articulo = a.id_articulo
-                                   AND cp.cp_nombre      = a.nombre_proveedor
-          JOIN prov_valido pv ON pv.pv_cod_empresa = a.cod_empresa
-                             AND pv.pv_nombre      = a.nombre_proveedor
-         WHERE a.cod_empresa = TO_NUMBER(l_cod_empresa)
-           -- OR GLOBAL entre facetas: si no hay ninguna faceta activa pasan todos;
-           -- si hay, basta con coincidir en CUALQUIERA de las facetas elegidas.
-           AND (l_hay_faceta = 0
-                OR a.nombre_proveedor      IN (SELECT COLUMN_VALUE FROM TABLE(t_proveedor))
-                OR a.descripcion_rubro     IN (SELECT COLUMN_VALUE FROM TABLE(t_rubro))
-                OR a.descripcion_viscosidad IN (SELECT COLUMN_VALUE FROM TABLE(t_viscosidad))
-                OR a.descripcion_marca     IN (SELECT COLUMN_VALUE FROM TABLE(t_marca))
-                OR a.cod_unidad_medida     IN (SELECT COLUMN_VALUE FROM TABLE(t_unidad)))
+        SELECT NVL(v.cantidad_ventas, 0)                      AS cantidad_ventas,
+               NVL(st.stock, 0)                               AS stock,
+               b.descripcion                                  AS descripcion,
+               b.codigo_oem,
+               PKG_COMPRAS.FN_COSTO_ULTIMO(b.id_articulo, b.cod_empresa) AS costo_ultimo,
+               TO_CHAR(i.fecha_ultimo_inventario, 'DD/MM/YYYY') AS fecha_ultimo_inventario,
+               pa.pa_nombres                                  AS proveedor,
+               r.descripcion                                  AS rubro,
+               b.id_articulo,
+               b.id_viscosidad,
+               b.cod_unidad_medida,
+               ma.descripcion                                 AS marca,
+               vi.descripcion                                 AS viscosidad,
+               pa.pa_codigos                                  AS cod_proveedor
+          FROM articulos_base b
+          LEFT JOIN ventas_art     v  ON v.id_articulo  = b.id_articulo
+                                     AND v.cod_empresa  = b.cod_empresa
+          LEFT JOIN stock_art      st ON st.id_articulo = b.id_articulo
+                                     AND st.cod_empresa = b.cod_empresa
+          LEFT JOIN inventario_art i  ON i.id_articulo  = b.id_articulo
+                                     AND i.cod_empresa  = b.cod_empresa
+          LEFT JOIN prov_art       pa ON pa.pa_id_articulo = b.id_articulo
+                                     AND pa.pa_cod_empresa = b.cod_empresa
+          LEFT JOIN rubros         r  ON r.id_rubro     = b.id_rubro
+                                     AND r.cod_empresa  = b.cod_empresa
+          LEFT JOIN marcas         ma ON ma.id_marca    = b.id_marca
+                                     AND ma.cod_empresa = b.cod_empresa
+          LEFT JOIN viscosidad_lubricantes vi ON vi.id_viscosidad = b.id_viscosidad
+         WHERE (l_hay_faceta = 0
+                OR pa.pa_nombres  IN (SELECT COLUMN_VALUE FROM TABLE(t_proveedor))
+                OR r.descripcion  IN (SELECT COLUMN_VALUE FROM TABLE(t_rubro))
+                OR vi.descripcion IN (SELECT COLUMN_VALUE FROM TABLE(t_viscosidad))
+                OR ma.descripcion IN (SELECT COLUMN_VALUE FROM TABLE(t_marca))
+                OR b.cod_unidad_medida IN (SELECT COLUMN_VALUE FROM TABLE(t_unidad)))
            AND (l_descripcion IS NULL OR
-                UPPER(a.descripcion_articulo) LIKE '%' || UPPER(l_descripcion) || '%')
+                UPPER(b.descripcion) LIKE '%' || UPPER(l_descripcion) || '%')
            AND (l_search      IS NULL OR
-                UPPER(a.descripcion_articulo || ' ' || a.codigo_oem || ' ' ||
-                      a.nombre_proveedor || ' ' || a.descripcion_marca)
+                UPPER(b.descripcion || ' ' || b.codigo_oem || ' ' ||
+                      NVL(pa.pa_nombres, '') || ' ' || NVL(ma.descripcion, ''))
                 LIKE '%' || UPPER(l_search) || '%')
-         ORDER BY a.cantidad_ventas DESC, a.descripcion_articulo ASC
+         ORDER BY NVL(v.cantidad_ventas, 0) DESC, b.descripcion ASC
     ) LOOP
         APEX_JSON.OPEN_OBJECT;
         APEX_JSON.WRITE('cantidad_ventas', r.cantidad_ventas);
