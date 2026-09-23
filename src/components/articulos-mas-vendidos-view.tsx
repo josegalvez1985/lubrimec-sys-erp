@@ -77,18 +77,30 @@ const COLUMNAS: {
   },
 ];
 
-// Facetas tipo select de la página 102: se aplican server-side; las opciones se
-// derivan de los datos cargados (comportamiento facetado: se acotan entre sí).
+// El backend manda los proveedores de un artículo en un solo texto separado por
+// " / " (LISTAGG). Para la faceta se separan: si no, "A / B" sería una opción
+// aparte y el proveedor A aparecería repetido en la lista.
+const SEP_PROVEEDORES = " / ";
+const unoSolo = (v: string | null) => (v ? [v] : []);
+
+// Facetas de la página 102: las opciones se derivan de los datos cargados
+// (comportamiento facetado: se acotan entre sí). `valores` es una lista porque
+// Proveedor es multivaluada: el artículo pasa si CUALQUIERA de sus proveedores
+// está tildado (mismo criterio que la pág 63).
 const FACETAS: {
   clave: keyof FiltrosMasVendidos;
   etiqueta: string;
-  valor: (a: ArticuloMasVendido) => string | null;
+  valores: (a: ArticuloMasVendido) => string[];
 }[] = [
-  { clave: "proveedor", etiqueta: "Proveedor", valor: (a) => a.proveedor },
-  { clave: "rubro", etiqueta: "Rubro", valor: (a) => a.rubro },
-  { clave: "viscosidad", etiqueta: "Viscosidad", valor: (a) => a.viscosidad },
-  { clave: "marca", etiqueta: "Marca", valor: (a) => a.marca },
-  { clave: "unidad", etiqueta: "Unidad", valor: (a) => a.cod_unidad_medida },
+  {
+    clave: "proveedor",
+    etiqueta: "Proveedor",
+    valores: (a) => (a.proveedor ? a.proveedor.split(SEP_PROVEEDORES) : []),
+  },
+  { clave: "rubro", etiqueta: "Rubro", valores: (a) => unoSolo(a.rubro) },
+  { clave: "viscosidad", etiqueta: "Viscosidad", valores: (a) => unoSolo(a.viscosidad) },
+  { clave: "marca", etiqueta: "Marca", valores: (a) => unoSolo(a.marca) },
+  { clave: "unidad", etiqueta: "Unidad", valores: (a) => unoSolo(a.cod_unidad_medida) },
 ];
 
 // Copia al portapapeles con fallback. navigator.clipboard solo existe en contextos
@@ -164,8 +176,7 @@ export function ArticulosMasVendidosView() {
   function pasaFaceta(a: ArticuloMasVendido, f: (typeof FACETAS)[number]) {
     const sel = facetas[f.clave] ?? [];
     if (sel.length === 0) return true;
-    const val = f.valor(a);
-    return val != null && sel.includes(val);
+    return f.valores(a).some((v) => sel.includes(v));
   }
 
   // Facetas dependientes: AND entre facetas distintas, OR dentro de cada una. Las
@@ -179,8 +190,7 @@ export function ArticulosMasVendidosView() {
       );
       const conteo = new Map<string, number>();
       for (const a of compatibles) {
-        const v = f.valor(a);
-        if (v) conteo.set(v, (conteo.get(v) ?? 0) + 1);
+        for (const v of new Set(f.valores(a))) conteo.set(v, (conteo.get(v) ?? 0) + 1);
       }
       out[f.clave] = Array.from(conteo.entries())
         .map(([valor, count]) => ({ valor, count }))

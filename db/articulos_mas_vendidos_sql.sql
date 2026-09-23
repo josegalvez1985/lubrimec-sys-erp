@@ -214,9 +214,15 @@ BEGIN
             -- db/GUIA_ENDPOINTS.md). Se filtra aca por ind_cliente_proveedor en
             -- (P, A): un proveedor mal clasificado no aporta nombre ni codigo,
             -- pero el articulo igual se lista.
+            --
+            -- LISTAGG(DISTINCT ...) en CADA lista: el DISTINCT de la subconsulta
+            -- es sobre el par (nombre, codigo), asi que un proveedor con dos
+            -- codigos para el mismo articulo da dos filas y su nombre salia
+            -- repetido ("PROV X / PROV X"). Lo mismo con un codigo compartido
+            -- por dos proveedores. Cada lista se deduplica por separado.
             SELECT pa_id_articulo, pa_cod_empresa,
-                   LISTAGG(pa_nombre, ' / ') WITHIN GROUP (ORDER BY pa_nombre) AS pa_nombres,
-                   LISTAGG(pa_codigo, ' / ') WITHIN GROUP (ORDER BY pa_codigo) AS pa_codigos
+                   LISTAGG(DISTINCT pa_nombre, ' / ') WITHIN GROUP (ORDER BY pa_nombre) AS pa_nombres,
+                   LISTAGG(DISTINCT pa_codigo, ' / ') WITHIN GROUP (ORDER BY pa_codigo) AS pa_codigos
             FROM (
                 SELECT DISTINCT ap.id_articulo AS pa_id_articulo,
                        ap.cod_empresa          AS pa_cod_empresa,
@@ -259,7 +265,11 @@ BEGIN
                                      AND ma.cod_empresa = b.cod_empresa
           LEFT JOIN viscosidad_lubricantes vi ON vi.id_viscosidad = b.id_viscosidad
          WHERE (l_hay_faceta = 0
-                OR pa.pa_nombres  IN (SELECT COLUMN_VALUE FROM TABLE(t_proveedor))
+                -- pa_nombres puede traer varios ("A / B"): basta con que
+                -- cualquiera de ellos este en la lista.
+                OR EXISTS (SELECT 1 FROM TABLE(t_proveedor) tp
+                            WHERE ' / ' || pa.pa_nombres || ' / '
+                                  LIKE '% / ' || tp.COLUMN_VALUE || ' / %')
                 OR r.descripcion  IN (SELECT COLUMN_VALUE FROM TABLE(t_rubro))
                 OR vi.descripcion IN (SELECT COLUMN_VALUE FROM TABLE(t_viscosidad))
                 OR ma.descripcion IN (SELECT COLUMN_VALUE FROM TABLE(t_marca))
