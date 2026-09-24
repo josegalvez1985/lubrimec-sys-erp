@@ -739,20 +739,29 @@ function DetalleOemModal({
 
         {grupo && (
           <>
-            <div className="grid grid-cols-3 gap-2 rounded-xl border border-border bg-muted/30 p-3 text-sm">
+            {/* Tipografía del modal: todo sale de las variables de styles.css
+                (--ui-font en la tabla, -sm para etiquetas/notas, -lg para las
+                cifras del resumen). Nada de text-xs/text-sm fijos: quedaban chicos. */}
+            <div className="grid grid-cols-3 gap-2 rounded-xl border border-border bg-muted/30 p-3">
               <div>
-                <p className="text-xs text-muted-foreground">Existencia</p>
-                <p className="font-semibold tabular-nums">{fmtN(grupo.existencia)}</p>
+                <p className="text-[length:var(--ui-font-sm)] text-muted-foreground">Existencia</p>
+                <p className="text-[length:var(--ui-font-lg)] font-semibold tabular-nums">
+                  {fmtN(grupo.existencia)}
+                </p>
               </div>
               <div>
-                <p className="text-xs text-muted-foreground">Vendidas</p>
-                <p className="font-semibold tabular-nums">{fmtN(grupo.ventas)}</p>
+                <p className="text-[length:var(--ui-font-sm)] text-muted-foreground">Vendidas</p>
+                <p className="text-[length:var(--ui-font-lg)] font-semibold tabular-nums">
+                  {fmtN(grupo.ventas)}
+                </p>
               </div>
               <div>
-                <p className="text-xs text-muted-foreground">
+                <p className="text-[length:var(--ui-font-sm)] text-muted-foreground">
                   {unProveedor ? "Compradas" : "Compradas (total)"}
                 </p>
-                <p className="font-semibold tabular-nums">{fmtN(grupo.compras)}</p>
+                <p className="text-[length:var(--ui-font-lg)] font-semibold tabular-nums">
+                  {fmtN(grupo.compras)}
+                </p>
               </div>
             </div>
 
@@ -767,12 +776,11 @@ function DetalleOemModal({
                         que es lo que hace falta para saber a quién pedirle qué. */}
                     <TableHead className="w-10" />
                     <TableHead className="w-20">Cant.</TableHead>
-                    {/* Las tres columnas de texto van un escalón abajo (12px):
-                        son las largas. No menos: contra los números a 14px la
-                        diferencia se nota y se vuelve incómodo de leer. */}
-                    {!unProveedor && <TableHead className="text-xs">Proveedor</TableHead>}
-                    <TableHead className="text-xs">Cód. Prov.</TableHead>
-                    <TableHead className="text-xs">Artículo</TableHead>
+                    {/* Todas las columnas al mismo tamaño (--ui-font de Table):
+                        las de texto a 12px quedaban chicas al lado de los números. */}
+                    {!unProveedor && <TableHead>Proveedor</TableHead>}
+                    <TableHead>Cód. Prov.</TableHead>
+                    <TableHead>Artículo</TableHead>
                     <ThNum campo="costo_ultimo" titulo="Costo Ultimo" orden={orden} onOrdenar={ordenarPor} />
                     <ThNum campo="compras" titulo="Compradas" orden={orden} onOrdenar={ordenarPor} />
                     <ThNum
@@ -801,20 +809,18 @@ function DetalleOemModal({
                             value={pedido[filaKey(f)]}
                             onChange={(e) => onCantidad(f, e.target.value)}
                             aria-label="Cantidad a pedir"
-                            className="h-8 w-16 px-2 text-sm"
+                            className="h-8 w-16 px-2"
                           />
                         )}
                       </TableCell>
                       {!unProveedor && (
-                        <TableCell className="whitespace-nowrap text-xs">
-                          {f.proveedor ?? "—"}
-                        </TableCell>
+                        <TableCell className="whitespace-nowrap">{f.proveedor ?? "—"}</TableCell>
                       )}
-                      <TableCell className="whitespace-nowrap font-mono text-xs">
+                      <TableCell className="whitespace-nowrap font-mono">
                         {f.cod_proveedor ?? "—"}
                       </TableCell>
                       {/* nowrap: la descripción entra en una sola línea. */}
-                      <TableCell className="whitespace-nowrap text-xs">
+                      <TableCell className="whitespace-nowrap">
                         <span className="flex items-center gap-2">
                           <button
                             type="button"
@@ -840,7 +846,7 @@ function DetalleOemModal({
               </Table>
             </div>
 
-            <p className="text-xs text-muted-foreground">
+            <p className="text-[length:var(--ui-font-sm)] text-muted-foreground">
               Las compras son por proveedor. Las ventas no: una venta no registra de qué compra
               salió cada unidad, así que &quot;Vendidas (art.)&quot; es el total vendido de ese
               artículo — si se le compra a varios proveedores, la cifra se repite en cada fila.
