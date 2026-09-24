@@ -166,6 +166,13 @@
   --sidebar-border: oklch(0.25 0.015 50);
   --sidebar-ring: oklch(0.72 0.19 50);
 
+  /* Gráficos de reportes (paleta validada con la skill dataviz): acento = la serie
+     protagonista, contexto = serie de referencia en gris, grilla/eje = hairlines. */
+  --viz-acento: #eb6834;
+  --viz-contexto: #898781;
+  --viz-grilla: #e1e0d9;
+  --viz-eje: #c3c2b7;
+
   --gradient-primary: linear-gradient(135deg, var(--primary), var(--primary-glow));
   --gradient-hero: linear-gradient(135deg, oklch(0.18 0.01 50), oklch(0.12 0.02 50));
   --shadow-glow: 0 10px 40px -10px color-mix(in oklab, var(--primary) 45%, transparent);
@@ -210,6 +217,11 @@
   --sidebar-accent-foreground: oklch(0.97 0.005 80);
   --sidebar-border: oklch(0.22 0.015 50);
   --sidebar-ring: oklch(0.75 0.2 55);
+
+  --viz-acento: #d95926;
+  --viz-contexto: #898781;
+  --viz-grilla: #2c2c2a;
+  --viz-eje: #383835;
 
   --gradient-hero: linear-gradient(135deg, oklch(0.1 0.012 50), oklch(0.18 0.025 50));
   --shadow-glow: 0 10px 40px -10px color-mix(in oklab, var(--primary) 55%, transparent);

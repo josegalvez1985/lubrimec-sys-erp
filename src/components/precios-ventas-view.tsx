@@ -1,7 +1,9 @@
-import { useMemo, useState, type FormEvent } from "react";
+import { lazy, Suspense, useMemo, useState, type FormEvent } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, Eye, Pencil, Trash2, Loader2, Tags, X } from "lucide-react";
+import { Plus, Eye, Pencil, Trash2, Loader2, Tags, X, LineChart } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
@@ -40,6 +42,12 @@ import {
 } from "@/lib/api";
 
 const COD_EMPRESA = 24;
+
+// Pestaña "Evolución" (reporte con gráficos): lazy para que recharts y el armado
+// del PDF bajen solo si se abre, no cada vez que se entra a cargar un precio.
+const EvolucionPrecios = lazy(() =>
+  import("@/components/evolucion-precios").then((m) => ({ default: m.EvolucionPrecios })),
+);
 
 const fmtNum = (n: number | null) =>
   n == null ? "—" : new Intl.NumberFormat("es-PY", { maximumFractionDigits: 0 }).format(n);
@@ -164,6 +172,7 @@ const COLUMNAS: Column<PrecioVenta>[] = [
 
 export function PreciosVentasView() {
   const qc = useQueryClient();
+  const [pestana, setPestana] = useState<"precios" | "evolucion">("precios");
   const [modal, setModal] = useState<ModalState>({ mode: "closed" });
   const [aEliminar, setAEliminar] = useState<PrecioVenta | null>(null);
   const [filtroArticulo, setFiltroArticulo] = useState<number | null>(null);
@@ -186,6 +195,7 @@ export function PreciosVentasView() {
       qc.invalidateQueries({ queryKey: ["precios-ventas"] });
       setAEliminar(null);
     },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "No se pudo eliminar el precio"),
   });
 
   const todos = useMemo(() => data ?? [], [data]);
@@ -223,127 +233,168 @@ export function PreciosVentasView() {
         <div>
           <h2 className="font-display text-xl font-bold">Precios de Ventas</h2>
           <p className="text-sm text-muted-foreground">
-            {filas.length} {filas.length === 1 ? "precio" : "precios"}
-            {filtroArticulo == null && meses.length > 0 && (
+            {pestana === "evolucion" ? (
+              "Cómo cambió el precio de venta en cada registro"
+            ) : (
               <>
-                {" "}
-                de {todos.length} · desde {fmtMes(meses[Math.min(mesesVisibles, meses.length) - 1])}
+                {filas.length} {filas.length === 1 ? "precio" : "precios"}
+                {filtroArticulo == null && meses.length > 0 && (
+                  <>
+                    {" "}
+                    de {todos.length} · desde{" "}
+                    {fmtMes(meses[Math.min(mesesVisibles, meses.length) - 1])}
+                  </>
+                )}
               </>
             )}
           </p>
         </div>
-        <Button
-          onClick={() => setModal({ mode: "create" })}
-          className="shrink-0 bg-gradient-primary font-semibold text-primary-foreground shadow-glow hover:opacity-95"
-        >
-          <Plus className="mr-2 h-4 w-4" />
-          <span className="hidden sm:inline">Nuevo precio</span>
-          <span className="sm:hidden">Nuevo</span>
-        </Button>
-      </div>
-
-      <div className="flex flex-wrap items-end gap-3 border-b border-border p-4 sm:px-5">
-        <div className="w-full max-w-sm space-y-1">
-          <Label className="text-xs">Artículo</Label>
-          <BuscadorSelect
-            placeholder="Filtrar por artículo..."
-            emptyLabel="Sin artículos"
-            value={filtroArticulo}
-            label={filtroArticuloLabel}
-            buscar={(q) => buscarArticulos(COD_EMPRESA, q)}
-            itemKey={(a) => a.id_articulo}
-            itemTitle={(a) => labelArticulo(a)}
-            itemSub={(a) => (a.codigo_oem ? `OEM ${a.codigo_oem}` : `#${a.id_articulo}`)}
-            onSelect={(a) => {
-              setFiltroArticulo(a.id_articulo);
-              setFiltroArticuloLabel(labelArticulo(a));
-            }}
-          />
+        <div className="flex flex-wrap items-center gap-2">
+          <Tabs value={pestana} onValueChange={(v) => setPestana(v as typeof pestana)}>
+            <TabsList>
+              <TabsTrigger value="precios" className="gap-1.5">
+                <Tags className="h-4 w-4" />
+                Precios
+              </TabsTrigger>
+              <TabsTrigger value="evolucion" className="gap-1.5">
+                <LineChart className="h-4 w-4" />
+                Evolución
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
+          {pestana === "precios" && (
+            <Button
+              onClick={() => setModal({ mode: "create" })}
+              className="shrink-0 bg-gradient-primary font-semibold text-primary-foreground shadow-glow hover:opacity-95"
+            >
+              <Plus className="mr-2 h-4 w-4" />
+              <span className="hidden sm:inline">Nuevo precio</span>
+              <span className="sm:hidden">Nuevo</span>
+            </Button>
+          )}
         </div>
-        {filtroArticulo != null && (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              setFiltroArticulo(null);
-              setFiltroArticuloLabel("");
-            }}
-          >
-            <X className="mr-2 h-4 w-4" />
-            Limpiar
-          </Button>
-        )}
       </div>
 
-      <div className="p-4 sm:p-5">
-        {isError ? (
-          <p className="p-8 text-center text-sm text-destructive">
-            {error instanceof Error ? error.message : "No se pudieron cargar los precios"}
-          </p>
-        ) : todos.length === 0 && !isLoading ? (
-          <div className="grid place-items-center py-16 text-center">
-            <div className="grid h-14 w-14 place-items-center rounded-2xl bg-primary/10 text-primary">
-              <Tags className="h-6 w-6" />
+      {pestana === "evolucion" ? (
+        <Suspense
+          fallback={
+            <div className="grid place-items-center py-16 text-muted-foreground">
+              <Loader2 className="h-6 w-6 animate-spin" />
             </div>
-            <p className="mt-4 font-medium">Sin precios registrados</p>
-            <p className="mt-1 max-w-xs text-sm text-muted-foreground">
-              Registra el primero con el botón “Nuevo precio”.
-            </p>
-          </div>
-        ) : (
-          <>
-            <DataTable
-              columns={COLUMNAS}
-              rows={filas}
-              getRowId={(r) => r.id_precio}
-              initialSort={{ key: "id_precio", dir: "desc" }}
-              exportName="precios-ventas"
-              actions={(r) => (
-                <div className="flex items-center justify-end gap-1">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8 text-muted-foreground hover:text-primary"
-                    onClick={() => setModal({ mode: "view", item: r })}
-                    aria-label="Ver"
-                  >
-                    <Eye className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8 text-muted-foreground hover:text-primary"
-                    onClick={() => setModal({ mode: "edit", item: r })}
-                    aria-label="Editar"
-                  >
-                    <Pencil className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                    onClick={() => setAEliminar(r)}
-                    aria-label="Eliminar"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </div>
-              )}
-            />
-            {filtroArticulo == null && hayMasMeses && (
-              <div className="mt-4 flex flex-col items-center gap-1">
-                <p className="text-xs text-muted-foreground">
-                  Mostrando {mesesVisibles} {mesesVisibles === 1 ? "mes" : "meses"} de{" "}
-                  {meses.length}
-                </p>
-                <Button variant="outline" size="sm" onClick={() => setMesesVisibles((n) => n + 1)}>
-                  Mostrar más
-                </Button>
-              </div>
+          }
+        >
+          <EvolucionPrecios />
+        </Suspense>
+      ) : (
+        <>
+          <div className="flex flex-wrap items-end gap-3 border-b border-border p-4 sm:px-5">
+            <div className="w-full max-w-sm space-y-1">
+              <Label className="text-xs">Artículo</Label>
+              <BuscadorSelect
+                placeholder="Filtrar por artículo..."
+                emptyLabel="Sin artículos"
+                value={filtroArticulo}
+                label={filtroArticuloLabel}
+                buscar={(q) => buscarArticulos(COD_EMPRESA, q)}
+                itemKey={(a) => a.id_articulo}
+                itemTitle={(a) => labelArticulo(a)}
+                itemSub={(a) => (a.codigo_oem ? `OEM ${a.codigo_oem}` : `#${a.id_articulo}`)}
+                onSelect={(a) => {
+                  setFiltroArticulo(a.id_articulo);
+                  setFiltroArticuloLabel(labelArticulo(a));
+                }}
+              />
+            </div>
+            {filtroArticulo != null && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setFiltroArticulo(null);
+                  setFiltroArticuloLabel("");
+                }}
+              >
+                <X className="mr-2 h-4 w-4" />
+                Limpiar
+              </Button>
             )}
-          </>
-        )}
-      </div>
+          </div>
+
+          <div className="p-4 sm:p-5">
+            {isError ? (
+              <p className="p-8 text-center text-sm text-destructive">
+                {error instanceof Error ? error.message : "No se pudieron cargar los precios"}
+              </p>
+            ) : todos.length === 0 && !isLoading ? (
+              <div className="grid place-items-center py-16 text-center">
+                <div className="grid h-14 w-14 place-items-center rounded-2xl bg-primary/10 text-primary">
+                  <Tags className="h-6 w-6" />
+                </div>
+                <p className="mt-4 font-medium">Sin precios registrados</p>
+                <p className="mt-1 max-w-xs text-sm text-muted-foreground">
+                  Registra el primero con el botón “Nuevo precio”.
+                </p>
+              </div>
+            ) : (
+              <>
+                <DataTable
+                  columns={COLUMNAS}
+                  rows={filas}
+                  getRowId={(r) => r.id_precio}
+                  initialSort={{ key: "id_precio", dir: "desc" }}
+                  exportName="precios-ventas"
+                  actions={(r) => (
+                    <div className="flex items-center justify-end gap-1">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-muted-foreground hover:text-primary"
+                        onClick={() => setModal({ mode: "view", item: r })}
+                        aria-label="Ver"
+                      >
+                        <Eye className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-muted-foreground hover:text-primary"
+                        onClick={() => setModal({ mode: "edit", item: r })}
+                        aria-label="Editar"
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                        onClick={() => setAEliminar(r)}
+                        aria-label="Eliminar"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  )}
+                />
+                {filtroArticulo == null && hayMasMeses && (
+                  <div className="mt-4 flex flex-col items-center gap-1">
+                    <p className="text-xs text-muted-foreground">
+                      Mostrando {mesesVisibles} {mesesVisibles === 1 ? "mes" : "meses"} de{" "}
+                      {meses.length}
+                    </p>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setMesesVisibles((n) => n + 1)}
+                    >
+                      Mostrar más
+                    </Button>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        </>
+      )}
 
       <PrecioVentaDialog
         state={modal}

@@ -94,14 +94,23 @@ BEGIN
 
     -- c   = entrada de lista de la pagina (nivel 3)
     -- cat = entrada padre = categoria (nivel 2), via LIST_ENTRY_PARENT_ID
+    --
+    -- Los nombres de los campos son CONTRATO con el front (type PaginaMenu en
+    -- src/lib/api.ts): el sidebar agrupa por parent_entry_text, rotula con
+    -- entry_text y oculta categorias por nombre. Una version vieja de este
+    -- archivo escribia categoria_text/categoria_seq/pagina_seq; al re-ejecutarla
+    -- el front no encontraba parent_entry_text y metia todo en "General".
     FOR r IN (
         SELECT b.page_title,
                b.application_id,
                b.page_id,
                NVL(a.estadistica_user, 0)     estadistica_user,
-               cat.entry_text                 categoria_text,
-               NVL(cat.display_sequence, 0)   categoria_seq,
-               NVL(c.display_sequence, 0)     pagina_seq
+               c.entry_text                   entry_text,
+               cat.entry_text                 parent_entry_text,
+               c.list_entry_id                list_entry_id,
+               c.list_entry_parent_id         list_entry_parent_id,
+               NVL(cat.display_sequence, 0)   seq_categoria,
+               NVL(c.display_sequence, 0)     seq_pagina
           FROM roles_paginas a,
                APEX_APPLICATION_PAGES b,
                APEX_APPLICATION_LIST_ENTRIES c,
@@ -130,9 +139,12 @@ BEGIN
         APEX_JSON.WRITE('application_id', r.application_id);
         APEX_JSON.WRITE('page_id', r.page_id);
         APEX_JSON.WRITE('estadistica_user', r.estadistica_user);
-        APEX_JSON.WRITE('categoria_text', r.categoria_text);
-        APEX_JSON.WRITE('categoria_seq', r.categoria_seq);
-        APEX_JSON.WRITE('pagina_seq', r.pagina_seq);
+        APEX_JSON.WRITE('entry_text', r.entry_text);
+        APEX_JSON.WRITE('parent_entry_text', r.parent_entry_text);
+        APEX_JSON.WRITE('list_entry_id', r.list_entry_id);
+        APEX_JSON.WRITE('list_entry_parent_id', r.list_entry_parent_id);
+        APEX_JSON.WRITE('seq_categoria', r.seq_categoria);
+        APEX_JSON.WRITE('seq_pagina', r.seq_pagina);
         APEX_JSON.CLOSE_OBJECT;
     END LOOP;
 
