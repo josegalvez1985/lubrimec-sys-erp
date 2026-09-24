@@ -6,9 +6,15 @@
 -- devuelve con RETURNING). Multiempresa (cod_empresa). total = valor * cantidad.
 -- UK (fecha, valor) -> 409 en duplicado. FK (valor, cod_moneda) -> monedas_detalle.
 --
--- Permisos (igual que APEX): el usuario 'JOSEG' ve todo y puede filtrar por fecha;
--- cualquier otro usuario solo ve el conteo del dia de hoy. Se pasa p_app_user
--- (viene del token / sesion) para decidir.
+-- Permisos:
+--   - Consultar: todos los usuarios, cualquier fecha (filtro por fecha o ventana
+--     de dias).
+--   - Cargar (INSERTAR): todos; el que no es JOSEG solo en el dia actual (la
+--     fecha se fuerza a TRUNC(SYSDATE), se ignore lo que mande el front).
+--   - Modificar / eliminar: solo JOSEG (403 al resto).
+--   - Panel de totales (RESUMEN): solo JOSEG.
+-- En INSERTAR/ACTUALIZAR/ELIMINAR el usuario sale del TOKEN (VALIDAR_TOKEN), no
+-- de un parametro del request, para que no se pueda saltear el permiso.
 --
 -- El select de moneda usa el endpoint existente /monedas; el select de valores del
 -- billete (con imagen) usa /monedas/:id/detalle. Aqui no se replican esos endpoints.
@@ -51,14 +57,21 @@ CREATE OR REPLACE PACKAGE BODY PKG_CONTEO_EFECTIVO_LUBRIMEC AS
     RETURN PKG_AUTH_LUBRIMEC.VALIDAR_TOKEN(p_token);
   END f_usuario;
 
+  -- Administrador de la pagina: solo JOSEG modifica/elimina y carga otras fechas.
+  -- Recibe el usuario del TOKEN. UPPER/TRIM por si llega como se tipeo.
+  FUNCTION f_es_admin(p_usuario IN VARCHAR2) RETURN BOOLEAN IS
+  BEGIN
+    RETURN UPPER(TRIM(NVL(p_usuario, '-'))) = 'JOSEG';
+  END f_es_admin;
+
   --------------------------------------------------------------------------
   -- LISTAR (JOIN a monedas_detalle para nombre_imagen/mime; total calculado).
-  -- Permiso: JOSEG filtra por p_fecha (o ve todo si viene NULL); el resto solo hoy.
+  -- Todos consultan igual: p_fecha exacta, o los ultimos p_dias dias.
+  -- p_app_user ya no decide nada (se mantiene para no cambiar el endpoint).
   --------------------------------------------------------------------------
   PROCEDURE LISTAR(p_token IN VARCHAR2, p_cod_empresa IN NUMBER,
                    p_app_user IN VARCHAR2, p_fecha IN VARCHAR2, p_dias IN NUMBER) IS
     l_usuario VARCHAR2(255);
-    l_es_admin BOOLEAN := (UPPER(NVL(p_app_user, '-')) = 'JOSEG');
     l_fecha    DATE := TO_DATE(p_fecha, 'YYYY-MM-DD');
     -- Ventana de dias hacia atras (default 3). 0 o NULL = sin limite (todo).
     l_dias     NUMBER := NVL(p_dias, 3);
@@ -80,15 +93,11 @@ CREATE OR REPLACE PACKAGE BODY PKG_CONTEO_EFECTIVO_LUBRIMEC AS
           LEFT JOIN monedas m ON m.cod_moneda = a.cod_moneda
          WHERE a.cod_empresa = p_cod_empresa
            AND (
-                 -- JOSEG: si eligio fecha, esa fecha; si no, los ultimos l_dias
-                 -- dias (o todo si l_dias <= 0).
-                 (l_es_admin AND (
-                     (l_fecha IS NOT NULL AND TRUNC(a.fecha) = l_fecha)
-                     OR (l_fecha IS NULL AND (l_dias <= 0
-                          OR TRUNC(a.fecha) >= TRUNC(SYSDATE) - (l_dias - 1)))
-                 ))
-                 -- resto: solo hoy
-                 OR (NOT l_es_admin AND TRUNC(a.fecha) = TRUNC(SYSDATE))
+                 -- Si eligio fecha, esa fecha; si no, los ultimos l_dias dias (o
+                 -- todo si l_dias <= 0).
+                 (l_fecha IS NOT NULL AND TRUNC(a.fecha) = l_fecha)
+                 OR (l_fecha IS NULL AND (l_dias <= 0
+                      OR TRUNC(a.fecha) >= TRUNC(SYSDATE) - (l_dias - 1)))
                )
          ORDER BY a.fecha DESC, a.valor ASC
     ) LOOP
@@ -169,6 +178,11 @@ CREATE OR REPLACE PACKAGE BODY PKG_CONTEO_EFECTIVO_LUBRIMEC AS
       p_error(401, 'Unauthorized', 'Token invalido o expirado');
       RETURN;
     END IF;
+    -- Quien no es JOSEG solo carga en el dia actual: la fecha la pone el
+    -- servidor (se ignora la del front), asi no hay forma de cargar otro dia.
+    IF NOT f_es_admin(l_usuario) THEN
+      l_fecha := TRUNC(SYSDATE);
+    END IF;
 
     IF l_fecha IS NULL THEN
       p_error(400, 'Bad Request', 'La fecha es obligatoria'); RETURN;
@@ -225,6 +239,10 @@ CREATE OR REPLACE PACKAGE BODY PKG_CONTEO_EFECTIVO_LUBRIMEC AS
       p_error(401, 'Unauthorized', 'Token invalido o expirado');
       RETURN;
     END IF;
+    IF NOT f_es_admin(l_usuario) THEN
+      p_error(403, 'Forbidden', 'Solo el usuario JOSEG puede modificar conteos');
+      RETURN;
+    END IF;
 
     IF l_fecha IS NULL THEN
       p_error(400, 'Bad Request', 'La fecha es obligatoria'); RETURN;
@@ -279,6 +297,10 @@ CREATE OR REPLACE PACKAGE BODY PKG_CONTEO_EFECTIVO_LUBRIMEC AS
     l_usuario := f_usuario(p_token);
     IF l_usuario IS NULL THEN
       p_error(401, 'Unauthorized', 'Token invalido o expirado');
+      RETURN;
+    END IF;
+    IF NOT f_es_admin(l_usuario) THEN
+      p_error(403, 'Forbidden', 'Solo el usuario JOSEG puede eliminar conteos');
       RETURN;
     END IF;
 

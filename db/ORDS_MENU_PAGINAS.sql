@@ -111,8 +111,16 @@ BEGIN
            AND a.app_id = TO_NUMBER(l_app_id)
            AND a.app_user_id = l_app_user
            AND c.application_id = b.application_id
-           AND (TO_NUMBER(SUBSTR(c.current_for_pages_expression, 1, INSTR(c.current_for_pages_expression, ',') - 1)) = b.page_id
-                OR c.current_for_pages_expression = b.page_id)
+           -- Primera pagina de la expresion ('28,29' -> '28'; '6' -> '6') comparada
+           -- como TEXTO. Antes: TO_NUMBER(...) = page_id OR expresion = page_id; la
+           -- segunda parte convertia '28,29' a numero, lo que da ORA-01722 si la
+           -- sesion de ORDS usa punto decimal (en SQL Commands, con coma decimal,
+           -- no fallaba). Mismo resultado, sin conversion implicita.
+           AND TRIM(CASE WHEN INSTR(c.current_for_pages_expression, ',') > 0
+                         THEN SUBSTR(c.current_for_pages_expression, 1,
+                                     INSTR(c.current_for_pages_expression, ',') - 1)
+                         ELSE c.current_for_pages_expression
+                    END) = TO_CHAR(b.page_id)
            AND cat.list_entry_id (+) = c.list_entry_parent_id
            AND NVL(a.puede_consultar, 'N') = 'S'
          ORDER BY NVL(cat.display_sequence, 0), cat.entry_text, NVL(c.display_sequence, 0), b.page_title
@@ -132,11 +140,11 @@ BEGIN
     APEX_JSON.CLOSE_OBJECT;
 EXCEPTION
     WHEN OTHERS THEN
-        OWA_UTIL.STATUS_LINE(500, 'Internal Server Error', FALSE);
-        APEX_JSON.OPEN_OBJECT;
-        APEX_JSON.WRITE('success', FALSE);
-        APEX_JSON.WRITE('message', 'Error: ' || SQLERRM);
-        APEX_JSON.CLOSE_OBJECT;
+        -- Los headers ya se cerraron: STATUS_LINE aca solo imprimia el texto
+        -- "Status: 500 ..." en el cuerpo, y el JSON de APEX_JSON quedaba a medio
+        -- armar, asi que el error nunca se veia. Se escribe el mensaje directo.
+        HTP.P('{"success":false,"message":"Error: '
+              || REPLACE(REPLACE(SQLERRM, '\', '\\'), '"', '\"') || '"}');
 END;
 ~');
 

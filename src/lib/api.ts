@@ -1850,9 +1850,10 @@ export async function buscarPersonas(codEmpresa: number, q: string): Promise<Pro
 
 // ─── Conteo de Efectivo (página 85, modal 86) ────────────────────────────────
 // CRUD de CONTEO_EFECTIVO. PK id_conteo (IDENTITY). total = valor·cantidad.
-// Permisos: JOSEG ve todo/filtra por fecha; resto solo hoy (lo resuelve el backend
-// con app_user). El select de moneda usa listarMonedas; el de valores (con imagen
-// del billete) usa listarMonedasDetalle.
+// Permisos: todos consultan cualquier fecha; el que no es JOSEG carga solo en el día
+// actual; modificar/eliminar solo JOSEG (el backend lo decide con el usuario del
+// token). El select de moneda usa listarMonedas; el de valores (con imagen del
+// billete) usa listarMonedasDetalle.
 
 export type ConteoEfectivo = {
   id_conteo: number;
@@ -1874,6 +1875,13 @@ export type ConteoEfectivoInput = {
 };
 
 // Valores del billete de una moneda (con imagen), para el select del modal.
+// URL directa del BLOB de la foto de un billete (endpoint público, para <img src>).
+// No usa authFetch: el navegador no manda Authorization en un <img>. Cada miniatura
+// baja solo su imagen, en vez de los ~440 KB de base64 de monedas/:id/detalle.
+export function urlImagenBillete(codMoneda: number, valor: number): string {
+  return url(`monedas/${codMoneda}/detalle/${valor}/imagen`);
+}
+
 export async function listarMonedasDetalle(codMoneda: number): Promise<MonedaDetalle[]> {
   const data = await authFetch(`monedas/${codMoneda}/detalle`);
   return (data.data ?? []) as MonedaDetalle[];

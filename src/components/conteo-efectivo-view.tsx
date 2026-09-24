@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { Plus, Eye, Pencil, Trash2, Loader2, Coins, Banknote, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -35,6 +36,7 @@ import {
   obtenerResumenConteo,
   listarMonedas,
   listarMonedasDetalle,
+  urlImagenBillete,
   type ConteoEfectivo,
   type ConteoEfectivoInput,
 } from "@/lib/api";
@@ -56,6 +58,39 @@ type ModalState =
   | { mode: "edit"; item: ConteoEfectivo }
   | { mode: "view"; item: ConteoEfectivo };
 
+// Miniatura de la foto del billete (MONEDAS_DETALLE) por URL directa al endpoint
+// público: el navegador la baja en paralelo, sin token y sin esperar a ninguna otra
+// consulta. Si el billete no tiene foto (404) queda un hueco del mismo ancho, así
+// los números siguen alineados.
+// Reintentos: ORDS de oracleapex.com a veces responde 404 a una imagen que SÍ
+// existe (bajo carga, o mientras un endpoint recién creado se propaga a todos sus
+// nodos; ver el proxy de imágenes en GUIA_FRONT). Sin reintento, un 404 pasajero
+// dejaba la miniatura vacía hasta recargar la página.
+const REINTENTOS_BILLETE = 2;
+
+function MiniaturaBillete({ fila }: { fila: ConteoEfectivo }) {
+  const [intento, setIntento] = useState(0);
+  const [fallo, setFallo] = useState(false);
+  if (fallo) return <span className="h-8 w-16 shrink-0" aria-hidden />;
+  const url = urlImagenBillete(fila.cod_moneda, fila.valor);
+  return (
+    <img
+      // ?r=N fuerza una petición nueva en cada reintento.
+      src={intento ? `${url}?r=${intento}` : url}
+      alt={`Billete ${fmtNum(fila.valor)}`}
+      loading="lazy"
+      onError={() => {
+        if (intento < REINTENTOS_BILLETE) {
+          setTimeout(() => setIntento((i) => i + 1), 1500);
+        } else {
+          setFallo(true);
+        }
+      }}
+      className="h-8 w-16 shrink-0 rounded border border-border bg-muted/30 object-contain"
+    />
+  );
+}
+
 const COLUMNAS: Column<ConteoEfectivo>[] = [
   {
     key: "fecha",
@@ -69,7 +104,13 @@ const COLUMNAS: Column<ConteoEfectivo>[] = [
     header: "Valor",
     num: true,
     accessor: (r) => r.valor,
-    render: (r) => <span className="font-mono">{fmtNum(r.valor)}</span>,
+    render: (r) => (
+      <span className="inline-flex items-center justify-end gap-2">
+        {/* key: si la fila cambia de billete, la miniatura arranca de cero. */}
+        <MiniaturaBillete key={`${r.cod_moneda}:${r.valor}`} fila={r} />
+        <span className="font-mono">{fmtNum(r.valor)}</span>
+      </span>
+    ),
     hideable: false,
   },
   {
@@ -98,11 +139,14 @@ export function ConteoEfectivoView() {
   const qc = useQueryClient();
   const sesion = getSesion();
   const appUser = sesion?.app_user ?? "";
+  // Solo JOSEG modifica/elimina, carga en cualquier fecha y ve el panel de totales.
+  // El resto consulta cualquier fecha y carga solo en el día actual. Esto solo
+  // decide qué se muestra: el backend lo controla igual con el usuario del token.
   const esAdmin = appUser.toUpperCase() === "JOSEG";
 
   const [modal, setModal] = useState<ModalState>({ mode: "closed" });
   const [aEliminar, setAEliminar] = useState<ConteoEfectivo | null>(null);
-  const [fecha, setFecha] = useState(""); // filtro por fecha exacta (solo admin)
+  const [fecha, setFecha] = useState(""); // filtro por fecha exacta
   const [dias, setDias] = useState(3); // ventana inicial: últimos 3 días
 
   // Escalones del botón "Mostrar más". 0 = todos.
@@ -113,9 +157,8 @@ export function ConteoEfectivoView() {
   const diasEfectivo = fecha ? undefined : dias;
 
   const { data, isLoading, isError, error } = useQuery({
-    queryKey: ["conteo-efectivo", COD_EMPRESA, appUser, esAdmin ? fecha : "hoy", diasEfectivo],
-    queryFn: () =>
-      listarConteoEfectivo(COD_EMPRESA, appUser, esAdmin ? fecha : undefined, diasEfectivo),
+    queryKey: ["conteo-efectivo", COD_EMPRESA, appUser, fecha, diasEfectivo],
+    queryFn: () => listarConteoEfectivo(COD_EMPRESA, appUser, fecha || undefined, diasEfectivo),
     retry: false,
   });
 
@@ -136,6 +179,7 @@ export function ConteoEfectivoView() {
       qc.invalidateQueries({ queryKey: ["conteo-efectivo-resumen"] });
       setAEliminar(null);
     },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "No se pudo eliminar el conteo"),
   });
 
   const filas = data ?? [];
@@ -147,7 +191,7 @@ export function ConteoEfectivoView() {
         <div>
           <h2 className="font-display text-xl font-bold">Conteo de Efectivo</h2>
           <p className="text-sm text-muted-foreground">
-            {esAdmin ? "Arqueo de caja por fecha" : "Conteo del día"} · Total{" "}
+            Arqueo de caja por fecha · Total{" "}
             <span className="font-mono font-semibold text-foreground">{fmtNum(totalGeneral)}</span>
           </p>
         </div>
@@ -161,28 +205,27 @@ export function ConteoEfectivoView() {
         </Button>
       </div>
 
-      {esAdmin && (
-        <div className="flex flex-wrap items-end gap-3 border-b border-border p-4 sm:px-5">
-          <div className="space-y-1">
-            <Label htmlFor="filtro_fecha" className="text-xs">
-              Fecha
-            </Label>
-            <Input
-              id="filtro_fecha"
-              type="date"
-              value={fecha}
-              onChange={(e) => setFecha(e.target.value)}
-              className="w-44"
-            />
-          </div>
-          {fecha && (
-            <Button variant="outline" size="sm" onClick={() => setFecha("")}>
-              <X className="mr-2 h-4 w-4" />
-              Limpiar
-            </Button>
-          )}
+      {/* Filtro por fecha: para todos (consultar otras fechas no requiere permiso). */}
+      <div className="flex flex-wrap items-end gap-3 border-b border-border p-4 sm:px-5">
+        <div className="space-y-1">
+          <Label htmlFor="filtro_fecha" className="text-xs">
+            Fecha
+          </Label>
+          <Input
+            id="filtro_fecha"
+            type="date"
+            value={fecha}
+            onChange={(e) => setFecha(e.target.value)}
+            className="w-44"
+          />
         </div>
-      )}
+        {fecha && (
+          <Button variant="outline" size="sm" onClick={() => setFecha("")}>
+            <X className="mr-2 h-4 w-4" />
+            Limpiar
+          </Button>
+        )}
+      </div>
 
       {esAdmin && resumen?.visible && (
         <div className="grid grid-cols-2 gap-3 border-b border-border p-4 sm:grid-cols-4 sm:px-5">
@@ -230,31 +273,36 @@ export function ConteoEfectivoView() {
                 >
                   <Eye className="h-4 w-4" />
                 </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8 text-muted-foreground hover:text-primary"
-                  onClick={() => setModal({ mode: "edit", item: r })}
-                  aria-label="Editar"
-                >
-                  <Pencil className="h-4 w-4" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                  onClick={() => setAEliminar(r)}
-                  aria-label="Eliminar"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
+                {/* Modificar y eliminar: solo JOSEG. */}
+                {esAdmin && (
+                  <>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 text-muted-foreground hover:text-primary"
+                      onClick={() => setModal({ mode: "edit", item: r })}
+                      aria-label="Editar"
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                      onClick={() => setAEliminar(r)}
+                      aria-label="Eliminar"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </>
+                )}
               </div>
             )}
           />
         )}
 
-        {/* Cargar más días (solo admin, sin fecha exacta y si aún no es "todos") */}
-        {esAdmin && !fecha && dias !== 0 && filas.length > 0 && (
+        {/* Cargar más días (sin fecha exacta y si aún no es "todos") */}
+        {!fecha && dias !== 0 && filas.length > 0 && (
           <div className="mt-4 flex flex-col items-center gap-1">
             <p className="text-xs text-muted-foreground">Mostrando los últimos {dias} días</p>
             <Button variant="outline" size="sm" onClick={() => setDias(siguienteEscalon)}>
@@ -266,10 +314,11 @@ export function ConteoEfectivoView() {
 
       <ConteoDialog
         state={modal}
+        esAdmin={esAdmin}
         onClose={() => setModal({ mode: "closed" })}
         onSaved={() => {
           qc.invalidateQueries({ queryKey: ["conteo-efectivo"] });
-      qc.invalidateQueries({ queryKey: ["conteo-efectivo-resumen"] });
+          qc.invalidateQueries({ queryKey: ["conteo-efectivo-resumen"] });
           setModal({ mode: "closed" });
         }}
       />
@@ -344,16 +393,21 @@ function TotalCard({
 
 function ConteoDialog({
   state,
+  esAdmin,
   onClose,
   onSaved,
 }: {
   state: ModalState;
+  esAdmin: boolean;
   onClose: () => void;
   onSaved: () => void;
 }) {
   const open = state.mode !== "closed";
   const isView = state.mode === "view";
   const item = state.mode === "edit" || state.mode === "view" ? state.item : null;
+  // Quien no es JOSEG carga solo en el día actual: la fecha queda fija en hoy (el
+  // backend además la fuerza al día del servidor).
+  const fechaFija = !esAdmin && state.mode === "create";
 
   const [fecha, setFecha] = useState(hoy());
   const [codMoneda, setCodMoneda] = useState<number | null>(null);
@@ -445,9 +499,12 @@ function ConteoDialog({
                 type="date"
                 value={fecha}
                 onChange={(e) => setFecha(e.target.value)}
-                disabled={isView || saving}
+                disabled={isView || saving || fechaFija}
                 required={!isView}
               />
+              {fechaFija && (
+                <p className="text-xs text-muted-foreground">Solo se carga en el día actual.</p>
+              )}
             </div>
             <div className="space-y-2">
               <Label htmlFor="cod_moneda">Moneda</Label>

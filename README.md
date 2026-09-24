@@ -342,7 +342,11 @@ dinámicamente desde el endpoint `menu/paginas`.
 - **Parámetros** (page_id 89/90) — CRUD de `PARAMETROS` (parámetro/valor/observación);
   parámetro y valor se guardan en MAYÚSCULAS. Backend: `db/parametros_sql.sql`.
 - **Conteo de Efectivo** (page_id 85/86) — CRUD de `CONTEO_EFECTIVO` (`total = valor × cantidad`).
-  Permisos por usuario: JOSEG filtra por fecha y ve el panel de totales; el resto solo el día de hoy.
+  Permisos por usuario: todos consultan cualquier fecha (filtro y "Mostrar más"); el que no es
+  JOSEG carga conteos **solo en el día actual** (el backend fuerza la fecha); **modificar y
+  eliminar solo JOSEG** (403 al resto, decidido con el usuario del token), igual que el panel
+  de totales. La grilla muestra la foto de cada billete al lado del valor (endpoint público
+  `monedas/:id/detalle/:valor/imagen`, con reintento ante 404 pasajeros de ORDS).
   En el modal, moneda y **valor del billete** se eligen con `SelectorModal`: una grilla de tarjetas
   donde cada denominación muestra **la imagen del billete** guardada en `MONEDAS_DETALLE`. Backend:
   `db/conteo_efectivo_sql.sql`.

@@ -29,6 +29,8 @@ CREATE OR REPLACE PACKAGE PKG_MONEDAS_LUBRIMEC AS
       p_imagen_base64 IN CLOB, p_nombre_imagen IN VARCHAR2, p_mime_type IN VARCHAR2);
   PROCEDURE ELIMINAR_DETALLE(
       p_token IN VARCHAR2, p_cod_moneda IN NUMBER, p_valor IN NUMBER);
+  -- BLOB crudo de la foto de una denominacion (publico, para <img src>).
+  PROCEDURE SERVIR_IMAGEN_DETALLE(p_cod_moneda IN NUMBER, p_valor IN NUMBER);
 
 END PKG_MONEDAS_LUBRIMEC;
 /
@@ -343,6 +345,41 @@ CREATE OR REPLACE PACKAGE BODY PKG_MONEDAS_LUBRIMEC AS
       p_error(500, 'Internal Server Error', 'Error: ' || SQLERRM);
   END ELIMINAR_DETALLE;
 
+  --------------------------------------------------------------------------
+  -- DETALLE: SERVIR_IMAGEN_DETALLE — BLOB crudo con su mime, para <img src>
+  -- (miniatura del billete en Conteo de Efectivo, pag 85). Sin auth: el
+  -- navegador no manda Authorization en un <img>; solo expone la foto del
+  -- billete. Mismo patron que PKG_ARTICULOS_LUBRIMEC.SERVIR_IMAGEN.
+  --------------------------------------------------------------------------
+  PROCEDURE SERVIR_IMAGEN_DETALLE(p_cod_moneda IN NUMBER, p_valor IN NUMBER) IS
+    l_blob BLOB;
+    l_mime monedas_detalle.mime_type%TYPE;
+  BEGIN
+    BEGIN
+      SELECT archivo_imagen, mime_type
+        INTO l_blob, l_mime
+        FROM monedas_detalle
+       WHERE cod_moneda = p_cod_moneda AND valor = p_valor;
+    EXCEPTION
+      WHEN NO_DATA_FOUND THEN
+        OWA_UTIL.STATUS_LINE(404, 'Not Found', FALSE);
+        OWA_UTIL.HTTP_HEADER_CLOSE;
+        RETURN;
+    END;
+
+    IF l_blob IS NULL OR DBMS_LOB.GETLENGTH(l_blob) = 0 THEN
+      OWA_UTIL.STATUS_LINE(404, 'Not Found', FALSE);
+      OWA_UTIL.HTTP_HEADER_CLOSE;
+      RETURN;
+    END IF;
+
+    OWA_UTIL.MIME_HEADER(NVL(l_mime, 'image/png'), FALSE);
+    HTP.P('Content-Length: ' || DBMS_LOB.GETLENGTH(l_blob));
+    HTP.P('Cache-Control: no-store');
+    OWA_UTIL.HTTP_HEADER_CLOSE;
+    WPG_DOCLOAD.DOWNLOAD_FILE(l_blob);
+  END SERVIR_IMAGEN_DETALLE;
+
 END PKG_MONEDAS_LUBRIMEC;
 /
 
@@ -356,6 +393,7 @@ END PKG_MONEDAS_LUBRIMEC;
 --   GET    /lubrimec/monedas/:id/detalle           -> listar detalle
 --   POST   /lubrimec/monedas/:id/detalle           -> upsert detalle (valor en body)
 --   DELETE /lubrimec/monedas/:id/detalle/:valor    -> eliminar detalle
+--   GET    /lubrimec/monedas/:id/detalle/:valor/imagen -> foto del billete (publico)
 --------------------------------------------------------------------------------
 
 BEGIN
@@ -567,6 +605,26 @@ END;
   ORDS.DEFINE_PARAMETER(p_module_name => 'lubrimec', p_pattern => 'monedas/:id/detalle/:valor', p_method => 'DELETE',
       p_name => 'Authorization', p_bind_variable_name => 'authorization',
       p_source_type => 'HEADER', p_param_type => 'STRING', p_access_method => 'IN');
+
+  ----------------------------------------------------------------------------
+  -- /monedas/:id/detalle/:valor/imagen -> BLOB de la foto del billete.
+  -- Publico (sin Authorization): el navegador no manda el header en un <img>.
+  ----------------------------------------------------------------------------
+  BEGIN ORDS.DELETE_HANDLER('lubrimec', 'monedas/:id/detalle/:valor/imagen', 'GET'); EXCEPTION WHEN OTHERS THEN NULL; END;
+  BEGIN
+    ORDS.DEFINE_TEMPLATE(p_module_name => 'lubrimec', p_pattern => 'monedas/:id/detalle/:valor/imagen',
+        p_priority => 0, p_etag_type => 'HASH', p_comments => NULL);
+  EXCEPTION WHEN OTHERS THEN NULL; END;
+
+  ORDS.DEFINE_HANDLER(
+      p_module_name => 'lubrimec', p_pattern => 'monedas/:id/detalle/:valor/imagen', p_method => 'GET',
+      p_source_type => 'plsql/block',
+      p_source      => q'~
+BEGIN
+    PKG_MONEDAS_LUBRIMEC.SERVIR_IMAGEN_DETALLE(
+        p_cod_moneda => TO_NUMBER(:id), p_valor => TO_NUMBER(:valor));
+END;
+~');
 
   COMMIT;
 EXCEPTION
