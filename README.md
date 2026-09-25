@@ -254,6 +254,34 @@ dinámicamente desde el endpoint `menu/paginas`.
   factura, % recargo del rubro, **precio de venta sugerido** (`CEIL((compra·(1+recargo/100))/1000)·
   1000` con delivery prorrateado) y **precio de venta anterior** (`pkg_ventas.fn_precio_venta`).
   Grilla con margen/rubro/marca/OEM. Backend: `db/precios_ventas_sql.sql`.
+  - **Pestaña "Evolución"** (`evolucion-precios.tsx`, lazy con recharts): cómo cambió el precio
+    de venta y el costo en cada registro. Patrón en [src/GUIA_FRONT.md](src/GUIA_FRONT.md)
+    ("Reporte con gráficos" y "Filtro multi-selección con chips").
+    - **Sin endpoint propio:** reusa `listarPreciosVentas` y calcula en el front lo que sería un
+      `LAG()` (precio anterior, variación Gs./%, variación del costo, días entre cambios)
+      **sobre el historial entero, y recién después filtra el período** (si no, el primer cambio
+      del período quedaría sin precio anterior).
+    - **Filtros:** rango de fechas con atajos (3/6/12 meses/Todo), búsqueda, facetas
+      Rubro/Marca/**Viscosidad** y "Solo cambios de precio" (oculta los re-registros con el mismo
+      precio). La viscosidad sale del `LEFT JOIN viscosidad_lubricantes` del `LISTAR` de
+      `db/precios_ventas_sql.sql`; la faceta solo aparece si el backend manda el campo.
+    - **Filtro por artículo (multi, hasta 8):** buscador + chips. Acota la tabla y ofrece solo los
+      artículos que pasan los demás filtros (las facetas no se acotan por él). Un elegido que deja
+      de pasar otro filtro queda como chip atenuado.
+    - **Gráfico escalonado** (un precio rige hasta el cambio siguiente):
+      - Sin artículos elegidos o con uno: precio de venta y costo de ese artículo (por defecto el
+        del cambio más reciente; el ícono de cada fila de la tabla lo cambia).
+      - Con **2 o más: comparación** en Gs. con un solo eje. Cada artículo en su color y, en ese
+        color, **precio de venta con línea llena y costo con línea punteada** (el color dice qué
+        artículo, el trazo qué medida). El color se asigna al elegir el artículo (tokens
+        `--viz-serie-1..8` de `styles.css`) y no cambia aunque se quiten otros.
+      - Selector **Ambos / Precio venta / Costo** en el panel del gráfico.
+    - **Tabla de detalle** (fecha, anterior → nuevo, variación Gs./%, costo, variación del costo,
+      margen, días) con export a Excel.
+    - **PDF:** logo, filtros aplicados, el gráfico tal como se ve (respeta el selector de líneas)
+      y la tabla (`exportarPdfReporte` + `graficoAPng` en `src/lib/export.ts`).
+    - **Descartado por el usuario:** KPIs, gráficos por mes, ranking de mayores aumentos y
+      variación por rubro. Se probaron y no le servían; no volver a proponerlos.
 - **Compras por Artículos** (page_id 55) — reporte de solo lectura de `COMPRAS_ARTICULOS`
   (`tip_comprobante != 'AJS'`). Búsqueda + facetas Proveedor/Fecha/Referencia, **carga incremental
   por mes** ("Mostrar más"), imagen por artículo, total al pie y export. Backend:
@@ -350,6 +378,30 @@ dinámicamente desde el endpoint `menu/paginas`.
   En el modal, moneda y **valor del billete** se eligen con `SelectorModal`: una grilla de tarjetas
   donde cada denominación muestra **la imagen del billete** guardada en `MONEDAS_DETALLE`. Backend:
   `db/conteo_efectivo_sql.sql`.
+  - **Pestañas Conteo / Comparación** (`conteo-efectivo-pagina.tsx`): la pestaña Conteo es la
+    vista de siempre **sin ningún cambio** (`conteo-efectivo-view.tsx`; queda montada al cambiar
+    de pestaña, así no pierde su filtro). En `vistas.tsx` la pág 85 apunta al envoltorio.
+  - **Comparación** (`comparacion-conteo.tsx`, lazy con recharts): el conteo de una fecha contra
+    el **conteo anterior** (el último previo, no "ayer": los domingos sin conteo no dejan el
+    gráfico vacío), los **últimos 7 o 30** conteos, o **fechas elegidas** (buscador + chips,
+    hasta 7).
+    **Sin endpoint nuevo:** pide el historial al mismo `LISTAR` con `dias=0` (misma `queryKey`
+    que "Mostrar todos" del listado) y agrupa en el front por fecha y por billete. La ven todos,
+    igual que el listado. Tres piezas, de arriba hacia abajo:
+    - **¿Cuánto cambió?** Tarjeta con el total del día, la diferencia en Gs. y % contra el
+      conteo anterior o el promedio, la diferencia de billetes y **el billete que más explica la
+      diferencia** (el de mayor diferencia en plata).
+    - **¿Qué billetes cambiaron?** Siempre **barras comparativas**: por billete, una barra por
+      fecha con su color (el día analizado en naranja), largo = **monto** (cantidad × valor) y el
+      monto escrito al final; la cantidad de billetes va en el tooltip. En el eje, la **foto del
+      billete** al lado del valor. A la derecha, en una columna fija, la diferencia en plata del
+      día contra la referencia. Hasta 7 fechas comparadas cada una tiene su barra (8 colores
+      categóricos con el día); con **Últimos 30** las barras son día contra **promedio**.
+    - **¿Es normal?** (solo contra varias fechas): total de cada conteo en orden cronológico, cada
+      fecha con el mismo color que en el gráfico de billetes y una línea punteada en el promedio.
+    - Tabla por billete (día, referencia, diferencia en billetes y en plata) con Excel, y
+      **PDF** con KPIs, los gráficos y la tabla. Si hay conteos en más de una moneda aparece un
+      selector (no se suman monedas distintas).
 - **Planilla para inventarios** (page_id 112/113/115) — conteos **abiertos** de `INVENTARIO`.
   "Crear Planilla" (pág 113) genera conteos masivos por Rubro/Marca/Viscosidad (LOVs en cascada
   derivadas de los artículos pendientes según la fecha del parámetro `FECHA_INVENTARIO`). El modal

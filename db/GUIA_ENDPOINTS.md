@@ -465,6 +465,17 @@ anónimo que antes se ejecutaba a mano en la BD.
 
 ## Notas / gotchas
 
+- **`VISCOSIDAD_LUBRICANTES` no tiene `cod_empresa`:** se une solo por id
+  (`LEFT JOIN viscosidad_lubricantes vi ON vi.id_viscosidad = ar.id_viscosidad`). Agregarle
+  `AND vi.cod_empresa = ...` da ORA-00904. Modelos: `consulta_precios_sql.sql`,
+  `articulos_mas_vendidos_sql.sql` y el `LISTAR` de `precios_ventas_sql.sql`.
+
+- **Sumar un campo a un `LISTAR` que usan varias vistas** (el de `precios_ventas_sql.sql` lo usan
+  la grilla de la pág 34 y la pestaña Evolución): igual que con las LOVs compartidas, agregar es
+  seguro y quitar no. En el front el campo va **opcional** (`viscosidad?: string | null`) y la UI
+  que depende de él se **oculta si no llega** (`hayViscosidad` en `evolucion-precios.tsx`): así
+  la pantalla no queda con un filtro vacío mientras el `.sql` no se re-ejecute en la BD.
+
 - **Un JOIN que multiplica filas duplica todos los `SUM` de la query (fan-out).** Antes de
   sumar, revisar que CADA join de la query sea 1:1 con el grano de la fila. Basta una tabla
   auxiliar con dos filas para la misma clave y todos los totales salen multiplicados, sin ningún

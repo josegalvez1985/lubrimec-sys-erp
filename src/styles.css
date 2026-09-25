@@ -172,6 +172,16 @@
   --viz-contexto: #898781;
   --viz-grilla: #e1e0d9;
   --viz-eje: #c3c2b7;
+  /* Categóricas (comparar artículos): orden fijo validado con la skill dataviz;
+     el color sigue a la entidad, nunca al puesto. */
+  --viz-serie-1: #2a78d6;
+  --viz-serie-2: #eb6834;
+  --viz-serie-3: #1baf7a;
+  --viz-serie-4: #eda100;
+  --viz-serie-5: #e87ba4;
+  --viz-serie-6: #008300;
+  --viz-serie-7: #4a3aa7;
+  --viz-serie-8: #e34948;
 
   --gradient-primary: linear-gradient(135deg, var(--primary), var(--primary-glow));
   --gradient-hero: linear-gradient(135deg, oklch(0.18 0.01 50), oklch(0.12 0.02 50));
@@ -222,6 +232,14 @@
   --viz-contexto: #898781;
   --viz-grilla: #2c2c2a;
   --viz-eje: #383835;
+  --viz-serie-1: #3987e5;
+  --viz-serie-2: #d95926;
+  --viz-serie-3: #199e70;
+  --viz-serie-4: #c98500;
+  --viz-serie-5: #d55181;
+  --viz-serie-6: #008300;
+  --viz-serie-7: #9085e9;
+  --viz-serie-8: #e66767;
 
   --gradient-hero: linear-gradient(135deg, oklch(0.1 0.012 50), oklch(0.18 0.025 50));
   --shadow-glow: 0 10px 40px -10px color-mix(in oklab, var(--primary) 55%, transparent);

@@ -610,7 +610,8 @@ Uso desde JSX con arbitrary values de Tailwind v4 (verificados en el CSS compila
 - Layouts propios: unidades relativas y `minmax(0,1fr)`, nunca anchos fijos mayores al
   viewport.
 - El `<main>` del shell lleva `min-w-0` (ver "Gotchas de UI").
-- Gráficos: `ResponsiveContainer`.
+- Gráficos: `ResponsiveContainer` (o el `Lienzo` de `evolucion-precios` si el gráfico también
+  va al PDF, ver "Reporte con gráficos").
 
 ## Reglas transversales (obligatorias en toda vista nueva)
 
@@ -701,7 +702,8 @@ el conteo `(N)` de una faceta, pasar `n: 0` en sus valores.
 conteo `(N)` — construir los valores con `.map((valor) => ({ valor, n: 0 }))` (basta un Set de
 valores, no hace falta contar). Pedido explícito del usuario, varias veces. No copiar el patrón
 con conteo de vistas viejas (`articulos-sin-barra-view`). Modelos: `precios-mayoristas-view`,
-`articulos-no-inventariados-view`.
+`articulos-no-inventariados-view`, `evolucion-precios` (ordena las opciones por actividad pero
+sin mostrar el número).
 
 ## Punto de Venta (POS, pág 39) — carrito en React
 
@@ -809,6 +811,107 @@ cambia nada y con filtro queda acotado solo.
     las columnas, **decirlo en pantalla**: acá el subtítulo avisa "existencia, ventas y compras
     acotadas al proveedor filtrado".
 
+## Reporte con gráficos (modelo: `evolucion-precios.tsx`)
+
+Pestaña "Evolución" de Precios de Ventas (pág 34). Lo que sirve para cualquier reporte con
+gráficos:
+
+- **Calcular en el front cuando el dataset ya está.** No tiene endpoint propio: reusa
+  `listarPreciosVentas` (~2000 filas) con la **misma `queryKey`** que la grilla, así cambiar de
+  pestaña no vuelve a pedir nada. El `LAG()` (precio anterior, variación, días) se calcula
+  **sobre el historial entero y recién después se filtra el período**: si se filtrara antes, el
+  primer cambio del período quedaría sin precio anterior.
+- **Precios con línea escalonada** (`type="stepAfter"`): un precio rige hasta el cambio
+  siguiente; una línea inclinada inventaría subas graduales que no existieron. La serie arranca
+  con el precio vigente al inicio del período y se estira hasta hoy (`serieArticulo`).
+- **Un solo eje Y, nunca dos.** Si hay dos medidas de la misma unidad (precio y costo, ambos en
+  Gs.) van en el mismo eje.
+- **Color = entidad, trazo = medida.** Al comparar artículos, cada uno tiene su color y dentro de
+  ese color la venta va con línea llena y el costo con punteada (`strokeDasharray="5 4"`). Un
+  color por línea no escala: 8 artículos × 2 medidas serían 16 colores indistinguibles. La
+  leyenda lleva una clave neutra del trazo ("— Precio venta · - - Costo") y un renglón por
+  artículo con su color y sus valores finales.
+- **Colores categóricos: orden fijo y siguen a la entidad.** `--viz-serie-1..8` es la paleta
+  validada (daltonismo, contraste) de la skill dataviz, en claro y oscuro; si se cambia, volver a
+  validarla con su `scripts/validate_palette.js`. Cada artículo toma el **primer slot libre al
+  elegirlo** y lo guarda (`{ id, slot }`): quitar uno no repinta a los demás. Máximo 8 (uno por
+  color); un 9.º color no se inventa.
+- **Tooltip compartido = un solo dataset.** Para que al pasar el mouse se vean todas las series
+  en la misma fecha, se arma **una** tabla con una columna por serie (`v<id>`, `k<id>`) y el valor
+  vigente en cada fecha (`armarComparacion`), en vez de pasar un `data` distinto a cada `<Line>`.
+- **Rótulos directos solo si entran:** valor final al lado de cada línea con hasta 4 líneas; con
+  más se pisan y queda la leyenda. Nunca un número en cada punto.
+- **Selector de qué se ve** ("Ambos / Precio venta / Costo"): un estado que reciben tanto el
+  gráfico de pantalla como el del PDF, y que también ajusta subtítulo y leyenda.
+- **Pantalla y PDF con el mismo componente:** cada gráfico recibe `pal` (`PAL_PANTALLA` con
+  `var(--viz-*)` o `PAL_PDF` con hex, porque dentro de la imagen no se resuelven variables) y un
+  `fijo` opcional (tamaño fijo para el PDF, `ResponsiveContainer` en pantalla), vía `Lienzo`.
+  Sin animación (`isAnimationActive={false}`): el PDF no captura un cuadro a medio animar.
+- **Antes de sumar KPIs o gráficos, preguntar si le sirven al usuario.** En este reporte se
+  hicieron y se sacaron a pedido: KPIs, cambios por mes, ranking de aumentos y variación por rubro.
+
+**Otro modelo: `comparacion-conteo.tsx`** (Conteo de Efectivo, pestaña Comparación). Mismas
+reglas, con piezas propias de una comparación "un día contra otros":
+
+- **Barras comparativas, una por fecha y cada una con su color** (pedido del usuario: se probó
+  una franja mín–máx con un punto y la cambió por barras). El día analizado va en el acento
+  (naranja) y cada fecha comparada en un color categórico (`--viz-serie-*` sin el naranja, orden
+  validado con el script de la skill). Tope = colores: hasta 7 fechas + el día; con más (Últimos
+  30) las barras son día contra promedio, en gris. La tendencia usa el mismo color por fecha.
+- **El largo de la barra es el monto** (cantidad × valor) y el monto va escrito al final de cada
+  barra (`LabelList`), también a pedido; la cantidad de billetes va en el tooltip. Dejar aire a la
+  derecha para el rótulo: `domain={[0, (max) => max * 1.25]}`.
+- **Imagen en el eje:** `tick` propio del `YAxis` que dibuja un `<image>` SVG con la foto del
+  billete al lado del valor. En pantalla alcanza con la URL; **en el PDF no**: dentro del PNG que
+  arma `graficoAPng` las imágenes externas no se cargan, así que antes se bajan como data URL
+  (`fotosComoDataUrl`).
+- **Números que no entran al lado de la marca → columna fija:** un segundo `YAxis`
+  (`yAxisId="dif"`, `orientation="right"`) con `tick` propio que escribe la diferencia de cada
+  fila.
+- **Gráfico alto en el PDF:** `anchoCompleto: true` en el `GraficoPdf` (ocupa su propia fila a
+  lo ancho) y una variante `compacto` con barras más finas para que entre debajo de los KPIs en
+  la primera hoja.
+- **La tarjeta principal responde en texto:** "+294.000 (+7,7 %) vs. el conteo del jue 24/09" y
+  "lo que más explica la diferencia: billetes de 100.000 (+9)". Se entiende sin leer un gráfico.
+
+## Filtro multi-selección con chips (modelo: `evolucion-precios.tsx`)
+
+Para elegir varios valores de un catálogo grande (ej. artículos a comparar), donde una faceta de
+checkboxes no sirve:
+
+- **Buscador para agregar + chips para quitar.** `BuscadorSelect` con `value={null}` y
+  `label=""` (siempre vacío: solo agrega) y, al lado, un chip por elegido con un punto de su
+  color, el nombre truncado y una ✕ (`aria-label="Quitar …"`). Con 2 o más, botón "Quitar todos".
+- **El catálogo se arma ANTES de aplicar este mismo filtro,** con las filas que pasan los demás
+  (período, búsqueda, facetas, switches), y sin los ya elegidos. Si se armara después, al elegir
+  uno la lista quedaría solo con él.
+- **Toda lista de elección sigue a los demás filtros.** Al tildar un Rubro, el buscador ofrece
+  solo artículos de ese rubro. Es la misma regla de las facetas dependientes.
+- **Un elegido que deja de pasar otro filtro no desaparece:** queda como chip atenuado y tachado
+  (`opacity-50 line-through`, con `title` que explica por qué). El filtro usa solo los vigentes.
+- **Este filtro no acota las facetas** (decisión del usuario): si lo hiciera, después de elegir
+  una batería el Rubro solo ofrecería "Baterías" y sería incómodo sumar un aceite para comparar.
+- Los elegidos van a la descripción de filtros del PDF (`Artículos: …`).
+
+## Probar una vista sin backend (banco de prueba)
+
+Para ver una vista con datos de ejemplo sin ORDS ni login (capturas en claro/oscuro/móvil, PDF):
+
+- **Montar la vista suelta con Vite** y un `vite.config.mjs` propio que:
+  - reemplaza `@/lib/api` por un `mock-api.ts` con alias (`{ find: "@/lib/api", replacement:
+    ".../mock-api.ts" }` **antes** del alias `@`), con datos deterministas (PRNG con semilla);
+  - usa el `public/` del proyecto (`publicDir`) para que cargue el logo.
+- **Guardarlo en una carpeta que git ignore** (`.tanstack/`, ya ignorada), nunca en la raíz del
+  repo: el banco `.harness-tmp/` de Evolución terminó commiteado por error y hubo que borrarlo.
+- **Chrome headless por CDP, en tiempo real.** `--virtual-time-budget` **no** ejecuta
+  `requestAnimationFrame`, y `graficoAPng` espera cuadros: el PDF se cuelga sin error. Hay que
+  manejar Chrome con `--remote-debugging-port` y esperar con `setTimeout` reales.
+  `Emulation.setFocusEmulationEnabled` hace falta para que el `onFocus` de `BuscadorSelect`
+  abra la lista en headless.
+- **Capturar el PDF:** en el banco, reemplazar `window.open` por una función que baje el blob y lo
+  deje en el DOM como base64; el visor de PDF de Chrome se puede capturar con
+  `Page.captureScreenshot` sobre `file:///…/reporte.pdf`.
+
 ## Gotchas de UI
 
 - **Layout responsivo:** el `<main>` del shell (`home.tsx`) lleva `min-w-0` — es hijo flex, y
@@ -818,7 +921,9 @@ cambia nada y con filtro queda acotado solo.
   tarjetas en `md:hidden` con los campos clave y la grilla completa en `hidden md:block`
   (modelo: `ventas-articulos-view.tsx`).
 - **Gráficos:** recharts con `ResponsiveContainer` (modelo: `ventas-dashboard-chart.tsx`).
-  Colores del tema vía `var(--primary)`, `var(--border)`, etc. (funcionan en claro/oscuro).
+  Colores del tema vía variables CSS, que cambian solas con claro/oscuro: `--viz-acento`,
+  `--viz-contexto`, `--viz-grilla`, `--viz-eje` y las 8 categóricas `--viz-serie-1..8`
+  (`styles.css`). Reglas de color y ejes en "Reporte con gráficos".
 - **Export Excel/PDF** (modelo: `ventas-articulos-view.tsx`): Excel = tabla HTML descargada
   como `.xls` (sin librería); PDF = `jspdf` + `jspdf-autotable`, se abre en pestaña nueva con
   `window.open(doc.output("bloburl"))`, no `doc.save()`. Definir las columnas una sola vez
@@ -827,6 +932,22 @@ cambia nada y con filtro queda acotado solo.
   gris — el logo se carga de `public/logo.png` con fetch → data URL (`cargarLogo()`) y se
   incrusta con `doc.addImage(...)`; si falla el fetch, el PDF sale sin logo (nunca abortar el
   export por el logo). Todo reporte PDF nuevo debe seguir este formato de encabezado.
+  **`new jsPDF({ ..., compress: true })` siempre:** sin eso jsPDF guarda las imágenes crudas —
+  el logo solo pesaba ~1 MB y el reporte de Evolución de Precios salía de **12 MB** (cada
+  gráfico 1280×580 RGB sin comprimir); con `compress` bajó a ~0,4 MB.
+- **PDF con gráficos** (modelo: `evolucion-precios.tsx`): `graficoAPng()` monta el gráfico de
+  recharts fuera de pantalla a tamaño fijo y con **colores hex** (una `var(--x)` no se resuelve
+  dentro de la imagen), y `exportarPdfReporte()` arma encabezado + gráficos + tabla + pie
+  "Página X de Y". Un gráfico solo en su fila va a lo ancho de la hoja.
+- **Un campo de datos NO puede llamarse `ref` (ni `key`) en un gráfico de recharts.** recharts
+  pasa los campos de cada fila como props del `<path>` de la barra, y React toma `ref={3}` como
+  una referencia: `Expected ref to be a function…` y **la pestaña entera queda en blanco** (el
+  error dice solo "in the <path> component"). Pasó en `comparacion-conteo.tsx`, con la barra de
+  referencia; el campo ahora es `referencia`.
+- **Agregar una pestaña a una página sin tocar su vista:** un envoltorio de página con `Tabs`
+  que monta la vista original tal cual y la nueva con `lazy`, y `vistas.tsx` apuntando al
+  envoltorio. La vista original se oculta con `hidden` en vez de desmontarse, así no pierde su
+  estado (filtros, "Mostrar más") al ir y volver. Modelo: `conteo-efectivo-pagina.tsx`.
 - **Subir imágenes a wasender:** el MIME se detecta de los **magic bytes** del archivo, nunca
   de `file.type` (en Android miente: fotos `.jpg` que son WEBP/HEIC). wasender `/api/upload`
   valida contenido vs. tipo declarado y solo acepta JPEG/PNG; lo demás se recodifica a JPEG

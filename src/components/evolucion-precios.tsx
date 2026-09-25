@@ -4,7 +4,6 @@ import {
   useMemo,
   useRef,
   useState,
-  useSyncExternalStore,
   type ReactElement,
   type ReactNode,
   type Ref,
@@ -17,16 +16,13 @@ import {
   Search,
   TrendingDown,
   TrendingUp,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
-  Bar,
-  BarChart,
   CartesianGrid,
-  LabelList,
   Line,
   LineChart,
-  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -40,7 +36,7 @@ import { Faceta } from "@/components/ui/faceta";
 import { DataTable, type Column } from "@/components/ui/data-table";
 import { BuscadorSelect } from "@/components/ui/buscador-select";
 import { getSesion, listarPreciosVentas, type PrecioVenta } from "@/lib/api";
-import { exportarPdfReporte, graficoAPng, type GraficoPdf, type KpiPdf } from "@/lib/export";
+import { exportarPdfReporte, graficoAPng, type GraficoPdf } from "@/lib/export";
 import { cn } from "@/lib/utils";
 
 // Reporte "Evolución de Precios" (pestaña de Precios de Ventas, pág 34): cómo
@@ -57,10 +53,12 @@ const SIN_DATO = "(sin dato)";
 
 // ─── Paletas ────────────────────────────────────────────────────────────────
 // Validadas con la skill dataviz: acento = serie protagonista (precio de venta y
-// barras), contexto = serie de referencia (costo) en gris a propósito.
+// barras), contexto = serie de referencia (costo) en gris a propósito, series =
+// las 8 categóricas para comparar artículos (orden fijo, una por artículo).
 type Paleta = {
   acento: string;
   contexto: string;
+  series: string[];
   tinta: string;
   tintaSuave: string;
   grilla: string;
@@ -72,6 +70,7 @@ type Paleta = {
 const PAL_PANTALLA: Paleta = {
   acento: "var(--viz-acento)",
   contexto: "var(--viz-contexto)",
+  series: [1, 2, 3, 4, 5, 6, 7, 8].map((i) => `var(--viz-serie-${i})`),
   tinta: "var(--foreground)",
   tintaSuave: "var(--muted-foreground)",
   grilla: "var(--viz-grilla)",
@@ -83,6 +82,7 @@ const PAL_PANTALLA: Paleta = {
 const PAL_PDF: Paleta = {
   acento: "#eb6834",
   contexto: "#898781",
+  series: ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#4a3aa7", "#e34948"],
   tinta: "#0b0b0b",
   tintaSuave: "#52514e",
   grilla: "#e1e0d9",
@@ -105,8 +105,6 @@ const fmtFecha = (iso: string) => {
   return `${d}/${m}/${y}`;
 };
 const fmtFechaHora = (iso: string) => `${fmtFecha(iso)} ${iso.slice(11, 16)}`;
-const MESES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
-const fmtMes = (ym: string) => `${MESES[Number(ym.slice(5, 7)) - 1]} ${ym.slice(2, 4)}`;
 const p2 = (n: number) => String(n).padStart(2, "0");
 const isoDia = (d: Date) => `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`;
 const fmtFechaCorta = (t: number) => {
@@ -129,11 +127,9 @@ const normalizar = (s: string) =>
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, ""); // saca las tildes
 const sinSeparadores = (s: string) => s.replace(/[-/.\s]/g, "");
-const recortarTexto = (s: string, max: number) => (s.length > max ? `${s.slice(0, max - 1)}…` : s);
 
 const pct = (nuevo: number | null, anterior: number | null) =>
   nuevo == null || !anterior ? null : ((nuevo - anterior) / anterior) * 100;
-const promedio = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
 
 // ─── Datos ──────────────────────────────────────────────────────────────────
 
@@ -142,7 +138,6 @@ const promedio = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / 
 type Cambio = PrecioVenta & {
   dia: string; // yyyy-mm-dd
   precio_anterior: number | null;
-  margen_anterior: number | null;
   variacion: number | null; // Gs.
   variacion_pct: number | null;
   variacion_costo_pct: number | null;
@@ -169,7 +164,6 @@ function armarHistorial(precios: PrecioVenta[]): Map<number, Cambio[]> {
           ...p,
           dia: p.fecha.slice(0, 10),
           precio_anterior: ant?.precio_venta ?? null,
-          margen_anterior: ant?.margen ?? null,
           variacion: ant ? p.precio_venta - ant.precio_venta : null,
           variacion_pct: pct(p.precio_venta, ant?.precio_venta ?? null),
           variacion_costo_pct: pct(p.precio_compra, ant?.precio_compra ?? null),
@@ -185,119 +179,6 @@ function armarHistorial(precios: PrecioVenta[]): Map<number, Cambio[]> {
     );
   }
   return res;
-}
-
-// Resumen del período por artículo (solo los que cambiaron de precio).
-type ResumenArticulo = {
-  id_articulo: number;
-  descripcion: string;
-  rubro: string;
-  cambios: number;
-  acum_pct: number | null; // precio final del período vs. el vigente al inicio
-  margen_ini: number | null;
-  margen_fin: number | null;
-};
-
-type PuntoMes = { etiqueta: string; cambios: number; variacion: number | null };
-type Barra = { clave: string; nombre: string; valor: number };
-
-function mesesEntre(desde: string, hasta: string): string[] {
-  const res: string[] = [];
-  let y = Number(desde.slice(0, 4));
-  let m = Number(desde.slice(5, 7));
-  const yh = Number(hasta.slice(0, 4));
-  const mh = Number(hasta.slice(5, 7));
-  while ((y < yh || (y === yh && m <= mh)) && res.length < 240) {
-    res.push(`${y}-${p2(m)}`);
-    if (++m > 12) {
-      m = 1;
-      y++;
-    }
-  }
-  return res;
-}
-
-// KPIs, series mensuales y rankings sobre las filas ya filtradas. `filas` viene
-// agrupado por artículo y en orden cronológico dentro de cada uno.
-function analizar(filas: Cambio[], desde: string, hasta: string) {
-  const reales = filas.filter((c) => c.real);
-
-  const porArticulo = new Map<number, Cambio[]>();
-  for (const c of filas) {
-    const g = porArticulo.get(c.id_articulo);
-    if (g) g.push(c);
-    else porArticulo.set(c.id_articulo, [c]);
-  }
-  const resumen: ResumenArticulo[] = [];
-  for (const [id, lista] of porArticulo) {
-    const cambios = lista.filter((c) => c.real).length;
-    if (!cambios) continue;
-    const primero = lista[0];
-    const ultimo = lista[lista.length - 1];
-    // Base = precio vigente al empezar el período (el anterior al primer registro
-    // del período); si el artículo recién aparece, su primer precio.
-    const conAnterior = primero.precio_anterior != null;
-    resumen.push({
-      id_articulo: id,
-      descripcion: ultimo.descripcion_articulo ?? `Artículo ${id}`,
-      rubro: ultimo.rubro ?? SIN_DATO,
-      cambios,
-      acum_pct: pct(ultimo.precio_venta, primero.precio_anterior ?? primero.precio_venta),
-      margen_ini: conAnterior ? primero.margen_anterior : primero.margen,
-      margen_fin: ultimo.margen,
-    });
-  }
-
-  const buckets = new Map<string, number[]>(mesesEntre(desde, hasta).map((m) => [m, []]));
-  for (const c of reales) buckets.get(c.dia.slice(0, 7))?.push(c.variacion_pct ?? 0);
-  const porMes: PuntoMes[] = [...buckets].map(([mes, vs]) => ({
-    etiqueta: fmtMes(mes),
-    cambios: vs.length,
-    variacion: promedio(vs),
-  }));
-
-  const conAcum = resumen.filter((r) => r.acum_pct != null);
-  const top: Barra[] = [...conAcum]
-    .sort((a, b) => b.acum_pct! - a.acum_pct!)
-    .slice(0, 10)
-    .map((r) => ({ clave: String(r.id_articulo), nombre: r.descripcion, valor: r.acum_pct! }));
-
-  const rubros = new Map<string, number[]>();
-  for (const r of conAcum) {
-    const g = rubros.get(r.rubro);
-    if (g) g.push(r.acum_pct!);
-    else rubros.set(r.rubro, [r.acum_pct!]);
-  }
-  const porRubro: Barra[] = [...rubros]
-    .map(([rubro, vs]) => ({ clave: rubro, nombre: rubro, valor: promedio(vs)! }))
-    .sort((a, b) => b.valor - a.valor)
-    .slice(0, 12);
-
-  const mayor = conAcum.reduce<ResumenArticulo | null>(
-    (m, r) => (m == null || r.acum_pct! > m.acum_pct! ? r : m),
-    null,
-  );
-  const variaciones = reales.map((c) => c.variacion_pct).filter((v): v is number => v != null);
-
-  return {
-    reales,
-    resumen,
-    porMes,
-    top,
-    porRubro,
-    totalRubros: rubros.size,
-    promedio: promedio(variaciones),
-    aumentos: variaciones.filter((v) => v > 0).length,
-    bajas: variaciones.filter((v) => v < 0).length,
-    mayor: mayor && mayor.acum_pct! > 0 ? mayor : null,
-    // Margen redondeado a 1 decimal para no contar diferencias de coma flotante.
-    margenEnBaja: resumen.filter(
-      (r) =>
-        r.margen_ini != null &&
-        r.margen_fin != null &&
-        Math.round(r.margen_fin * 10) < Math.round(r.margen_ini * 10),
-    ).length,
-  };
 }
 
 // Serie escalonada de un artículo en el período: arranca con el precio vigente
@@ -332,12 +213,54 @@ function serieArticulo(hist: Cambio[], desde: string, hasta: string, hoy: string
   return puntos;
 }
 
+// Comparación de artículos: precio de venta y costo de cada uno, en Gs. Un solo
+// dataset con dos columnas por artículo (`v<id>` venta, `k<id>` costo) con el valor
+// vigente en cada fecha, para que el tooltip muestre todos en la misma fecha;
+// `c<id>` marca los puntos donde ese artículo tuvo un registro de precio.
+const MAX_COMPARAR = 8; // uno por color categórico: no se inventa un 9.º color
+
+type SerieComparada = { id: number; slot: number; nombre: string; puntos: PuntoArticulo[] };
+type PuntoComparado = { t: number; [clave: string]: number | boolean | null };
+
+function armarComparacion(series: SerieComparada[]): PuntoComparado[] {
+  const tiempos = [...new Set(series.flatMap((s) => s.puntos.map((p) => p.t)))].sort(
+    (a, b) => a - b,
+  );
+  return tiempos.map((t) => {
+    const fila: PuntoComparado = { t };
+    for (const s of series) {
+      let vigente: PuntoArticulo | undefined;
+      for (const p of s.puntos) {
+        if (p.t > t) break;
+        vigente = p;
+      }
+      fila[`v${s.id}`] = vigente?.venta ?? null;
+      fila[`k${s.id}`] = vigente?.costo ?? null;
+      fila[`c${s.id}`] = s.puntos.some((p) => p.t === t && p.cambio);
+    }
+    return fila;
+  });
+}
+
 // ─── Gráficos ───────────────────────────────────────────────────────────────
 // Cada gráfico se dibuja igual en pantalla (ocupa su contenedor) y en el PDF
 // (tamaño fijo, con PAL_PDF, vía graficoAPng). Sin animación: al filtrar se
 // redibuja al instante y el PDF no captura un cuadro a medio animar.
 
 type Fijo = { ancho: number; alto: number };
+
+// Qué líneas dibujar: el selector del panel permite ocultar el costo o el precio.
+type Lineas = "ambos" | "venta" | "costo";
+const LINEAS: { valor: Lineas; etiqueta: string }[] = [
+  { valor: "ambos", etiqueta: "Ambos" },
+  { valor: "venta", etiqueta: "Precio venta" },
+  { valor: "costo", etiqueta: "Costo" },
+];
+const QUE_SE_VE: Record<Lineas, string> = {
+  ambos: "Precio de venta y costo",
+  venta: "Precio de venta",
+  costo: "Costo",
+};
 
 function Lienzo({
   fijo,
@@ -367,206 +290,6 @@ const TOOLTIP = {
 
 const tick = (pal: Paleta) => ({ fontSize: 11, fill: pal.tintaSuave });
 
-// Móvil (<640px, el mismo corte de styles.css): los gráficos se compactan —sin
-// rótulos que se pisarían, nombres más cortos—. El PDF siempre va completo.
-const MEDIA_MOVIL = "(max-width: 639px)";
-function useEsMovil(): boolean {
-  return useSyncExternalStore(
-    (avisar) => {
-      const mq = window.matchMedia(MEDIA_MOVIL);
-      mq.addEventListener("change", avisar);
-      return () => mq.removeEventListener("change", avisar);
-    },
-    () => window.matchMedia(MEDIA_MOVIL).matches,
-    () => false,
-  );
-}
-
-function GraficoCambiosMes({ datos, pal, fijo }: { datos: PuntoMes[]; pal: Paleta; fijo?: Fijo }) {
-  // Valor en la tapa de cada columna solo si entran (hasta ~1 año de meses).
-  const conValores = datos.length <= 13;
-  return (
-    <Lienzo fijo={fijo}>
-      <BarChart data={datos} margin={{ top: 18, right: 8, left: 0, bottom: 0 }}>
-        <CartesianGrid vertical={false} stroke={pal.grilla} />
-        <XAxis
-          dataKey="etiqueta"
-          tick={tick(pal)}
-          axisLine={{ stroke: pal.eje }}
-          tickLine={false}
-        />
-        <YAxis
-          allowDecimals={false}
-          width={36}
-          tick={tick(pal)}
-          axisLine={false}
-          tickLine={false}
-        />
-        <Tooltip
-          {...TOOLTIP}
-          cursor={{ fill: "var(--muted)", opacity: 0.6 }}
-          formatter={(v) => [nf0.format(Number(v)), "Cambios"]}
-        />
-        <Bar
-          dataKey="cambios"
-          fill={pal.acento}
-          radius={[4, 4, 0, 0]}
-          maxBarSize={24}
-          isAnimationActive={false}
-        >
-          {conValores && (
-            <LabelList
-              dataKey="cambios"
-              position="top"
-              offset={6}
-              style={{ fontSize: 10, fill: pal.tintaSuave }}
-              formatter={(v: unknown) => (Number(v) > 0 ? nf0.format(Number(v)) : "")}
-            />
-          )}
-        </Bar>
-      </BarChart>
-    </Lienzo>
-  );
-}
-
-function GraficoVariacionMes({
-  datos,
-  pal,
-  fijo,
-  compacto,
-}: {
-  datos: PuntoMes[];
-  pal: Paleta;
-  fijo?: Fijo;
-  compacto?: boolean;
-}) {
-  // "+12,5 %" es más ancho que una columna en móvil: ahí el valor queda en el tooltip.
-  const conValores = !compacto && datos.length <= 13;
-  return (
-    <Lienzo fijo={fijo}>
-      <BarChart data={datos} margin={{ top: 18, right: 8, left: 0, bottom: 0 }}>
-        <CartesianGrid vertical={false} stroke={pal.grilla} />
-        <XAxis
-          dataKey="etiqueta"
-          tick={tick(pal)}
-          axisLine={{ stroke: pal.eje }}
-          tickLine={false}
-        />
-        <YAxis
-          width={44}
-          tick={tick(pal)}
-          axisLine={false}
-          tickLine={false}
-          tickFormatter={(v: number) => `${nf0.format(v)} %`}
-        />
-        <ReferenceLine y={0} stroke={pal.eje} />
-        <Tooltip
-          {...TOOLTIP}
-          cursor={{ fill: "var(--muted)", opacity: 0.6 }}
-          formatter={(v) => [fmtPct(Number(v)), "Variación promedio"]}
-        />
-        <Bar
-          dataKey="variacion"
-          fill={pal.acento}
-          radius={[4, 4, 0, 0]}
-          maxBarSize={24}
-          isAnimationActive={false}
-        >
-          {conValores && (
-            <LabelList
-              dataKey="variacion"
-              position="top"
-              offset={6}
-              style={{ fontSize: 10, fill: pal.tintaSuave }}
-              formatter={(v: unknown) => (v == null ? "" : fmtPct(Number(v)))}
-            />
-          )}
-        </Bar>
-      </BarChart>
-    </Lienzo>
-  );
-}
-
-// Barras horizontales ordenadas (mayores aumentos, rubros). `onElegir` hace
-// clickeable cada barra.
-function GraficoRanking({
-  datos,
-  pal,
-  fijo,
-  onElegir,
-  compacto,
-}: {
-  datos: Barra[];
-  pal: Paleta;
-  fijo?: Fijo;
-  onElegir?: (b: Barra) => void;
-  compacto?: boolean;
-}) {
-  return (
-    <Lienzo fijo={fijo}>
-      <BarChart
-        data={datos}
-        layout="vertical"
-        margin={{ top: 4, right: compacto ? 48 : 56, left: 4, bottom: 0 }}
-      >
-        <CartesianGrid horizontal={false} stroke={pal.grilla} />
-        <XAxis
-          type="number"
-          tick={tick(pal)}
-          axisLine={{ stroke: pal.eje }}
-          tickLine={false}
-          domain={[(min: number) => Math.min(0, min), (max: number) => Math.max(0, max)]}
-          tickFormatter={(v: number) => `${nf0.format(v)} %`}
-        />
-        <YAxis
-          type="category"
-          dataKey="nombre"
-          width={compacto ? 104 : 170}
-          interval={0}
-          axisLine={false}
-          tickLine={false}
-          // Tick propio: el de recharts parte en dos renglones los nombres largos.
-          tick={(p: { x: number | string; y: number | string; payload: { value: string } }) => (
-            <text
-              x={Number(p.x) - 4}
-              y={Number(p.y)}
-              dy={4}
-              textAnchor="end"
-              fontSize={11}
-              fill={pal.tintaSuave}
-            >
-              {recortarTexto(p.payload.value, compacto ? 15 : 26)}
-            </text>
-          )}
-        />
-        <ReferenceLine x={0} stroke={pal.eje} />
-        <Tooltip
-          {...TOOLTIP}
-          cursor={{ fill: "var(--muted)", opacity: 0.6 }}
-          formatter={(v) => [fmtPct(Number(v)), "Variación"]}
-        />
-        <Bar
-          dataKey="valor"
-          fill={pal.acento}
-          radius={[0, 4, 4, 0]}
-          maxBarSize={18}
-          isAnimationActive={false}
-          cursor={onElegir ? "pointer" : undefined}
-          onClick={onElegir ? (_, i) => onElegir(datos[i]) : undefined}
-        >
-          <LabelList
-            dataKey="valor"
-            position="right"
-            offset={6}
-            style={{ fontSize: 10, fill: pal.tinta }}
-            formatter={(v: unknown) => fmtPct(Number(v))}
-          />
-        </Bar>
-      </BarChart>
-    </Lienzo>
-  );
-}
-
 // Línea ESCALONADA (stepAfter): un precio rige hasta el cambio siguiente; una
 // línea inclinada inventaría subas graduales que no existieron. Precio de venta
 // en el acento, costo en gris de contexto; el hueco entre ambas es el margen.
@@ -574,10 +297,12 @@ function GraficoArticulo({
   datos,
   pal,
   fijo,
+  lineas = "ambos",
 }: {
   datos: PuntoArticulo[];
   pal: Paleta;
   fijo?: Fijo;
+  lineas?: Lineas;
 }) {
   const n = datos.length;
   // Valor rotulado solo al final de cada línea (no en cada punto).
@@ -644,45 +369,158 @@ function GraficoArticulo({
           labelFormatter={(v) => fmtFechaCorta(Number(v))}
           formatter={(v) => fmtGs(Number(v))}
         />
-        <Line
-          type="stepAfter"
-          dataKey="costo"
-          name="Costo"
-          stroke={pal.contexto}
+        {lineas !== "venta" && (
+          <Line
+            type="stepAfter"
+            dataKey="costo"
+            name="Costo"
+            stroke={pal.contexto}
+            strokeWidth={2}
+            dot={punto(pal.contexto)}
+            activeDot={{ r: 5 }}
+            connectNulls
+            isAnimationActive={false}
+            label={rotuloFinal}
+          />
+        )}
+        {lineas !== "costo" && (
+          <Line
+            type="stepAfter"
+            dataKey="venta"
+            name="Precio venta"
+            stroke={pal.acento}
+            strokeWidth={2}
+            dot={punto(pal.acento)}
+            activeDot={{ r: 5 }}
+            isAnimationActive={false}
+            label={rotuloFinal}
+          />
+        )}
+      </LineChart>
+    </Lienzo>
+  );
+}
+
+// Dos líneas escalonadas por artículo, en su color: precio de venta llena y costo
+// punteada (el color dice QUÉ artículo, el trazo dice QUÉ medida; 16 colores no
+// se distinguirían). Un solo eje en Gs. Con hasta 4 líneas el valor final va
+// rotulado al lado de cada una; con más se pisarían y queda la leyenda.
+function GraficoComparacion({
+  datos,
+  series,
+  pal,
+  fijo,
+  lineas = "ambos",
+}: {
+  datos: PuntoComparado[];
+  series: SerieComparada[];
+  pal: Paleta;
+  fijo?: Fijo;
+  lineas?: Lineas;
+}) {
+  const n = datos.length;
+  const conRotulo = series.length * (lineas === "ambos" ? 2 : 1) <= 4;
+  const rotuloFinal = (props: {
+    x?: number | string;
+    y?: number | string;
+    index?: number;
+    value?: unknown;
+  }) =>
+    props.index === n - 1 && props.value != null ? (
+      <text
+        x={Number(props.x ?? 0) + 6}
+        y={Number(props.y ?? 0) + 4}
+        fontSize={11}
+        fill={pal.tinta}
+      >
+        {nf0.format(Number(props.value))}
+      </text>
+    ) : (
+      <g />
+    );
+  const punto =
+    (id: number, color: string) =>
+    (props: { cx?: number; cy?: number; index?: number; payload?: PuntoComparado }) =>
+      props.payload?.[`c${id}`] ? (
+        <circle
+          key={props.index}
+          cx={props.cx}
+          cy={props.cy}
+          r={4}
+          fill={color}
+          stroke={pal.superficie}
           strokeWidth={2}
-          dot={punto(pal.contexto)}
-          activeDot={{ r: 5 }}
-          connectNulls
-          isAnimationActive={false}
-          label={rotuloFinal}
         />
-        <Line
-          type="stepAfter"
-          dataKey="venta"
-          name="Precio venta"
-          stroke={pal.acento}
-          strokeWidth={2}
-          dot={punto(pal.acento)}
-          activeDot={{ r: 5 }}
-          isAnimationActive={false}
-          label={rotuloFinal}
+      ) : (
+        <g key={props.index} />
+      );
+
+  return (
+    <Lienzo fijo={fijo}>
+      <LineChart data={datos} margin={{ top: 12, right: conRotulo ? 64 : 16, left: 0, bottom: 0 }}>
+        <CartesianGrid vertical={false} stroke={pal.grilla} />
+        <XAxis
+          type="number"
+          dataKey="t"
+          scale="time"
+          domain={["dataMin", "dataMax"]}
+          tickCount={6}
+          tick={tick(pal)}
+          axisLine={{ stroke: pal.eje }}
+          tickLine={false}
+          tickFormatter={fmtFechaCorta}
         />
+        <YAxis
+          width={64}
+          domain={["auto", "auto"]}
+          tick={tick(pal)}
+          axisLine={false}
+          tickLine={false}
+          tickFormatter={(v: number) => nf0.format(v)}
+        />
+        <Tooltip
+          {...TOOLTIP}
+          labelFormatter={(v) => fmtFechaCorta(Number(v))}
+          formatter={(v, nombre) => [fmtGs(Number(v)), String(nombre)]}
+        />
+        {series.flatMap((s) => [
+          lineas !== "venta" && (
+            <Line
+              key={`k${s.id}`}
+              type="stepAfter"
+              dataKey={`k${s.id}`}
+              name={`${s.nombre} · costo`}
+              stroke={pal.series[s.slot]}
+              strokeWidth={2}
+              strokeDasharray="5 4"
+              dot={punto(s.id, pal.series[s.slot])}
+              activeDot={{ r: 5 }}
+              connectNulls
+              isAnimationActive={false}
+              label={conRotulo ? rotuloFinal : false}
+            />
+          ),
+          lineas !== "costo" && (
+            <Line
+              key={`v${s.id}`}
+              type="stepAfter"
+              dataKey={`v${s.id}`}
+              name={`${s.nombre} · venta`}
+              stroke={pal.series[s.slot]}
+              strokeWidth={2}
+              dot={punto(s.id, pal.series[s.slot])}
+              activeDot={{ r: 5 }}
+              isAnimationActive={false}
+              label={conRotulo ? rotuloFinal : false}
+            />
+          ),
+        ])}
       </LineChart>
     </Lienzo>
   );
 }
 
 // ─── Piezas de la pantalla ──────────────────────────────────────────────────
-
-function Kpi({ etiqueta, valor, detalle }: { etiqueta: string; valor: string; detalle?: string }) {
-  return (
-    <div className="rounded-xl border border-border p-3">
-      <p className="text-xs text-muted-foreground">{etiqueta}</p>
-      <p className="mt-1 text-xl font-semibold">{valor}</p>
-      {detalle && <p className="truncate text-xs text-muted-foreground">{detalle}</p>}
-    </div>
-  );
-}
 
 function Panel({
   titulo,
@@ -827,12 +665,14 @@ const RANGOS = [
   { etiqueta: "Todo", meses: null },
 ] as const;
 
+// Opciones de una faceta: primero las que más cambios de precio tienen, pero SIN
+// mostrar el conteo (regla del proyecto, ver GUIA_FRONT "Facetas SIN conteo").
 function contarOpciones(filas: Cambio[], valor: (c: Cambio) => string) {
   const n = new Map<string, number>();
   for (const c of filas) n.set(valor(c), (n.get(valor(c)) ?? 0) + (c.real ? 1 : 0));
   return [...n]
-    .map(([v, cant]) => ({ valor: v, n: cant }))
-    .sort((a, b) => b.n - a.n || a.valor.localeCompare(b.valor));
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .map(([v]) => ({ valor: v, n: 0 }));
 }
 
 function alternar(set: Set<string>, v: string): Set<string> {
@@ -859,11 +699,15 @@ export function EvolucionPrecios() {
   const textoFiltro = useDeferredValue(texto);
   const [rubros, setRubros] = useState<Set<string>>(() => new Set());
   const [marcas, setMarcas] = useState<Set<string>>(() => new Set());
+  const [viscosidades, setViscosidades] = useState<Set<string>>(() => new Set());
   const [soloCambios, setSoloCambios] = useState(true);
   const [idElegido, setIdElegido] = useState<number | null>(null);
+  // Filtro por artículo (multi): cada uno guarda su color (slot) al elegirlo, así
+  // quitar uno no repinta a los demás.
+  const [elegidos, setElegidos] = useState<{ id: number; slot: number }[]>([]);
   const [generando, setGenerando] = useState(false);
+  const [lineas, setLineas] = useState<Lineas>("ambos");
   const refArticulo = useRef<HTMLElement>(null);
-  const esMovil = useEsMovil();
 
   const historial = useMemo(() => armarHistorial(data ?? []), [data]);
 
@@ -872,20 +716,6 @@ export function EvolucionPrecios() {
     for (const lista of historial.values()) if (lista[0].dia < min) min = lista[0].dia;
     return min;
   }, [historial, hoy]);
-
-  // Artículos con historial, para el selector del gráfico de evolución.
-  const catalogo = useMemo(
-    () =>
-      [...historial.values()]
-        .map((l) => l[l.length - 1])
-        .map((a) => ({
-          id_articulo: a.id_articulo,
-          descripcion: a.descripcion_articulo ?? `Artículo ${a.id_articulo}`,
-          codigo_oem: a.codigo_oem,
-        }))
-        .sort((a, b) => a.descripcion.localeCompare(b.descripcion)),
-    [historial],
-  );
 
   // Registros del período que pasan la búsqueda (antes de las facetas). Rubro,
   // marca y descripción vienen del JOIN a ARTICULOS: iguales en todo el historial.
@@ -909,21 +739,113 @@ export function EvolucionPrecios() {
     return res;
   }, [historial, textoFiltro, desde, hasta]);
 
-  // Facetas dependientes: cada una ofrece solo valores compatibles con la otra.
-  const { filtrados, opcionesRubro, opcionesMarca } = useMemo(() => {
+  // La faceta Viscosidad se muestra solo si el backend manda el campo (hace falta
+  // re-ejecutar db/precios_ventas_sql.sql) y algún artículo la tiene cargada.
+  const hayViscosidad = useMemo(() => (data ?? []).some((p) => p.viscosidad), [data]);
+
+  // Facetas dependientes: cada una ofrece solo valores compatibles con las otras.
+  const { filtrados, opcionesRubro, opcionesMarca, opcionesViscosidad } = useMemo(() => {
     const pasaRubro = (c: Cambio) => rubros.size === 0 || rubros.has(c.rubro ?? SIN_DATO);
     const pasaMarca = (c: Cambio) => marcas.size === 0 || marcas.has(c.marca ?? SIN_DATO);
+    const pasaViscosidad = (c: Cambio) =>
+      viscosidades.size === 0 || viscosidades.has(c.viscosidad ?? SIN_DATO);
     return {
-      filtrados: delPeriodo.filter((c) => pasaRubro(c) && pasaMarca(c)),
-      opcionesRubro: contarOpciones(delPeriodo.filter(pasaMarca), (c) => c.rubro ?? SIN_DATO),
-      opcionesMarca: contarOpciones(delPeriodo.filter(pasaRubro), (c) => c.marca ?? SIN_DATO),
+      filtrados: delPeriodo.filter((c) => pasaRubro(c) && pasaMarca(c) && pasaViscosidad(c)),
+      opcionesRubro: contarOpciones(
+        delPeriodo.filter((c) => pasaMarca(c) && pasaViscosidad(c)),
+        (c) => c.rubro ?? SIN_DATO,
+      ),
+      opcionesMarca: contarOpciones(
+        delPeriodo.filter((c) => pasaRubro(c) && pasaViscosidad(c)),
+        (c) => c.marca ?? SIN_DATO,
+      ),
+      opcionesViscosidad: contarOpciones(
+        delPeriodo.filter((c) => pasaRubro(c) && pasaMarca(c)),
+        (c) => c.viscosidad ?? SIN_DATO,
+      ),
     };
-  }, [delPeriodo, rubros, marcas]);
+  }, [delPeriodo, rubros, marcas, viscosidades]);
 
-  const analisis = useMemo(() => analizar(filtrados, desde, hasta), [filtrados, desde, hasta]);
+  const filasBase = useMemo(
+    () => (soloCambios ? filtrados.filter((c) => c.real) : filtrados),
+    [filtrados, soloCambios],
+  );
 
-  // Artículo del gráfico de evolución: el elegido o, por defecto, el que más subió.
-  const idArticulo = idElegido ?? (analisis.top[0] ? Number(analisis.top[0].clave) : null);
+  // Artículos que pasan los demás filtros: opciones del filtro por artículo. Se
+  // arman antes de ese filtro (si no, al elegir uno la lista quedaría solo con él).
+  const catalogo = useMemo(() => {
+    const porId = new Map<
+      number,
+      { id_articulo: number; descripcion: string; codigo_oem: string | null }
+    >();
+    for (const c of filasBase) {
+      if (porId.has(c.id_articulo)) continue;
+      porId.set(c.id_articulo, {
+        id_articulo: c.id_articulo,
+        descripcion: c.descripcion_articulo ?? `Artículo ${c.id_articulo}`,
+        codigo_oem: c.codigo_oem,
+      });
+    }
+    return [...porId.values()].sort((a, b) => a.descripcion.localeCompare(b.descripcion));
+  }, [filasBase]);
+
+  // Elegidos que siguen pasando los demás filtros (los otros quedan como chip
+  // atenuado, sin desaparecer de golpe).
+  const vigentes = useMemo(() => {
+    const enCatalogo = new Set(catalogo.map((a) => a.id_articulo));
+    return elegidos.filter((e) => enCatalogo.has(e.id));
+  }, [catalogo, elegidos]);
+
+  const filasTabla = useMemo(() => {
+    if (!elegidos.length) return filasBase;
+    const ids = new Set(vigentes.map((e) => e.id));
+    return filasBase.filter((c) => ids.has(c.id_articulo));
+  }, [filasBase, elegidos, vigentes]);
+
+  const nombreDe = (id: number) => {
+    const h = historial.get(id);
+    return h?.[h.length - 1].descripcion_articulo ?? `Artículo ${id}`;
+  };
+
+  function agregarArticulo(id: number) {
+    if (elegidos.some((e) => e.id === id)) return;
+    if (elegidos.length >= MAX_COMPARAR) {
+      toast.error(`Se pueden comparar hasta ${MAX_COMPARAR} artículos`);
+      return;
+    }
+    const usados = new Set(elegidos.map((e) => e.slot));
+    let slot = 0;
+    while (usados.has(slot)) slot++;
+    setElegidos([...elegidos, { id, slot }]);
+  }
+
+  // Artículo del gráfico de evolución: el elegido o, por defecto, el del cambio
+  // más reciente (la primera fila de la tabla, que arranca ordenada por fecha).
+  const masReciente = useMemo(
+    () =>
+      filasTabla.reduce<Cambio | null>(
+        (m, c) =>
+          m == null || c.fecha > m.fecha || (c.fecha === m.fecha && c.id_precio > m.id_precio)
+            ? c
+            : m,
+        null,
+      ),
+    [filasTabla],
+  );
+
+  // Con 2 o más artículos filtrados el gráfico los compara. Si no, muestra uno: el
+  // filtrado, o el tocado en la tabla, o por defecto el del cambio más reciente.
+  // Si un filtro deja afuera al tocado, vuelve al más reciente (nunca muestra un
+  // artículo que ya no aplica).
+  const comparar = vigentes.length >= 2;
+  const tocadoVigente =
+    idElegido != null && filasTabla.some((c) => c.id_articulo === idElegido) ? idElegido : null;
+  const idArticulo =
+    vigentes.length === 1
+      ? vigentes[0].id
+      : elegidos.length
+        ? null
+        : (tocadoVigente ?? masReciente?.id_articulo ?? null);
   const histArticulo = idArticulo != null ? historial.get(idArticulo) : undefined;
   const articulo = histArticulo?.[histArticulo.length - 1];
   const serie = useMemo(
@@ -933,9 +855,58 @@ export function EvolucionPrecios() {
   const nombreArticulo =
     articulo?.descripcion_articulo ?? (articulo ? `Artículo ${articulo.id_articulo}` : "");
 
-  const filasTabla = useMemo(
-    () => (soloCambios ? filtrados.filter((c) => c.real) : filtrados),
-    [filtrados, soloCambios],
+  const comparacion = useMemo(() => {
+    if (!comparar) return null;
+    const series: SerieComparada[] = vigentes
+      .map((e) => {
+        const hist = historial.get(e.id) ?? [];
+        return {
+          id: e.id,
+          slot: e.slot,
+          nombre: hist[hist.length - 1]?.descripcion_articulo ?? `Artículo ${e.id}`,
+          puntos: serieArticulo(hist, desde, hasta, hoy),
+        };
+      })
+      .filter((s) => s.puntos.length > 0);
+    const datos = armarComparacion(series);
+    const ultima = datos[datos.length - 1];
+    const finales = new Map(
+      series.map((s) => [
+        s.id,
+        {
+          venta: (ultima?.[`v${s.id}`] as number | null) ?? null,
+          costo: (ultima?.[`k${s.id}`] as number | null) ?? null,
+        },
+      ]),
+    );
+    return { datos, series, finales };
+  }, [comparar, vigentes, historial, desde, hasta, hoy]);
+
+  // Valores finales de un artículo en la leyenda, según las líneas visibles.
+  const valoresFinales = (fin?: { venta: number | null; costo: number | null }) =>
+    [
+      lineas !== "costo" ? `venta ${fmtGs(fin?.venta)}` : null,
+      lineas !== "venta" ? `costo ${fmtGs(fin?.costo)}` : null,
+    ]
+      .filter(Boolean)
+      .join(" / ");
+
+  // Selector de líneas: va en el encabezado del panel del gráfico.
+  const selectorLineas = (
+    <div className="flex flex-wrap gap-1" role="group" aria-label="Líneas del gráfico">
+      {LINEAS.map((l) => (
+        <Button
+          key={l.valor}
+          type="button"
+          size="sm"
+          variant={lineas === l.valor ? "secondary" : "outline"}
+          aria-pressed={lineas === l.valor}
+          onClick={() => setLineas(l.valor)}
+        >
+          {l.etiqueta}
+        </Button>
+      ))}
+    </div>
   );
 
   function verArticulo(id: number) {
@@ -948,33 +919,13 @@ export function EvolucionPrecios() {
     setHasta(hoy);
   }
 
-  const kpis: KpiPdf[] = [
-    {
-      etiqueta: "Cambios de precio",
-      valor: nf0.format(analisis.reales.length),
-      detalle: `en ${nf0.format(analisis.resumen.length)} artículo${analisis.resumen.length === 1 ? "" : "s"}`,
-    },
-    {
-      etiqueta: "Variación promedio por cambio",
-      valor: fmtPct(analisis.promedio),
-      detalle: `${analisis.aumentos} aumentos · ${analisis.bajas} bajas`,
-    },
-    {
-      etiqueta: "Mayor aumento del período",
-      valor: fmtPct(analisis.mayor?.acum_pct),
-      detalle: analisis.mayor?.descripcion ?? "Sin aumentos",
-    },
-    {
-      etiqueta: "Artículos con margen en baja",
-      valor: nf0.format(analisis.margenEnBaja),
-      detalle: "margen actual menor que al inicio",
-    },
-  ];
-
   function descripcionFiltros(): string {
     const partes = [`Período: del ${fmtFecha(desde)} al ${fmtFecha(hasta)}`];
     if (rubros.size) partes.push(`Rubro: ${[...rubros].join(", ")}`);
     if (marcas.size) partes.push(`Marca: ${[...marcas].join(", ")}`);
+    if (viscosidades.size) partes.push(`Viscosidad: ${[...viscosidades].join(", ")}`);
+    if (elegidos.length)
+      partes.push(`Artículos: ${elegidos.map((e) => nombreDe(e.id)).join(", ")}`);
     if (texto.trim()) partes.push(`Búsqueda: "${texto.trim()}"`);
     if (!soloCambios) partes.push("Incluye precios sin cambio");
     return partes.join(" · ");
@@ -983,48 +934,45 @@ export function EvolucionPrecios() {
   async function exportarPdf() {
     setGenerando(true);
     try {
-      const fijo = { ancho: 640, alto: 290 };
+      // Único gráfico del PDF: va a lo ancho de la hoja, así que se dibuja apaisado.
+      const fijo = { ancho: 1200, alto: 330 };
       const relacion = fijo.alto / fijo.ancho;
       const png = (g: ReactElement) => graficoAPng(g, fijo.ancho, fijo.alto);
-      const graficos: GraficoPdf[] = [
-        {
-          titulo: "Cambios de precio por mes",
-          subtitulo: "Cantidad de veces que cambió un precio de venta",
-          png: await png(<GraficoCambiosMes datos={analisis.porMes} pal={PAL_PDF} fijo={fijo} />),
-          relacion,
-        },
-        {
-          titulo: "Variación promedio por mes",
-          subtitulo: "Promedio del % de los cambios de cada mes",
-          png: await png(<GraficoVariacionMes datos={analisis.porMes} pal={PAL_PDF} fijo={fijo} />),
-          relacion,
-        },
-      ];
-      if (analisis.top.length) {
+      const graficos: GraficoPdf[] = [];
+
+      if (comparacion) {
         graficos.push({
-          titulo: "Mayores aumentos del período",
-          subtitulo: "Último precio del período vs. el vigente al inicio",
-          png: await png(<GraficoRanking datos={analisis.top} pal={PAL_PDF} fijo={fijo} />),
+          titulo: `Comparación de ${comparacion.series.length} artículos`,
+          subtitulo:
+            lineas === "ambos"
+              ? "Precio de venta (línea llena) y costo (línea punteada) de cada artículo"
+              : `${QUE_SE_VE[lineas]} de cada artículo`,
+          png: await png(
+            <GraficoComparacion
+              datos={comparacion.datos}
+              series={comparacion.series}
+              pal={PAL_PDF}
+              fijo={fijo}
+              lineas={lineas}
+            />,
+          ),
           relacion,
+          leyenda: comparacion.series.map((s) => ({
+            color: PAL_PDF.series[s.slot],
+            texto: paraPdf(`${s.nombre} (${valoresFinales(comparacion.finales.get(s.id))})`),
+          })),
         });
-      }
-      if (analisis.porRubro.length) {
-        graficos.push({
-          titulo: "Variación promedio por rubro",
-          subtitulo: `Aumento promedio de los artículos que cambiaron (${analisis.porRubro.length} de ${analisis.totalRubros} rubros)`,
-          png: await png(<GraficoRanking datos={analisis.porRubro} pal={PAL_PDF} fijo={fijo} />),
-          relacion,
-        });
-      }
-      if (serie.length > 1) {
+      } else if (serie.length > 1) {
         graficos.push({
           titulo: `Evolución: ${nombreArticulo}`,
-          subtitulo: "Precio de venta y costo en cada registro",
-          png: await png(<GraficoArticulo datos={serie} pal={PAL_PDF} fijo={fijo} />),
+          subtitulo: `${QUE_SE_VE[lineas]} en cada registro`,
+          png: await png(
+            <GraficoArticulo datos={serie} pal={PAL_PDF} fijo={fijo} lineas={lineas} />,
+          ),
           relacion,
           leyenda: [
-            { color: PAL_PDF.acento, texto: "Precio venta" },
-            { color: PAL_PDF.contexto, texto: "Costo" },
+            ...(lineas !== "costo" ? [{ color: PAL_PDF.acento, texto: "Precio venta" }] : []),
+            ...(lineas !== "venta" ? [{ color: PAL_PDF.contexto, texto: "Costo" }] : []),
           ],
         });
       }
@@ -1051,11 +999,6 @@ export function EvolucionPrecios() {
         subtitulo: descripcionFiltros(),
         archivo: `evolucion-precios-${hoy}`,
         usuario: getSesion()?.usuario,
-        kpis: kpis.map((k) => ({
-          etiqueta: k.etiqueta,
-          valor: paraPdf(k.valor),
-          detalle: k.detalle && paraPdf(k.detalle),
-        })),
         graficos,
         tabla: {
           titulo: soloCambios ? "Detalle de cambios de precio" : "Detalle de precios registrados",
@@ -1097,11 +1040,9 @@ export function EvolucionPrecios() {
     );
   }
 
-  const hayCambios = analisis.reales.length > 0;
-
   return (
     <div className="space-y-4 p-4 sm:p-5">
-      {/* Filtros: una sola fila que acota KPIs, gráficos y tabla */}
+      {/* Filtros: una sola fila que acota gráficos y tabla */}
       <div className="flex flex-wrap items-end gap-3">
         <div className="space-y-1">
           <Label htmlFor="evo-desde" className="text-xs">
@@ -1174,6 +1115,63 @@ export function EvolucionPrecios() {
         </Button>
       </div>
 
+      {/* Filtro por artículo (multi): acota la tabla y, con 2 o más, el gráfico los compara */}
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="w-full sm:w-72">
+          <BuscadorSelect
+            placeholder={
+              elegidos.length ? "Agregar otro artículo..." : "Filtrar / comparar artículos..."
+            }
+            emptyLabel="Sin artículos con estos filtros"
+            value={null}
+            label=""
+            buscar={async () =>
+              catalogo.filter((a) => !elegidos.some((e) => e.id === a.id_articulo))
+            }
+            itemKey={(a) => a.id_articulo}
+            itemTitle={(a) => a.descripcion}
+            itemSub={(a) => (a.codigo_oem ? `OEM ${a.codigo_oem}` : `#${a.id_articulo}`)}
+            onSelect={(a) => agregarArticulo(a.id_articulo)}
+            disabled={elegidos.length >= MAX_COMPARAR}
+          />
+        </div>
+        {elegidos.map((e) => {
+          const vigente = vigentes.some((v) => v.id === e.id);
+          const nombre = nombreDe(e.id);
+          return (
+            <span
+              key={e.id}
+              title={vigente ? nombre : `${nombre}: no pasa los otros filtros`}
+              className={cn(
+                "inline-flex max-w-full items-center gap-1.5 rounded-full border border-border py-1 pl-2.5 pr-1 text-xs",
+                !vigente && "opacity-50",
+              )}
+            >
+              <span
+                className="h-2.5 w-2.5 shrink-0 rounded-full"
+                style={{ background: PAL_PANTALLA.series[e.slot] }}
+              />
+              <span className={cn("truncate sm:max-w-[16rem]", !vigente && "line-through")}>
+                {nombre}
+              </span>
+              <button
+                type="button"
+                onClick={() => setElegidos(elegidos.filter((x) => x.id !== e.id))}
+                className="grid h-6 w-6 shrink-0 place-items-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground"
+                aria-label={`Quitar ${nombre}`}
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </span>
+          );
+        })}
+        {elegidos.length > 1 && (
+          <Button type="button" variant="ghost" size="sm" onClick={() => setElegidos([])}>
+            Quitar todos
+          </Button>
+        )}
+      </div>
+
       <div className="flex flex-col gap-4 lg:flex-row">
         <aside className="w-full shrink-0 space-y-5 lg:w-52">
           <Faceta
@@ -1188,132 +1186,112 @@ export function EvolucionPrecios() {
             seleccion={marcas}
             onToggle={(v) => setMarcas((s) => alternar(s, v))}
           />
+          {hayViscosidad && (
+            <Faceta
+              titulo="Viscosidad"
+              valores={opcionesViscosidad}
+              seleccion={viscosidades}
+              onToggle={(v) => setViscosidades((s) => alternar(s, v))}
+            />
+          )}
         </aside>
 
         <div className="min-w-0 flex-1 space-y-4">
-          <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-            {kpis.map((k) => (
-              <Kpi key={k.etiqueta} {...k} />
-            ))}
-          </div>
-
-          <div className="grid gap-4 xl:grid-cols-2">
-            {/* Mismo eje de meses en los dos: se leen como un solo gráfico partido
-                (dos medidas distintas nunca comparten eje Y). */}
+          {comparacion ? (
             <Panel
-              titulo="Por mes"
-              subtitulo="Cantidad de cambios y variación promedio de esos cambios"
+              panelRef={refArticulo}
+              titulo={`Comparación de ${comparacion.series.length} artículos`}
+              subtitulo={`${QUE_SE_VE[lineas]} de cada artículo en cada registro`}
+              extra={selectorLineas}
             >
-              <p className="text-xs font-medium text-muted-foreground">Cambios de precio</p>
-              <div className="h-36">
-                {hayCambios ? (
-                  <GraficoCambiosMes datos={analisis.porMes} pal={PAL_PANTALLA} />
-                ) : (
-                  <Vacio />
-                )}
+              <div className="h-80">
+                <GraficoComparacion
+                  datos={comparacion.datos}
+                  series={comparacion.series}
+                  pal={PAL_PANTALLA}
+                  lineas={lineas}
+                />
               </div>
-              <p className="mt-3 text-xs font-medium text-muted-foreground">Variación promedio</p>
-              <div className="h-36">
-                {hayCambios ? (
-                  <GraficoVariacionMes
-                    datos={analisis.porMes}
-                    pal={PAL_PANTALLA}
-                    compacto={esMovil}
-                  />
-                ) : (
-                  <Vacio />
-                )}
+              {/* Clave del trazo (neutra) + un renglón por artículo con su color y
+                  sus valores finales. */}
+              <div className="mt-2 space-y-1 text-xs text-muted-foreground">
+                <div className="flex flex-wrap gap-x-4 gap-y-1">
+                  {lineas !== "costo" && (
+                    <span className="inline-flex items-center gap-1.5">
+                      <span className="w-5 border-t-2 border-muted-foreground" />
+                      Precio venta
+                    </span>
+                  )}
+                  {lineas !== "venta" && (
+                    <span className="inline-flex items-center gap-1.5">
+                      <span className="w-5 border-t-2 border-dashed border-muted-foreground" />
+                      Costo
+                    </span>
+                  )}
+                </div>
+                <div className="flex flex-wrap gap-x-4 gap-y-1">
+                  {comparacion.series.map((s) => {
+                    const fin = comparacion.finales.get(s.id);
+                    return (
+                      <span key={s.id} className="inline-flex min-w-0 items-center gap-1.5">
+                        <span
+                          className="h-2.5 w-2.5 shrink-0 rounded-full"
+                          style={{ background: PAL_PANTALLA.series[s.slot] }}
+                        />
+                        <span className="truncate">{s.nombre}</span>
+                        <span className="shrink-0 text-foreground">{valoresFinales(fin)}</span>
+                      </span>
+                    );
+                  })}
+                </div>
               </div>
             </Panel>
-
+          ) : (
             <Panel
               panelRef={refArticulo}
               titulo={nombreArticulo ? `Evolución: ${nombreArticulo}` : "Evolución de un artículo"}
-              subtitulo="Precio de venta y costo en cada registro"
-              extra={
-                <div className="w-full sm:w-64">
-                  <BuscadorSelect
-                    placeholder="Elegir artículo del historial..."
-                    emptyLabel="Sin artículos"
-                    value={idArticulo}
-                    label={nombreArticulo}
-                    buscar={async () => catalogo}
-                    itemKey={(a) => a.id_articulo}
-                    itemTitle={(a) => a.descripcion}
-                    itemSub={(a) => (a.codigo_oem ? `OEM ${a.codigo_oem}` : `#${a.id_articulo}`)}
-                    onSelect={(a) => setIdElegido(a.id_articulo)}
-                  />
-                </div>
-              }
+              subtitulo={`${QUE_SE_VE[lineas]} en cada registro`}
+              extra={selectorLineas}
             >
               <div className="h-72">
                 {serie.length > 1 ? (
-                  <GraficoArticulo datos={serie} pal={PAL_PANTALLA} />
+                  <GraficoArticulo datos={serie} pal={PAL_PANTALLA} lineas={lineas} />
                 ) : (
                   <Vacio
                     texto={
-                      idArticulo == null
-                        ? "Elegí un artículo para ver su evolución."
-                        : "El artículo no tiene precios en el período."
+                      elegidos.length && !vigentes.length
+                        ? "Los artículos elegidos no pasan los otros filtros."
+                        : idArticulo == null
+                          ? "Elegí un artículo para ver su evolución."
+                          : "El artículo no tiene precios en el período."
                     }
                   />
                 )}
               </div>
               {serie.length > 1 && (
                 <div className="mt-2 flex gap-4 text-xs text-muted-foreground">
-                  <span className="inline-flex items-center gap-1.5">
-                    <span
-                      className="h-0.5 w-4 rounded"
-                      style={{ background: PAL_PANTALLA.acento }}
-                    />
-                    Precio venta
-                  </span>
-                  <span className="inline-flex items-center gap-1.5">
-                    <span
-                      className="h-0.5 w-4 rounded"
-                      style={{ background: PAL_PANTALLA.contexto }}
-                    />
-                    Costo
-                  </span>
+                  {lineas !== "costo" && (
+                    <span className="inline-flex items-center gap-1.5">
+                      <span
+                        className="h-0.5 w-4 rounded"
+                        style={{ background: PAL_PANTALLA.acento }}
+                      />
+                      Precio venta
+                    </span>
+                  )}
+                  {lineas !== "venta" && (
+                    <span className="inline-flex items-center gap-1.5">
+                      <span
+                        className="h-0.5 w-4 rounded"
+                        style={{ background: PAL_PANTALLA.contexto }}
+                      />
+                      Costo
+                    </span>
+                  )}
                 </div>
               )}
             </Panel>
-
-            <Panel
-              titulo="Mayores aumentos del período"
-              subtitulo="Último precio vs. el vigente al inicio · tocá una barra para ver su evolución"
-            >
-              <div className="h-80">
-                {analisis.top.length ? (
-                  <GraficoRanking
-                    datos={analisis.top}
-                    pal={PAL_PANTALLA}
-                    compacto={esMovil}
-                    onElegir={(b) => verArticulo(Number(b.clave))}
-                  />
-                ) : (
-                  <Vacio />
-                )}
-              </div>
-            </Panel>
-
-            <Panel
-              titulo="Variación promedio por rubro"
-              subtitulo={
-                analisis.totalRubros > analisis.porRubro.length
-                  ? `Los ${analisis.porRubro.length} rubros que más subieron, de ${analisis.totalRubros}`
-                  : "Aumento promedio de los artículos que cambiaron"
-              }
-            >
-              <div className="h-80">
-                {analisis.porRubro.length ? (
-                  <GraficoRanking datos={analisis.porRubro} pal={PAL_PANTALLA} compacto={esMovil} />
-                ) : (
-                  <Vacio />
-                )}
-              </div>
-            </Panel>
-          </div>
+          )}
 
           <DataTable
             columns={COLUMNAS}
@@ -1324,18 +1302,22 @@ export function EvolucionPrecios() {
             exportName="evolucion-precios"
             emptyText="Sin cambios de precio en el período."
             actionsHeader=""
-            actions={(r) => (
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8 text-muted-foreground hover:text-primary"
-                onClick={() => verArticulo(r.id_articulo)}
-                aria-label="Ver evolución del artículo"
-                title="Ver evolución del artículo"
-              >
-                <IconoLinea className="h-4 w-4" />
-              </Button>
-            )}
+            actions={
+              comparar
+                ? undefined
+                : (r) => (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 text-muted-foreground hover:text-primary"
+                      onClick={() => verArticulo(r.id_articulo)}
+                      aria-label="Ver evolución del artículo"
+                      title="Ver evolución del artículo"
+                    >
+                      <IconoLinea className="h-4 w-4" />
+                    </Button>
+                  )
+            }
           />
         </div>
       </div>

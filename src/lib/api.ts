@@ -2488,6 +2488,7 @@ export type PrecioVenta = {
   margen: number | null;
   rubro: string | null;
   marca: string | null;
+  viscosidad?: string | null; // de VISCOSIDAD_LUBRICANTES; APEX_JSON omite la clave si es null
   codigo_oem: string | null;
 };
 

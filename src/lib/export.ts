@@ -55,7 +55,8 @@ export function exportarExcel({ subtitulo, columnas, filas, pie }: TablaExport) 
 // PDF apaisado con logo + título + subtítulo; se abre en pestaña nueva (desde
 // ahí se imprime o guarda). Nunca aborta por el logo.
 export async function exportarPdf({ titulo, subtitulo, columnas, filas, pie }: TablaExport) {
-  const doc = new jsPDF({ orientation: "landscape" });
+  // compress: sin él jsPDF guarda las imágenes crudas (solo el logo pesa ~1 MB).
+  const doc = new jsPDF({ orientation: "landscape", compress: true });
   const logo = await cargarLogo();
   if (logo) doc.addImage(logo, "PNG", 14, 5, 12, 12);
   doc.setFontSize(13);
@@ -93,6 +94,7 @@ export type GraficoPdf = {
   png: string; // data URL de graficoAPng
   relacion: number; // alto / ancho de la imagen
   leyenda?: { color: string; texto: string }[];
+  anchoCompleto?: boolean; // ocupa su propia fila a lo ancho (gráficos altos)
 };
 
 export type ReportePdf = {
@@ -115,8 +117,29 @@ function recortar(doc: jsPDF, texto: string, ancho: number): string {
   return `${t}...`;
 }
 
-function altoGrafico(g: GraficoPdf, ancho: number): number {
-  return 5 + (g.subtitulo ? 4 : 0) + 1 + ancho * g.relacion + (g.leyenda?.length ? 5 : 0);
+// Reparte la leyenda en renglones que entren en el ancho del gráfico.
+function renglonesLeyenda(doc: jsPDF, leyenda: GraficoPdf["leyenda"], ancho: number) {
+  doc.setFontSize(7.5);
+  const renglones: { color: string; texto: string; x: number }[][] = [];
+  let actual: { color: string; texto: string; x: number }[] = [];
+  let lx = 0;
+  for (const l of leyenda ?? []) {
+    const w = 6.5 + doc.getTextWidth(l.texto) + 6;
+    if (actual.length && lx + w > ancho) {
+      renglones.push(actual);
+      actual = [];
+      lx = 0;
+    }
+    actual.push({ ...l, x: lx });
+    lx += w;
+  }
+  if (actual.length) renglones.push(actual);
+  return renglones;
+}
+
+function altoGrafico(doc: jsPDF, g: GraficoPdf, ancho: number): number {
+  const leyenda = renglonesLeyenda(doc, g.leyenda, ancho).length;
+  return 5 + (g.subtitulo ? 4 : 0) + 1 + ancho * g.relacion + (leyenda ? 1.5 + leyenda * 3.5 : 0);
 }
 
 function dibujarGrafico(doc: jsPDF, g: GraficoPdf, x: number, y: number, ancho: number) {
@@ -137,22 +160,23 @@ function dibujarGrafico(doc: jsPDF, g: GraficoPdf, x: number, y: number, ancho: 
   doc.addImage(g.png, "PNG", x, y, ancho, alto);
   y += alto;
   if (g.leyenda?.length) {
-    y += 3.5;
-    let lx = x;
-    doc.setFontSize(7.5);
-    for (const l of g.leyenda) {
-      doc.setDrawColor(l.color);
-      doc.setLineWidth(0.9);
-      doc.line(lx, y - 1, lx + 5, y - 1);
-      doc.setTextColor(80);
-      doc.text(l.texto, lx + 6.5, y);
-      lx += 6.5 + doc.getTextWidth(l.texto) + 6;
+    y += 1.5;
+    for (const renglon of renglonesLeyenda(doc, g.leyenda, ancho)) {
+      y += 3.5;
+      for (const l of renglon) {
+        doc.setDrawColor(l.color);
+        doc.setLineWidth(0.9);
+        doc.line(x + l.x, y - 1, x + l.x + 5, y - 1);
+        doc.setTextColor(80);
+        doc.text(l.texto, x + l.x + 6.5, y);
+      }
     }
   }
 }
 
 export async function exportarPdfReporte(r: ReportePdf) {
-  const doc = new jsPDF({ orientation: "landscape" });
+  // compress: cada gráfico sin comprimir ocupa ~2,2 MB (1280×580 RGB crudo).
+  const doc = new jsPDF({ orientation: "landscape", compress: true });
   const W = doc.internal.pageSize.getWidth();
   const H = doc.internal.pageSize.getHeight();
   const M = 12;
@@ -206,13 +230,19 @@ export async function exportarPdfReporte(r: ReportePdf) {
     y += h + 6;
   }
 
-  // Gráficos, de a dos por fila; la fila que no entra pasa a la hoja siguiente.
+  // Gráficos, de a dos por fila (uno solo en la fila, o con anchoCompleto, va a lo
+  // ancho); la fila que no entra pasa a la hoja siguiente.
   if (r.graficos?.length) {
     const gap = 7;
-    const w = (ancho - gap) / 2;
-    for (let i = 0; i < r.graficos.length; i += 2) {
-      const fila = r.graficos.slice(i, i + 2);
-      const altoFila = Math.max(...fila.map((g) => altoGrafico(g, w)));
+    const filas: GraficoPdf[][] = [];
+    for (const g of r.graficos) {
+      const ultima = filas[filas.length - 1];
+      if (!g.anchoCompleto && ultima?.length === 1 && !ultima[0].anchoCompleto) ultima.push(g);
+      else filas.push([g]);
+    }
+    for (const fila of filas) {
+      const w = fila.length === 1 ? ancho : (ancho - gap) / 2;
+      const altoFila = Math.max(...fila.map((g) => altoGrafico(doc, g, w)));
       if (y + altoFila > limite) {
         doc.addPage();
         y = M;

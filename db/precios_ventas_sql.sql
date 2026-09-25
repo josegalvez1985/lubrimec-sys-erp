@@ -122,6 +122,7 @@ CREATE OR REPLACE PACKAGE BODY PKG_PRECIOS_VENTAS_LUBRIMEC AS
     APEX_JSON.WRITE('success', TRUE);
     APEX_JSON.OPEN_ARRAY('data');
     -- Mismos JOINs/columnas que el IR de la pagina 34 (rubro, marca, oem, margen)
+    -- + viscosidad (faceta de la pestana Evolucion del front)
     FOR r IN (
         SELECT p.id_precio, p.id_articulo, ar.descripcion AS descripcion_articulo,
                p.porc_recargo,
@@ -133,6 +134,7 @@ CREATE OR REPLACE PACKAGE BODY PKG_PRECIOS_VENTAS_LUBRIMEC AS
                END AS margen,
                ru.descripcion AS rubro,
                ma.descripcion AS marca,
+               vi.descripcion AS viscosidad,
                ar.codigo_oem
           FROM precios_ventas p
           LEFT JOIN articulos ar ON ar.id_articulo = p.id_articulo
@@ -141,6 +143,8 @@ CREATE OR REPLACE PACKAGE BODY PKG_PRECIOS_VENTAS_LUBRIMEC AS
                               AND ru.cod_empresa = ar.cod_empresa
           LEFT JOIN marcas ma ON ma.id_marca = ar.id_marca
                               AND ma.cod_empresa = ar.cod_empresa
+          -- VISCOSIDAD_LUBRICANTES no tiene cod_empresa: se une solo por id.
+          LEFT JOIN viscosidad_lubricantes vi ON vi.id_viscosidad = ar.id_viscosidad
          WHERE p.cod_empresa = p_cod_empresa
            AND (p_id_articulo IS NULL OR p.id_articulo = p_id_articulo)
          ORDER BY p.id_precio DESC
@@ -159,6 +163,7 @@ CREATE OR REPLACE PACKAGE BODY PKG_PRECIOS_VENTAS_LUBRIMEC AS
       APEX_JSON.WRITE('margen', r.margen);
       APEX_JSON.WRITE('rubro', r.rubro);
       APEX_JSON.WRITE('marca', r.marca);
+      APEX_JSON.WRITE('viscosidad', r.viscosidad);
       APEX_JSON.WRITE('codigo_oem', r.codigo_oem);
       APEX_JSON.CLOSE_OBJECT;
     END LOOP;
