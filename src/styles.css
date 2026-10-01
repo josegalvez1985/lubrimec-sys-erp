@@ -182,6 +182,11 @@
   --viz-serie-6: #008300;
   --viz-serie-7: #4a3aa7;
   --viz-serie-8: #e34948;
+  /* Diferencias de inventario (divergente): faltante y sobrante en los polos, exacto
+     en gris neutro al medio, así lo que "no pasó" queda atrás (comparacion-inventario). */
+  --viz-faltante: #d03b3b;
+  --viz-exacto: #c9c8c1;
+  --viz-sobrante: #2a78d6;
 
   --gradient-primary: linear-gradient(135deg, var(--primary), var(--primary-glow));
   --gradient-hero: linear-gradient(135deg, oklch(0.18 0.01 50), oklch(0.12 0.02 50));
@@ -240,6 +245,9 @@
   --viz-serie-6: #008300;
   --viz-serie-7: #9085e9;
   --viz-serie-8: #e66767;
+  --viz-faltante: #e05252;
+  --viz-exacto: #4a4946;
+  --viz-sobrante: #3987e5;
 
   --gradient-hero: linear-gradient(135deg, oklch(0.1 0.012 50), oklch(0.18 0.025 50));
   --shadow-glow: 0 10px 40px -10px color-mix(in oklab, var(--primary) 55%, transparent);

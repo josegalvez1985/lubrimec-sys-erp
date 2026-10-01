@@ -1,6 +1,10 @@
 --------------------------------------------------------------------------------
 -- ARTICULOS (pagina APEX 4) — paquete CRUD + endpoints ORDS.
--- Ejecutar completo como el esquema JOSEGALVEZ. Requiere PKG_AUTH_LUBRIMEC.
+-- Ejecutar completo como el esquema JOSEGALVEZ. Requiere PKG_AUTH_LUBRIMEC y PKG_STOCK.
+--
+-- existencia (Stock): se calcula POR ARTICULO con pkg_stock.fn_existencia(id_articulo,
+-- cod_empresa), en LISTAR y en OBTENER (decision del usuario). La columna
+-- ARTICULOS.existencia no se usa porque queda desactualizada.
 --
 -- PK id_articulo por trigger TRG_ARTICULOS. Multiempresa (cod_empresa, FK a empresas).
 -- FKs: cod_iva, cod_unidad_medida, id_rubro, id_marca, id_viscosidad. Imagen en BLOB.
@@ -89,7 +93,10 @@ CREATE OR REPLACE PACKAGE BODY PKG_ARTICULOS_LUBRIMEC AS
     FOR r IN (
         SELECT a.id_articulo, a.descripcion, a.cod_iva, a.cod_unidad_medida,
                a.estado, a.es_activo, a.id_rubro, a.id_marca, a.id_viscosidad,
-               a.codigo_oem, a.precio_venta, a.valoracion, a.existencia,
+               a.codigo_oem, a.precio_venta, a.valoracion,
+               -- Stock calculado POR ARTICULO (no la columna ARTICULOS.existencia,
+               -- que queda desactualizada, ni por OEM).
+               pkg_stock.fn_existencia(a.id_articulo, a.cod_empresa) existencia,
                a.cantidad_vendida, a.costo_ultima_compra,
                TO_CHAR(a.fecha_ultimo_inventario, 'DD/MM/YYYY') fecha_ultimo_inventario,
                CASE WHEN DBMS_LOB.GETLENGTH(a.archivo_imagen) > 0 THEN 1 ELSE 0 END tiene_imagen,
@@ -143,6 +150,7 @@ CREATE OR REPLACE PACKAGE BODY PKG_ARTICULOS_LUBRIMEC AS
     l_usuario VARCHAR2(255);
     l_r       articulos%ROWTYPE;
     l_b64     CLOB;
+    l_existencia NUMBER;
   BEGIN
     l_usuario := f_usuario(p_token);
     IF l_usuario IS NULL THEN
@@ -159,6 +167,9 @@ CREATE OR REPLACE PACKAGE BODY PKG_ARTICULOS_LUBRIMEC AS
         p_error(404, 'Not Found', 'Articulo no encontrado');
         RETURN;
     END;
+
+    -- Stock por articulo, igual que en LISTAR (no la columna guardada).
+    l_existencia := pkg_stock.fn_existencia(l_r.id_articulo, l_r.cod_empresa);
 
     IF l_r.archivo_imagen IS NOT NULL AND DBMS_LOB.GETLENGTH(l_r.archivo_imagen) > 0 THEN
       l_b64 := APEX_WEB_SERVICE.BLOB2CLOBBASE64(l_r.archivo_imagen);
@@ -179,7 +190,7 @@ CREATE OR REPLACE PACKAGE BODY PKG_ARTICULOS_LUBRIMEC AS
     APEX_JSON.WRITE('codigo_oem', l_r.codigo_oem);
     APEX_JSON.WRITE('precio_venta', l_r.precio_venta);
     APEX_JSON.WRITE('valoracion', l_r.valoracion);
-    APEX_JSON.WRITE('existencia', l_r.existencia);
+    APEX_JSON.WRITE('existencia', l_existencia);
     APEX_JSON.WRITE('cantidad_vendida', l_r.cantidad_vendida);
     APEX_JSON.WRITE('costo_ultima_compra', l_r.costo_ultima_compra);
     APEX_JSON.WRITE('fecha_ultimo_inventario',

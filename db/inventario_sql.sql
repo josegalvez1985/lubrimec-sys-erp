@@ -1,7 +1,8 @@
 --------------------------------------------------------------------------------
 -- INVENTARIO (paginas APEX 58 grilla + 59 modal Crear Inventario) — paquete CRUD
 -- + endpoints ORDS en un archivo. Ejecutar completo como el esquema JOSEGALVEZ.
--- Requiere PKG_AUTH_LUBRIMEC, PKG_STOCK (fn_existencia) y la vista V_PEDIDO_PROVEEDOR.
+-- Requiere PKG_AUTH_LUBRIMEC, PKG_STOCK (fn_existencia), PKG_COMPRAS (fn_costo_ultimo)
+-- y la vista V_PEDIDO_PROVEEDOR (solo para ordenar la LOV de articulos por ventas).
 --
 -- PK id_inventario autogenerada (el APEX inserta sin PK y la recupera despues).
 -- Multiempresa (cod_empresa). cantidad_sistema la calcula el backend con
@@ -17,7 +18,7 @@
 --   GET    /lubrimec/inventario/lov-rubros?cod_empresa=            -> LOV completo (sin 30/39)
 --   GET    /lubrimec/inventario/lov-marcas?cod_empresa=            -> LOV completo
 --   GET    /lubrimec/inventario/buscar-articulos?cod_empresa=
---          -> LOV COMPLETA de articulos (V_PEDIDO_PROVEEDOR, mas vendidos primero,
+--          -> LOV COMPLETA de articulos (tabla ARTICULOS, mas vendidos primero,
 --             con es_activo/id_rubro/id_marca); el filtrado es 100% en el front
 --   GET    /lubrimec/inventario/articulo-por-barra?cod_empresa=&cod_barra=
 --          -> resuelve un codigo de barras a su articulo (lector de barras)
@@ -70,7 +71,8 @@ CREATE OR REPLACE PACKAGE PKG_INVENTARIO_LUBRIMEC AS
       p_token       IN VARCHAR2,
       p_cod_empresa IN NUMBER);
 
-  -- LOV COMPLETA de articulos desde V_PEDIDO_PROVEEDOR (mas vendidos primero).
+  -- LOV COMPLETA de articulos desde ARTICULOS (mas vendidos primero segun la vista
+  -- V_PEDIDO_PROVEEDOR; incluye los que nunca pasaron por compras).
   -- Devuelve TODO el catalogo con es_activo/id_rubro/id_marca; el filtrado
   -- (palabras sueltas, ID parcial, cascada es_activo/rubro/marca) es 100% front.
   PROCEDURE BUSCAR_ARTICULOS(
@@ -140,7 +142,12 @@ CREATE OR REPLACE PACKAGE BODY PKG_INVENTARIO_LUBRIMEC AS
                i.cantidad_sistema,
                NVL(i.cantidad_fisica, 0) - NVL(i.cantidad_sistema, 0) AS diferencia,
                i.cerrado,
-               i.cod_barra
+               i.cod_barra,
+               -- Costo ultimo ACTUAL (pestana Comparacion valoriza la diferencia).
+               -- Subconsulta escalar: Oracle cachea el resultado por articulo, asi
+               -- la funcion corre una vez por articulo distinto, no una por conteo.
+               (SELECT PKG_COMPRAS.FN_COSTO_ULTIMO(i.id_articulo, i.cod_empresa)
+                  FROM dual) AS costo_ultimo
           FROM inventario i
           LEFT JOIN articulos a
                  ON a.cod_empresa = i.cod_empresa
@@ -158,6 +165,7 @@ CREATE OR REPLACE PACKAGE BODY PKG_INVENTARIO_LUBRIMEC AS
       APEX_JSON.WRITE('diferencia', r.diferencia);
       APEX_JSON.WRITE('cerrado', r.cerrado);
       APEX_JSON.WRITE('cod_barra', r.cod_barra);
+      APEX_JSON.WRITE('costo_ultimo', r.costo_ultimo);
       APEX_JSON.CLOSE_OBJECT;
     END LOOP;
     APEX_JSON.CLOSE_ARRAY;
@@ -474,14 +482,22 @@ CREATE OR REPLACE PACKAGE BODY PKG_INVENTARIO_LUBRIMEC AS
     APEX_JSON.WRITE('success', TRUE);
     APEX_JSON.OPEN_ARRAY('data');
     FOR r IN (
+        -- TODOS los articulos de la empresa (tabla ARTICULOS). Antes salian de
+        -- V_PEDIDO_PROVEEDOR, que solo tiene articulos con proveedor/compras: uno
+        -- que nunca paso por compras no se podia inventariar (ej. FILTRO DE CAJA
+        -- TOYOTA NEW VITZ ... 35330-52030). La vista queda solo para ordenar por
+        -- ventas (LEFT JOIN: sin ventas = al final).
         SELECT a.descripcion, a.id_articulo, a.codigo_oem,
                NVL(a.es_activo, 'S') AS es_activo,
                a.id_rubro, a.id_marca
-          FROM v_pedido_proveedor a
+          FROM articulos a
+          LEFT JOIN (SELECT v.id_articulo, SUM(v.ventas) AS ventas
+                       FROM v_pedido_proveedor v
+                      WHERE v.cod_empresa = p_cod_empresa
+                      GROUP BY v.id_articulo) vp
+                 ON vp.id_articulo = a.id_articulo
          WHERE a.cod_empresa = p_cod_empresa
-         GROUP BY a.descripcion, a.id_articulo, a.codigo_oem,
-                  NVL(a.es_activo, 'S'), a.id_rubro, a.id_marca
-         ORDER BY SUM(a.ventas) DESC, a.codigo_oem ASC
+         ORDER BY NVL(vp.ventas, 0) DESC, a.codigo_oem ASC NULLS LAST, a.descripcion
     ) LOOP
       APEX_JSON.OPEN_OBJECT;
       APEX_JSON.WRITE('id_articulo', r.id_articulo);

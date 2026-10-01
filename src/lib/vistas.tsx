@@ -60,7 +60,7 @@ export const VISTAS: Record<number, ComponentType> = {
   57: vista(() => import("@/components/articulos-sin-barra-view"), "ArticulosSinBarraView"), // Artículos sin Código de Barra
   81: vista(() => import("@/components/articulos-no-inventariados-view"), "ArticulosNoInventariadosView"), // Artículos no Inventariados
   76: vista(() => import("@/components/articulos-inventario-view"), "ArticulosInventarioView"), // Artículos para Inventario
-  58: vista(() => import("@/components/inventario-view"), "InventarioView"), // Inventario (modal Crear Inventario = pág 59)
+  58: vista(() => import("@/components/inventario-pagina"), "InventarioPagina"), // Inventario: Conteos (modal Crear = pág 59) + Comparación
   87: vista(() => import("@/components/ajustar-inventarios-view"), "AjustarInventariosView"), // Ajustar Inventarios (modal Aplicar = pág 88)
   89: vista(() => import("@/components/parametros-view"), "ParametrosView"), // Parámetros (modal Crear/Editar = pág 90)
   112: vista(() => import("@/components/planilla-inventarios-view"), "PlanillaInventariosView"), // Planilla para inventarios (113 Crear + 115 Cantidad)

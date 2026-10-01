@@ -874,6 +874,33 @@ reglas, con piezas propias de una comparación "un día contra otros":
 - **La tarjeta principal responde en texto:** "+294.000 (+7,7 %) vs. el conteo del jue 24/09" y
   "lo que más explica la diferencia: billetes de 100.000 (+9)". Se entiende sin leer un gráfico.
 
+**Tercer modelo: `comparacion-inventario.tsx`** (Inventario, pestaña Comparación). Mismo esqueleto
+(tarjeta en texto + gráficos + tabla + PDF), pero el dato tiene **signo** (faltante/sobrante):
+
+- **Escala divergente en vez de un color por fecha.** Faltante en rojo y sobrante en azul en los
+  polos, exacto en **gris neutro al medio** (`--viz-faltante`, `--viz-exacto`, `--viz-sobrante`,
+  validados con la skill dataviz en claro y oscuro). Lo que "no pasó" queda atrás y los problemas
+  saltan. Las fechas **no** llevan color propio: la paleta categórica tiene rojo y azul y se
+  confundirían con faltante/sobrante; las fechas se nombran en el eje. El gris queda bajo 3:1 a
+  propósito: el número va escrito al lado (columna fija) y está la tabla.
+- **Barra 100 % apilada para comparar calidad entre fechas** (proporción de artículos con
+  faltante / exactos / con sobrante): inventarios de distinto tamaño se leen igual. Separación de
+  2 px entre segmentos con `stroke` del color de la superficie.
+- **Barra divergente con forma propia** (`shape` del `<Bar>`): color por signo, punta redondeada
+  del lado del valor y el rótulo al final. Una barra negativa llega con **ancho negativo**: hay
+  que normalizar `x = min(x, x + width)` y `width = |width|` antes de dibujar el `Rectangle`.
+- **Racha al lado de cada fila:** segundo `YAxis` a la derecha con `tick` propio que dibuja un
+  cuadrito por fecha comparada (hueco = no se contó). Responde "¿falla siempre?" sin otro gráfico.
+- **Eje simétrico con números redondos:** `domain={[-lim, lim]}` con `lim` redondeado a
+  1/2/3/4/5/6/8 × 10^k y `ticks` explícitos en ±lim, ±lim/2 y 0. Sin redondear, recharts ponía
+  marcas como 279.800; con 1,5 en la lista, la mitad daba 7,5 y se mostraba "8".
+- **Medida elegible (Gs. / unidades)** como estado que reciben gráficos, tarjeta y PDF. Si el campo
+  de costo no llega (BD con el paquete anterior), el selector desaparece y se avisa.
+- **Móvil:** el gráfico recibe un flag (`movil` / `anchoEtiqueta`) y achica sus columnas fijas
+  (fecha corta, solo el % a la derecha, nombres recortados, montos compactos "-1,4 M", eje con
+  solo el 0). Con las columnas de escritorio a la barra no le quedaban ni 30 px. El PDF siempre
+  usa la versión de escritorio, también su subtítulo.
+
 ## Filtro multi-selección con chips (modelo: `evolucion-precios.tsx`)
 
 Para elegir varios valores de un catálogo grande (ej. artículos a comparar), donde una faceta de
@@ -911,9 +938,20 @@ Para ver una vista con datos de ejemplo sin ORDS ni login (capturas en claro/osc
 - **Capturar el PDF:** en el banco, reemplazar `window.open` por una función que baje el blob y lo
   deje en el DOM como base64; el visor de PDF de Chrome se puede capturar con
   `Page.captureScreenshot` sobre `file:///…/reporte.pdf`.
+- **El `index.html` del banco necesita `<meta name="viewport" content="width=device-width,
+  initial-scale=1">`.** Sin él, la emulación móvil de Chrome reporta `innerWidth` 980 aunque la
+  pantalla mida 400: la vista no entra en modo móvil y la captura engaña.
+- **Ticks del eje Y en recharts:** con el `tick` por defecto un nombre largo se parte en dos
+  renglones y se corta igual; para nombres de artículo usar un `tick` propio con un solo `<text>`
+  recortado (mayúsculas ≈ 7 px por letra a 11 px de fuente) y el nombre completo en el tooltip.
 
 ## Gotchas de UI
 
+- **Un texto largo sin cortes ensanchaba el modal entero** (scroll horizontal y el modal
+  "descuadrado"). Pasaba al elegir un artículo de nombre largo en un `BuscadorModal` dentro de
+  otro modal: `DialogContent` es una grilla y su columna implícita (`auto`) crece con el
+  contenido. Arreglado en `ui/dialog.tsx` con `grid-cols-[minmax(0,1fr)]`: la columna nunca
+  pasa el ancho del modal y el `truncate` del botón recorta con "…". No sacarlo.
 - **Layout responsivo:** el `<main>` del shell (`home.tsx`) lleva `min-w-0` — es hijo flex, y
   sin eso cualquier contenido ancho (tablas, gráficos) empuja la página entera más allá del
   viewport en móvil en lugar de scrollear dentro de su contenedor.

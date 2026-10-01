@@ -26,6 +26,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { DataTable, type Column } from "@/components/ui/data-table";
 import { BuscadorSelect } from "@/components/ui/buscador-select";
+import { BuscadorModal } from "@/components/ui/buscador-modal";
 import {
   listarInventario,
   crearInventario,
@@ -147,8 +148,7 @@ export function InventarioView() {
       key: "cerrado",
       header: "Cerrado",
       accessor: (r) => (r.cerrado === "S" ? "Sí" : "No"),
-      render: (r) =>
-        r.cerrado === "S" ? <Badge>Sí</Badge> : <Badge variant="outline">No</Badge>,
+      render: (r) => (r.cerrado === "S" ? <Badge>Sí</Badge> : <Badge variant="outline">No</Badge>),
       className: "w-20",
     },
   ];
@@ -245,8 +245,8 @@ export function InventarioView() {
             <AlertDialogDescription>
               Se eliminará el conteo{" "}
               <span className="font-semibold">#{aEliminar?.id_inventario}</span> de{" "}
-              <span className="font-semibold">{aEliminar?.articulo}</span>. Esta acción no se
-              puede deshacer.
+              <span className="font-semibold">{aEliminar?.articulo}</span>. Esta acción no se puede
+              deshacer.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -396,8 +396,7 @@ function InventarioDialog({
         <form onSubmit={onSubmit} className="space-y-4">
           {isView && item && (
             <div className="text-sm text-muted-foreground">
-              ID Inventario:{" "}
-              <span className="font-mono text-foreground">{item.id_inventario}</span>
+              ID Inventario: <span className="font-mono text-foreground">{item.id_inventario}</span>
             </div>
           )}
 
@@ -536,12 +535,26 @@ function InventarioDialog({
             {isView ? (
               <Input value={articuloLabel} disabled />
             ) : (
-              <BuscadorSelect
+              // Catálogo grande en un modal propio (el dropdown inline quedaba
+              // apretado dentro de este formulario). La key lo remonta al cambiar
+              // los filtros, así no muestra resultados del filtro anterior.
+              <BuscadorModal
                 key={`art-${esActivo ?? ""}-${rubro?.id_rubro ?? ""}-${marca?.id_marca ?? ""}`}
-                value={idArticulo}
+                id="articulo"
+                titulo="Elegir artículo"
+                descripcion={
+                  [
+                    esActivo ? `Activo: ${esActivo === "S" ? "Sí" : "No"}` : null,
+                    rubro ? `Categoría: ${rubro.descripcion ?? rubro.id_rubro}` : null,
+                    marca ? `Marca: ${marca.descripcion ?? marca.id_marca}` : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ") || "Todos los artículos"
+                }
+                placeholder="Elegir artículo..."
+                buscarPlaceholder="Buscar por descripción, OEM o ID..."
                 label={articuloLabel}
-                placeholder="Buscar artículo por descripción, OEM o ID..."
-                emptyLabel="Sin resultados"
+                emptyLabel="Sin resultados con estos filtros"
                 buscar={(q) =>
                   buscarArticulosInventario(COD_EMPRESA, q, {
                     es_activo: esActivo,

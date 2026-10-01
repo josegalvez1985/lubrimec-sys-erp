@@ -220,6 +220,10 @@ dinámicamente desde el endpoint `menu/paginas`.
   mantienen otros procesos). La grilla muestra un **thumbnail** por el endpoint público
   `articulos/:id/imagen` (al tocarlo se **amplía en un modal**); el modal de detalle trae la imagen
   grande vía `articulos/:id` (base64). Backend: `db/articulos_sql.sql`.
+  **Stock por artículo:** grilla y detalle lo calculan con `pkg_stock.fn_existencia(id_articulo,
+  cod_empresa)` (decisión del usuario: por `id_articulo`, no por OEM). La columna guardada
+  `ARTICULOS.existencia` queda desactualizada y hacía que el stock no coincidiera con Ventas por
+  Artículos.
 - **Detalle de Monedas** (page_id 83) — vista propia del detalle de `monedas_detalle`: selector de
   moneda + denominaciones con imagen. Reutiliza `DetalleMoneda` de la página 18. Sin backend nuevo.
 - **Vehículos-Repuestos** (page_id 94) — CRUD de `vehiculos_repuestos` (modelo ↔ código OEM). El
@@ -354,10 +358,45 @@ dinámicamente desde el endpoint `menu/paginas`.
     miles), observación en textarea de 1000 caracteres, nro de recibo obligatorio.
   - Backend: `db/compras_pagos_sql.sql`.
 - **Inventario** (page_id 58/59) — CRUD de conteos de `INVENTARIO`. El modal Crear (pág 59) filtra
-  el artículo por ¿Es Activo?/Categoría/Marca, resuelve códigos de barra
+  el artículo por ¿Es Activo?/Categoría/Marca y lo elige en un **modal propio con buscador**
+  (`BuscadorModal`, no el dropdown inline). La lista sale de la tabla **`ARTICULOS` completa**
+  (más vendidos primero): antes salía de `V_PEDIDO_PROVEEDOR` y faltaban los artículos que nunca
+  pasaron por compras. Resuelve códigos de barra
   (`inventario/articulo-por-barra`) y el backend calcula `cantidad_sistema` con
   `pkg_stock.fn_existencia`. LOVs propias del módulo (lista completa + filtro front). Backend:
   `db/inventario_sql.sql`.
+  - **Pestañas Conteos / Comparación** (`inventario-pagina.tsx`, mismo patrón que Conteo de
+    Efectivo): la vista de conteos queda **sin cambios** y montada; `vistas.tsx` apunta al
+    envoltorio.
+  - **Comparación** (`comparacion-inventario.tsx`, lazy con recharts). **Un inventario = los
+    conteos de una fecha** (definido con el usuario); si un artículo se contó dos veces el mismo
+    día vale el último (id mayor). Por defecto analiza el último inventario contra el
+    **anterior**, los **últimos 3 o 6**, **todos** los anteriores, o **fechas elegidas** (hasta 7).
+    Con más de 12 fechas el gráfico de exactitud se compacta (una línea por fecha, solo el %), la
+    racha se angosta a un ancho fijo, y con más de 7 la tabla/PDF cambian la columna por fecha
+    por "Con dif. en X de Y". Diferencias en
+    **Guaraníes o Unidades** (las dos, a pedido): Gs. = diferencia × **costo último actual**
+    (`pkg_compras.fn_costo_ultimo`, igual que Costo de Inventarios y Ajustar Inventarios).
+    **Sin endpoint nuevo:** el `LISTAR` de la grilla suma `costo_ultimo` (misma `queryKey`); si la
+    BD tiene el paquete anterior, el campo no llega y la pestaña queda solo en unidades con un
+    aviso. Tres piezas:
+    - **Tarjeta en texto:** % de exactitud (artículos contados sin diferencia), puntos contra el
+      anterior o el promedio, faltantes/sobrantes/neto en u. y Gs., el artículo que más pesa y
+      cuántos de los que fallaron **ya habían fallado** en los comparados.
+    - **Exactitud de cada inventario:** barra 100 % apilada por fecha (faltante | exacto |
+      sobrante); compara proporciones, así un inventario de 400 artículos y uno de 50 se leen
+      igual. A la derecha, la exactitud escrita y las diferencias en la medida elegida.
+    - **Artículos con mayor diferencia** (top 12): barra divergente (faltante a la izquierda,
+      sobrante a la derecha) y, al lado, la **racha**: un cuadrito por inventario comparado con lo
+      que dio ese artículo (hueco = no se contó). Muestra los que fallan siempre.
+    - Tabla con todos los artículos del inventario (diferencia en u. y Gs. + una columna por
+      inventario comparado) y PDF (en el PDF, solo los artículos con diferencia).
+    - **Filtro por artículos contados** (buscador + chips + "Limpiar"): el catálogo son todos los
+      artículos contados alguna vez (con en cuántos inventarios y el último). Con artículos
+      elegidos, cada inventario se recalcula solo con ellos y quedan las fechas que contaron
+      alguno, así "Inventario anterior" es el anterior en que **se contaron esos artículos**. Un
+      elegido que no se contó en el inventario analizado queda como chip atenuado. El PDF lista
+      los artículos filtrados en el subtítulo.
 - **Artículos para Inventario** (page_id 76) — hoja de conteo físico de solo lectura (columna
   Cantidad en blanco para llenar a mano). Búsqueda + facetas Es Activo/Rubro/Marcas 100% en el
   front. Backend: `db/articulos_para_inventario_sql.sql`.
@@ -471,6 +510,9 @@ El APK es una **WebView remota** que carga la app de GitHub Pages (`server.url` 
 ## Documentación
 
 - [db/GUIA_ENDPOINTS.md](db/GUIA_ENDPOINTS.md) — mapear tablas Oracle a endpoints ORDS.
+- [db/PKG_STOCK.sql](db/PKG_STOCK.sql) — copia de referencia de `PKG_STOCK` (no se despliega):
+  qué calcula cada función de stock. `fn_existencia(id_articulo, cod_empresa)` es por artículo;
+  `fn_existencia_oem` suma todo el OEM y sale de otra fuente (la usa Ventas por Artículos).
 - [src/GUIA_FRONT.md](src/GUIA_FRONT.md) — consumo desde el front, proxy y gotchas.
 - [GENERAR_APK.md](GENERAR_APK.md) — generar, firmar, publicar y versionar el APK.
 - [GUIA_LOGIN.md](GUIA_LOGIN.md) — guía portable para replicar este login (paquete

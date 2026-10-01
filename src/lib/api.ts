@@ -2742,6 +2742,10 @@ export type InventarioRow = {
   diferencia: number | null;
   cerrado: string | null;
   cod_barra: string | null;
+  // Costo último actual (pkg_compras.fn_costo_ultimo) para valorizar la diferencia
+  // en la pestaña Comparación. Opcional: no llega si la BD tiene el paquete
+  // anterior, y entonces la comparación queda solo en unidades.
+  costo_ultimo?: number | null;
 };
 
 export type InventarioInput = {
@@ -2806,7 +2810,7 @@ export type ArticuloInventarioLov = {
   id_marca?: number | null;
 };
 
-// LOV completa de artículos (V_PEDIDO_PROVEEDOR, más vendidos primero): el backend
+// LOV completa de artículos (tabla ARTICULOS, más vendidos primero): el backend
 // devuelve TODO el catálogo y acá se filtra flexible — palabras sueltas en cualquier
 // orden, ID parcial, OEM, cascada es_activo/rubro/marca — sin tope de resultados
 // (patrón LOV completo + filtro front).

@@ -41,7 +41,11 @@ const DialogContent = React.forwardRef<
         // w-[calc(100%-2rem)]: en móvil el modal deja un margen lateral real en vez
         // de pegarse a los bordes. max-h + overflow: nunca se corta un formulario
         // largo en pantallas bajas (768px de alto incluido).
-        "fixed left-[50%] top-[50%] z-50 grid max-h-[90dvh] w-[calc(100%-2rem)] max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 overflow-y-auto rounded-lg border bg-background p-[var(--panel-p)] shadow-lg duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95",
+        // grid-cols-[minmax(0,1fr)]: la columna de la grilla no crece con el texto.
+        // Con la columna implícita (auto), un texto largo sin cortes (ej. el nombre
+        // de un artículo elegido en un BuscadorModal) ensanchaba el modal entero y
+        // aparecía scroll horizontal; así el texto se recorta (truncate) adentro.
+        "fixed left-[50%] top-[50%] z-50 grid grid-cols-[minmax(0,1fr)] max-h-[90dvh] w-[calc(100%-2rem)] max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 overflow-y-auto rounded-lg border bg-background p-[var(--panel-p)] shadow-lg duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95",
         className,
       )}
       {...props}
