@@ -1706,6 +1706,48 @@ export async function crearSubaPrecio(input: SubaPrecioInput): Promise<number> {
   return data.id_precio as number;
 }
 
+// Sugeridos del modal "Nueva suba": la ÚLTIMA compra real del artículo (sin AJS) con
+// su delivery prorrateado por unidad, y el % de recargo del rubro. No se usa
+// precios-ventas/sugerir porque sin factura toma una línea de compra cualquiera.
+// Todo opcional: APEX_JSON omite las claves NULL (sin compras solo llega el rubro).
+export type SugerenciaSuba = {
+  rubro?: string | null;
+  porc_recargo?: number | null;
+  precio_compra?: number | null;
+  costo_delivery?: number | null;
+  id_factura?: number | null;
+  nro_linea?: number | null;
+  fec_compra?: string | null; // YYYY-MM-DD
+  comprobante?: string | null;
+  proveedor?: string | null;
+};
+
+export async function sugerirSubaPrecio(
+  codEmpresa: number,
+  idArticulo: number,
+): Promise<SugerenciaSuba> {
+  const q = new URLSearchParams({
+    cod_empresa: String(codEmpresa),
+    id_articulo: String(idArticulo),
+  });
+  const data = await authFetch(`suba-precios/sugerir?${q}`);
+  return (data.data ?? {}) as SugerenciaSuba;
+}
+
+// Costo de la última compra de cada artículo (mismo criterio que sugerirSubaPrecio),
+// para la columna "Últ. Compra" y la marca de "costo subió" de la grilla.
+export type UltimaCompra = {
+  id_articulo: number;
+  precio_compra: number;
+  fec_compra?: string | null; // YYYY-MM-DD
+};
+
+export async function listarUltimasCompras(codEmpresa: number): Promise<UltimaCompra[]> {
+  const q = new URLSearchParams({ cod_empresa: String(codEmpresa) });
+  const data = await authFetch(`suba-precios/ultimas-compras?${q}`);
+  return (data.data ?? []) as UltimaCompra[];
+}
+
 // ─── Descuentos (página 67) ──────────────────────────────────────────────────
 // CRUD de DESCUENTOS. PK id_descuento (IDENTITY). Multiempresa. Vigencia por rango
 // de fechas (fecha_desde/fecha_hasta) + porc_descuento. (Distinta de TABLA_DESCUENTOS

@@ -286,6 +286,34 @@ dinámicamente desde el endpoint `menu/paginas`.
       y la tabla (`exportarPdfReporte` + `graficoAPng` en `src/lib/export.ts`).
     - **Descartado por el usuario:** KPIs, gráficos por mes, ranking de mayores aumentos y
       variación por rubro. Se probaron y no le servían; no volver a proponerlos.
+- **Suba de Precios** (page_id 100) — último precio por artículo con margen y stock. Búsqueda
+  (filtro estándar de artículos: palabras sueltas, OEM con o sin guion, ID) + facetas
+  Rubro/Marca con el `Faceta` compartido. El lápiz de cada fila abre el modal de siempre
+  ("Actualizar precio", `POST suba-precios`). Backend: `db/ORDS_SUBA_PRECIOS.sql`.
+  - **Nueva suba**, desde el botón del encabezado (elige el artículo con `BuscadorModal`:
+    catálogo completo, también artículos sin precio; tiene "Guardar y otro") o desde el botón ↗
+    de cada fila (artículo fijo, guarda y cierra). Precarga, como Precios de Ventas, el **costo
+    de la última compra** (+ delivery prorrateado) y el **% de recargo del rubro**. Si ese costo
+    difiere del del precio vigente, muestra la **sugerencia de cambio de costo** (anterior →
+    nuevo, %) con opción de mantener el anterior. Precio por recargo sobre costo o por **% de
+    suba sobre el vigente**, redondeado hacia arriba al millar; vista previa con variación y
+    margen; avisos si no sube, si el margen queda bajo el recargo del rubro o si queda bajo el
+    costo (este pide confirmar).
+  - Graba con el `POST precios-ventas` de la pág 34, que guarda además `id_factura`/`nro_linea`
+    de la compra de donde salió el costo.
+  - **Costo de la última compra en la grilla:** "Precio Compra" muestra debajo `↑ 58.000` (ámbar)
+    o `↓ 38.000` cuando la última compra difiere del costo del precio vigente (fecha y % en el
+    tooltip), el botón ↗ de la fila se resalta si el costo subió, y la faceta **Costo de compra**
+    (Costo subió / bajó / Sin cambio / …) filtra a quién hay que subirle el precio. Va dentro de
+    la celda y no como columna aparte: cada columna suma ~100 px y en 1366 px la de acciones
+    quedaba cortada.
+  - **Endpoints propios** (bloque independiente al final del `.sql`; hay que ejecutarlo):
+    `suba-precios/sugerir` (modal) y `suba-precios/ultimas-compras` (grilla), con el mismo
+    criterio de "última compra" (sin AJS, `fec_comprobante DESC NULLS LAST`).
+    `precios-ventas/sugerir` sin factura toma la línea de compra con `ROWNUM = 1` **sin
+    `ORDER BY`** —una cualquiera, no la última— y no se tocó para no cambiar Precios de Ventas.
+    Mientras la BD no tenga el bloque, la grilla queda como antes (sin marca ni faceta) y el modal
+    avisa y usa el costo del precio vigente y el % del rubro de `precios-ventas/sugerir`.
 - **Compras por Artículos** (page_id 55) — reporte de solo lectura de `COMPRAS_ARTICULOS`
   (`tip_comprobante != 'AJS'`). Búsqueda + facetas Proveedor/Fecha/Referencia, **carga incremental
   por mes** ("Mostrar más"), imagen por artículo, total al pie y export. Backend:
