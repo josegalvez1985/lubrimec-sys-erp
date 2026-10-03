@@ -65,8 +65,9 @@ const COLUMNAS: Column<SubaPrecio>[] = [
     ),
     hideable: false,
   },
-  { key: "marca", header: "Marca", accessor: (r) => r.marca ?? "" },
-  { key: "rubro", header: "Rubro", accessor: (r) => r.rubro ?? "" },
+  // null y no "": sin dato va al final en los dos sentidos (con "" quedaba primero en A→Z).
+  { key: "marca", header: "Marca", accessor: (r) => r.marca },
+  { key: "rubro", header: "Rubro", accessor: (r) => r.rubro },
   {
     key: "stock",
     header: "Stock",
@@ -206,6 +207,10 @@ export function SubaPreciosView() {
   });
 
   const filas = useMemo(() => data ?? [], [data]);
+  // Clave de fila propia, no id_precio: si el backend repite un id_precio (un JOIN que
+  // duplica filas), React confunde las filas con la misma clave al reordenar y el orden
+  // por columna parece no funcionar. Las filas filtradas son los mismos objetos.
+  const claveFila = useMemo(() => new Map(filas.map((r, i) => [r, i])), [filas]);
   // Precio vigente por artículo (la grilla trae el último precio de cada uno).
   const vigentes = useMemo(() => new Map(filas.map((r) => [r.id_articulo, r])), [filas]);
   const ultimas = useMemo(
@@ -377,9 +382,9 @@ export function SubaPreciosView() {
             <DataTable
               columns={columnas}
               rows={filasFiltradas}
-              getRowId={(r) => r.id_precio}
+              getRowId={(r) => claveFila.get(r) ?? r.id_precio}
               exportName="suba-precios"
-              initialSort={{ key: "margen", dir: "asc" }}
+              initialSort={{ key: "fecha", dir: "desc" }}
               actions={(r) => (
                 <div className="flex items-center justify-end gap-1">
                   <Button
