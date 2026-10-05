@@ -1050,6 +1050,9 @@ export type PedidoArticulo = {
   costo_ultimo: number | null;
   proveedor: string | null;
   rubro: string | null;
+  // Marca del ARTICULO (no del OEM: un OEM junta articulos de varias marcas).
+  // Opcional: no viene si la BD tiene el endpoint viejo.
+  marca?: string | null;
   // Ventas del OEM (mismo valor en todas las filas del OEM): NO sumar entre
   // proveedores. La grilla agrupa por OEM y toma este valor una sola vez.
   ventas: number;

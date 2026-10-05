@@ -7,7 +7,7 @@
 --       ?cod_empresa=24          (opcional, default 24)
 --
 -- Devuelve TODO el dataset (compras/ventas/existencia/costo por articulo+proveedor).
--- El filtrado (busqueda + facetas En Falta/Rubro/Proveedor) y el ordenamiento se
+-- El filtrado (busqueda + facetas En Falta/Rubro/Proveedor/Marca) y el ordenamiento se
 -- hacen 100% en el front (src/components/pedidos-articulos-view.tsx).
 --
 -- Query base provista por el negocio: agrupa movimientos (compras normales, ajustes)
@@ -57,6 +57,12 @@
 -- ind_cliente_proveedor en (P, A). Una compra cargada a una persona marcada solo
 -- como Cliente, o sin el indicador, queda fuera del reporte entero (tambien de
 -- sus totales de Compras). Es el mismo criterio de las LOVs de proveedores.
+--
+-- "marca" es la marca del ARTICULO (ARTICULOS.id_marca -> MARCAS). La usa la
+-- faceta Marca del front, que acota el OEM a los articulos de esa marca igual que
+-- la de Proveedor. Como la fila final se agrupa por descripcion (no por articulo),
+-- la marca se toma del MISMO articulo que MAX(id_articulo) (KEEP DENSE_RANK LAST),
+-- para que id_articulo y marca nunca vengan de dos articulos distintos.
 --
 -- Ejecutar como el esquema JOSEGALVEZ. Requiere PKG_AUTH_LUBRIMEC y PKG_COMPRAS.
 --------------------------------------------------------------------------------
@@ -139,6 +145,7 @@ BEGIN
                 e.nombre                                   AS nombre,
                 NVL(c.codigo_oem, TO_CHAR(c.id_articulo))  AS codigo_oem,
                 r.descripcion                              AS rubro,
+                m.descripcion                              AS marca,
                 c.id_rubro                                 AS id_rubro,
                 c.es_activo                                AS es_activo
             FROM compras_cabecera           a
@@ -164,6 +171,8 @@ BEGIN
                                             AND NVL(e.ind_cliente_proveedor, '-') IN ('P', 'A')
             LEFT JOIN rubros                r ON r.cod_empresa = c.cod_empresa
                                             AND r.id_rubro     = c.id_rubro
+            LEFT JOIN marcas                m ON m.cod_empresa = c.cod_empresa
+                                            AND m.id_marca     = c.id_marca
             WHERE a.cod_empresa          = l_cod_empresa
               AND NVL(c.estado,   'I')   = 'A'
               AND NVL(c.es_activo,'S')  <> 'S'
@@ -181,13 +190,14 @@ BEGIN
                 codigo_oem                  AS ag_codigo_oem,
                 descripcion                 AS ag_descripcion,
                 rubro                       AS ag_rubro,
+                marca                       AS ag_marca,
                 nombre                      AS ag_nombre,
                 id_cod_proveedor            AS ag_id_cod_proveedor,
                 SUM(compras)                AS ag_compras
             FROM base_movimientos
             GROUP BY
                 cod_empresa, id_articulo, codigo_oem, descripcion,
-                rubro, nombre, id_cod_proveedor
+                rubro, marca, nombre, id_cod_proveedor
         ),
         existencias AS (
             SELECT
@@ -325,6 +335,8 @@ BEGIN
             ag.ag_codigo_oem                                           AS codigo_oem,
             ag.ag_descripcion                                          AS articulo,
             ag.ag_rubro                                                AS rubro,
+            -- Marca del mismo articulo que MAX(ag_id_articulo) (ver cabecera).
+            MAX(ag.ag_marca) KEEP (DENSE_RANK LAST ORDER BY ag.ag_id_articulo) AS marca,
             CASE WHEN NVL(ex.ex_existencia, 0) = 0 THEN 'En Falta' ELSE 'Stock' END AS faltantes,
             ag.ag_nombre                                              AS nombre,
             co.co_costo_ultimo                                        AS costo_ultimo
@@ -356,6 +368,7 @@ BEGIN
         APEX_JSON.WRITE('costo_ultimo', r.costo_ultimo);
         APEX_JSON.WRITE('proveedor', r.nombre);
         APEX_JSON.WRITE('rubro', r.rubro);
+        APEX_JSON.WRITE('marca', r.marca);
         APEX_JSON.WRITE('ventas', r.ventas);
         APEX_JSON.WRITE('ventas_articulo', r.ventas_articulo);
         APEX_JSON.WRITE('existencia_articulo', r.existencia_articulo);

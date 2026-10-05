@@ -66,6 +66,7 @@ type GrupoOem = {
   compras: number;
   faltantes: string;
   proveedores: string[]; // distintos (una fila por artículo puede repetir proveedor)
+  marcas: string[]; // distintas: la marca es del artículo y un OEM junta varios
   filas: PedidoArticulo[]; // detalle por proveedor (modal)
 };
 
@@ -109,6 +110,7 @@ function armarGrupo(codigo_oem: string, grupo: PedidoArticulo[]): GrupoOem {
     proveedores: Array.from(
       new Set(grupo.map((f) => f.proveedor).filter((p): p is string => !!p)),
     ),
+    marcas: Array.from(new Set(grupo.map((f) => f.marca).filter((m): m is string => !!m))),
     filas: grupo,
   };
 }
@@ -124,19 +126,37 @@ function agrupar(filas: PedidoArticulo[]): GrupoOem[] {
   return Array.from(mapa.entries()).map(([oem, grupo]) => armarGrupo(oem, grupo));
 }
 
-// Filtrar por proveedor ACOTA el grupo, no solo elige cuáles se muestran: si ya
-// dijiste qué proveedor mirás, el OEM se re-arma con las filas de ese proveedor.
+// Facetas de FILA: su valor es de cada línea (artículo + proveedor), no del OEM.
+const CAMPO_FILA: Record<string, (f: PedidoArticulo) => string | null | undefined> = {
+  proveedor: (f) => f.proveedor,
+  marca: (f) => f.marca,
+};
+
+// Filtrar por proveedor o marca ACOTA el grupo, no solo elige cuáles se muestran:
+// si ya dijiste qué proveedor/marca mirás, el OEM se re-arma con esas filas.
 // De ahí salen solas, sin código extra:
 //   · queda un proveedor → la columna muestra el artículo (etiquetaPrincipal)
 //   · desaparece el badge "N prov."
-//   · Compras, Ventas y Existencia quedan las de los artículos de ese proveedor
+//   · Compras, Ventas y Existencia quedan las de los artículos que quedaron
 // Las tres se recalculan porque `armarGrupo` las arma desde el grano artículo;
 // si se tomaran del valor del OEM, filtrar dejaría Compras acotada y las otras
 // dos enteras, que es justo la mezcla que no cierra.
-function acotarAProveedores(g: GrupoOem, sel: string[]): GrupoOem {
-  if (sel.length === 0) return g;
-  const filas = g.filas.filter((f) => f.proveedor != null && sel.includes(f.proveedor));
-  return filas.length === 0 ? g : armarGrupo(g.codigo_oem, filas);
+// Con proveedor Y marca tildados, una fila tiene que cumplir las dos: un OEM con
+// la marca X de un proveedor y la Y de otro no pasa con "X + otro proveedor".
+// `excepto` deja afuera una faceta: la usan los conteos de esa misma faceta.
+// Devuelve null si no queda ninguna fila (el OEM no pasa el filtro).
+function acotar(g: GrupoOem, facetas: Record<string, string[]>, excepto?: string): GrupoOem | null {
+  const activas = Object.entries(CAMPO_FILA).filter(
+    ([clave]) => clave !== excepto && (facetas[clave] ?? []).length > 0,
+  );
+  if (activas.length === 0) return g;
+  const filas = g.filas.filter((f) =>
+    activas.every(([clave, campo]) => {
+      const v = campo(f);
+      return v != null && facetas[clave].includes(v);
+    }),
+  );
+  return filas.length === 0 ? null : armarGrupo(g.codigo_oem, filas);
 }
 
 // Etiqueta de la segunda columna. Con UN SOLO proveedor no hay ambigüedad: se
@@ -192,9 +212,9 @@ const COLUMNAS: {
   },
 ];
 
-// Facetas del sidebar: En Falta, Rubro, Proveedor. Las dos primeras son del OEM;
-// Proveedor es multivaluada (un OEM puede tener varios), así que un grupo pasa
-// si CUALQUIERA de sus proveedores está tildado.
+// Facetas del sidebar: En Falta, Rubro, Proveedor, Marca. Las dos primeras son
+// del OEM; Proveedor y Marca son multivaluadas (un OEM puede tener varios) y de
+// fila: el grupo se acota a las filas tildadas (`acotar`) antes de evaluarlas.
 const FACETAS: {
   clave: string;
   etiqueta: string;
@@ -207,6 +227,7 @@ const FACETAS: {
     etiqueta: "Proveedor",
     valores: (g) => g.proveedores,
   },
+  { clave: "marca", etiqueta: "Marca", valores: (g) => g.marcas },
 ];
 
 // Identidad de una línea del detalle. Lleva id_articulo además del proveedor:
@@ -271,6 +292,12 @@ export function PedidosArticulosView() {
     retry: false,
   });
   const todos = useMemo(() => agrupar(query.data ?? []), [query.data]);
+  // La faceta Marca se oculta mientras la BD tenga el endpoint viejo (sin
+  // `marca`): mostraría "Sin opciones" y parecería un filtro roto.
+  const facetasVisibles = useMemo(
+    () => FACETAS.filter((f) => f.clave !== "marca" || (query.data ?? []).some((r) => r.marca)),
+    [query.data],
+  );
 
   // La búsqueda incluye las descripciones de los artículos del grupo: la columna
   // Artículo ya no está en la grilla, pero se tiene que poder buscar por nombre.
@@ -281,7 +308,10 @@ export function PedidosArticulosView() {
       // Incluye el código del proveedor y la descripción aunque no sean columnas
       // de la grilla: si no, se vuelven inencontrables desde el buscador.
       const texto = `${g.codigo_oem} ${g.rubro ?? ""} ${g.filas
-        .map((f) => `${f.articulo ?? ""} ${f.proveedor ?? ""} ${f.cod_proveedor ?? ""}`)
+        .map(
+          (f) =>
+            `${f.articulo ?? ""} ${f.proveedor ?? ""} ${f.cod_proveedor ?? ""} ${f.marca ?? ""}`,
+        )
         .join(" ")}`.toLowerCase();
       return texto.includes(q);
     };
@@ -295,12 +325,18 @@ export function PedidosArticulosView() {
 
   // Opciones de cada faceta (con conteo), calculadas aplicando las OTRAS facetas +
   // texto → facetas dependientes (AND entre facetas, OR dentro de cada una).
+  // El grupo se acota con las otras facetas de fila: así, con un proveedor
+  // tildado, Marca cuenta solo las marcas que ese proveedor trae, y viceversa.
   const opciones = useMemo(() => {
     const out: Record<string, { valor: string; count: number }[]> = {};
     for (const f of FACETAS) {
-      const compatibles = todos.filter(
-        (g) => pasaTexto(g) && FACETAS.every((otra) => otra === f || pasaFaceta(g, otra)),
-      );
+      const compatibles: GrupoOem[] = [];
+      for (const g of todos) {
+        const a = acotar(g, facetas, f.clave);
+        if (a && pasaTexto(a) && FACETAS.every((otra) => otra === f || pasaFaceta(a, otra))) {
+          compatibles.push(a);
+        }
+      }
       const conteo = new Map<string, number>();
       for (const g of compatibles) {
         // Set: un proveedor repetido dentro del mismo OEM cuenta una sola vez.
@@ -318,13 +354,13 @@ export function PedidosArticulosView() {
 
   const grupos = useMemo(() => {
     const col = COLUMNAS.find((c) => c.key === orden.key);
-    const selProv = facetas["proveedor"] ?? [];
     const filtrados: GrupoOem[] = [];
     for (const g of todos) {
-      // Las facetas se evalúan sobre el grupo COMPLETO (si no, filtrar por
-      // proveedor se auto-excluiría), y recién después se acota.
-      if (!FACETAS.every((f) => pasaFaceta(g, f))) continue;
-      const acotado = acotarAProveedores(g, selProv);
+      // Primero se acota por las facetas de fila (proveedor, marca); un OEM sin
+      // filas que las cumplan queda afuera. En falta y Rubro son del OEM, así
+      // que dan igual sobre el grupo acotado o el completo.
+      const acotado = acotar(g, facetas);
+      if (!acotado || !FACETAS.every((f) => pasaFaceta(acotado, f))) continue;
       // El texto va sobre el grupo ya acotado: con un proveedor filtrado, buscar
       // el artículo de OTRO proveedor del mismo OEM no tiene que traer la fila.
       if (!pasaTexto(acotado)) continue;
@@ -381,8 +417,8 @@ export function PedidosArticulosView() {
     toast.success(`Pedido vaciado (${seleccionados} línea${seleccionados === 1 ? "" : "s"})`);
   }
 
-  // Unidades pedidas de un OEM, sumando sus líneas. Con la faceta de proveedor
-  // puesta el grupo ya viene acotado, así que cuenta solo lo de ese proveedor.
+  // Unidades pedidas de un OEM, sumando sus líneas. Con la faceta de proveedor o
+  // marca puesta el grupo ya viene acotado, así que cuenta solo lo filtrado.
   const unidadesPedidas = (g: GrupoOem) =>
     g.filas.reduce((a, f) => a + (pedido[filaKey(f)] ?? 0), 0);
 
@@ -429,7 +465,7 @@ export function PedidosArticulosView() {
           />
         </div>
 
-        {FACETAS.map((f) => {
+        {facetasVisibles.map((f) => {
           const sel = facetas[f.clave] ?? [];
           const opts = opciones[f.clave] ?? [];
           const abierta = expandida[f.clave];
@@ -480,8 +516,8 @@ export function PedidosArticulosView() {
               {!query.isSuccess
                 ? "Cargando..."
                 : `${grupos.length} OEM${grupos.length === 1 ? "" : "s"} · ${
-                    (facetas["proveedor"] ?? []).length > 0
-                      ? "existencia, ventas y compras acotadas al proveedor filtrado"
+                    Object.keys(CAMPO_FILA).some((k) => (facetas[k] ?? []).length > 0)
+                      ? "existencia, ventas y compras acotadas a los artículos filtrados"
                       : "tocá el código para ver el detalle por proveedor"
                   }`}
             </p>

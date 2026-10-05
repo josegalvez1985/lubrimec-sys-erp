@@ -150,8 +150,11 @@ dinámicamente desde el endpoint `menu/paginas`.
   columna acotada con dos enteras (ver "Dataset con grano mixto" en
   [src/GUIA_FRONT.md](src/GUIA_FRONT.md)). Filtrado 100% en el front: búsqueda (incluye las
   descripciones de los artículos, que ya no son columna) + facetas dependientes en sidebar (En
-  Falta, Rubro, Proveedor — esta última multivaluada: el OEM pasa si cualquiera de sus proveedores
-  está tildado) y orden por columnas. Check + cantidad por fila y botón "Copiar pedido" al
+  Falta, Rubro, Proveedor, Marca — las dos últimas multivaluadas y de fila: el OEM pasa si alguna
+  de sus filas cumple lo tildado, y se acota a esas filas, así que filtrar por **marca** también
+  recalcula existencia, ventas y compras con solo los artículos de esa marca; con proveedor y
+  marca a la vez, la misma fila tiene que cumplir los dos) y orden por columnas. La marca es la
+  del artículo (`marca` en el endpoint); mientras la BD no tenga esa versión, la faceta no aparece. Check + cantidad por fila y botón "Copiar pedido" al
   portapapeles. Backend:
   `db/pedidos_articulos_sql.sql` (query cruda, devuelve todo el dataset).
   **La columna Ventas se corrige respecto del APEX**, que la tiene rota (daba 0 para todo): la
