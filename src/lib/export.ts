@@ -17,7 +17,7 @@ function descargarBlob(blob: Blob, nombre: string) {
 }
 
 // Logo del proyecto (public/logo.png) como data URL para incrustarlo en el PDF.
-async function cargarLogo(): Promise<string | null> {
+export async function cargarLogo(): Promise<string | null> {
   try {
     const res = await fetch(`${import.meta.env.BASE_URL}logo.png`);
     if (!res.ok) return null;

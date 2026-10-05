@@ -10,7 +10,9 @@ import {
   Plus,
   FilePlus,
   Eye,
+  FileText,
 } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -56,6 +58,7 @@ import {
   type CompraCabeceraInput,
   type CompraDetalleLinea,
 } from "@/lib/api";
+import { generarReciboSalario } from "@/lib/recibo-salario";
 
 const TIP_COMPROBANTES = ["FCO", "FCR", "NCR", "REC", "AJS", "SAL"];
 
@@ -82,6 +85,45 @@ type ModalState =
   // `recienCreada`: la factura se acaba de insertar, así que su detalle está
   // vacío con certeza y no hace falta ir a buscarlo a Oracle.
   | { mode: "detalle"; item: CompraCabecera; recienCreada?: boolean };
+
+// Botón "Recibo" de la pág 29: solo para comprobantes SAL (pago de salario).
+// Sin endpoint propio: los conceptos salen del detalle de la factura y el CI de
+// la LOV de proveedores (el trabajador está cargado como proveedor). Total por
+// concepto = NVL(cantidad,1) * NVL(precio,0), como el proceso `json` del APEX.
+function useReciboSalario() {
+  const [generando, setGenerando] = useState<number | null>(null);
+
+  async function imprimir(item: CompraCabecera) {
+    setGenerando(item.id_factura);
+    try {
+      const [lineas, personas] = await Promise.all([
+        listarCompraDetalle(item.id_factura),
+        buscarProveedoresCompra(COD_EMPRESA, ""),
+      ]);
+      if (lineas.length === 0) {
+        toast.error("La factura no tiene conceptos cargados");
+        return;
+      }
+      const persona = personas.find((p) => p.cod_persona === item.cod_persona);
+      await generarReciboSalario({
+        idFactura: item.id_factura,
+        trabajador: item.nombre_proveedor ?? persona?.nombre ?? `#${item.cod_persona}`,
+        ci: persona?.nro_ci ?? null,
+        fecha: fmtFecha(item.fec_comprobante),
+        conceptos: lineas.map((l) => ({
+          concepto: l.descripcion_articulo ?? `Artículo ${l.id_articulo}`,
+          total: (l.cantidad ?? 1) * (l.precio ?? 0),
+        })),
+      });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "No se pudo generar el recibo");
+    } finally {
+      setGenerando(null);
+    }
+  }
+
+  return { imprimir, generando };
+}
 
 const COLUMNAS: Column<CompraCabecera>[] = [
   {
@@ -154,6 +196,7 @@ export function ComprasView() {
   const qc = useQueryClient();
   const [modal, setModal] = useState<ModalState>({ mode: "closed" });
   const [aEliminar, setAEliminar] = useState<CompraCabecera | null>(null);
+  const recibo = useReciboSalario();
   // 0 = "Todos". Por defecto el año y mes actual; los filtros acotan o ven todo.
   const hoy = new Date();
   const [anio, setAnio] = useState(hoy.getFullYear());
@@ -302,6 +345,23 @@ export function ComprasView() {
                 >
                   <ListOrdered className="h-4 w-4" />
                 </Button>
+                {r.tip_comprobante === "SAL" && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-muted-foreground hover:text-primary"
+                    onClick={() => recibo.imprimir(r)}
+                    disabled={recibo.generando === r.id_factura}
+                    aria-label="Recibo de salario"
+                    title="Recibo de salario"
+                  >
+                    {recibo.generando === r.id_factura ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <FileText className="h-4 w-4" />
+                    )}
+                  </Button>
+                )}
                 <Button
                   variant="ghost"
                   size="icon"
@@ -860,6 +920,7 @@ function CompraEditDialog({
     item?.nombre_comprador ??
     (vendedores ?? []).find((v) => v.cod_vendedor === item?.id_comprador)?.nombre ??
     null;
+  const recibo = useReciboSalario();
 
   const [tipComprobante, setTipComprobante] = useState("");
   const [nroComprobante, setNroComprobante] = useState("");
@@ -1048,7 +1109,25 @@ function CompraEditDialog({
             </p>
           )}
 
-          <DialogFooter>
+          <DialogFooter className="gap-2 sm:gap-0">
+            {/* Como en el APEX, el botón depende del tipo GUARDADO (SAL), no del
+                que se esté editando en el formulario. */}
+            {item?.tip_comprobante === "SAL" && (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => recibo.imprimir(item)}
+                disabled={saving || recibo.generando != null}
+                className="sm:mr-auto"
+              >
+                {recibo.generando != null ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <FileText className="mr-2 h-4 w-4" />
+                )}
+                Recibo
+              </Button>
+            )}
             <Button type="button" variant="outline" onClick={onClose} disabled={saving}>
               Cancelar
             </Button>

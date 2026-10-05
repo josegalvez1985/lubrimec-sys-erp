@@ -380,6 +380,13 @@ dinámicamente desde el endpoint `menu/paginas`.
     resueltos por JOIN (`desc_condicion`, `nombre_comprador`).
   - **Alta encadenada de líneas:** al agregar un artículo el modal no se cierra — limpia los
     campos, refresca la grilla y el total, y deja el foco listo para el siguiente.
+  - **Recibo de salario** (botón "Recibo" de la pág 29): solo en comprobantes `SAL`, desde un
+    ícono en la fila de la grilla y desde el modal de edición (según el tipo **guardado**, como
+    el APEX). PDF A5 apaisado con jsPDF (`src/lib/recibo-salario.ts`, reemplaza el pdfMake +
+    `numeros_letras.js` del APEX): empresa, trabajador (el proveedor) con su CI, conceptos (los
+    artículos del detalle, `NVL(cantidad,1) * NVL(precio,0)`), total en letras y firmas. Sin
+    endpoint nuevo: el detalle y el CI (LOV de proveedores) ya existían. Los datos de la empresa
+    (razón social, RUC, dirección) están fijos en el archivo, igual que en el APEX.
   - **LOVs propias** (proveedores y artículos): el endpoint devuelve el catálogo **completo** y el
     front filtra flexible — nombre sin distinguir mayúsculas/minúsculas, RUC/CI con o sin guion,
     palabras sueltas en cualquier orden, OEM con o sin guion (`9091503001` ≡ `90915-03001`), sin
