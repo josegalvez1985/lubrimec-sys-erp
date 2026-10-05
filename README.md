@@ -145,8 +145,8 @@ dinámicamente desde el endpoint `menu/paginas`.
   (OEM, proveedor), así que la grilla repetía cada OEM tantas veces como proveedores tuviera: el
   agrupado se hace en el front (`agrupar()`) desde el grano **artículo**: el backend devuelve
   `ventas_articulo` y `existencia_articulo` además de los totales por OEM, y el front los suma por
-  artículo distinto. Gracias a eso **filtrar por proveedor acota las tres columnas a la vez**
-  (existencia, ventas y compras de los artículos de ese proveedor), en lugar de mezclar una
+  artículo distinto. Gracias a eso **filtrar por proveedor o marca acota las tres columnas a la
+  vez** (existencia, ventas y compras de los artículos filtrados), en lugar de mezclar una
   columna acotada con dos enteras (ver "Dataset con grano mixto" en
   [src/GUIA_FRONT.md](src/GUIA_FRONT.md)). Filtrado 100% en el front: búsqueda (incluye las
   descripciones de los artículos, que ya no son columna) + facetas dependientes en sidebar (En
@@ -154,8 +154,8 @@ dinámicamente desde el endpoint `menu/paginas`.
   de sus filas cumple lo tildado, y se acota a esas filas, así que filtrar por **marca** también
   recalcula existencia, ventas y compras con solo los artículos de esa marca; con proveedor y
   marca a la vez, la misma fila tiene que cumplir los dos) y orden por columnas. La marca es la
-  del artículo (`marca` en el endpoint); mientras la BD no tenga esa versión, la faceta no aparece. Check + cantidad por fila y botón "Copiar pedido" al
-  portapapeles. Backend:
+  del artículo (`marca` en el endpoint); mientras la BD no tenga esa versión, la faceta no
+  aparece. Check + cantidad por fila y botón "Copiar pedido" al portapapeles. Backend:
   `db/pedidos_articulos_sql.sql` (query cruda, devuelve todo el dataset).
   **La columna Ventas se corrige respecto del APEX**, que la tiene rota (daba 0 para todo): la
   rama VENTAS del UNION cruzaba el cliente de `ventas_cabecera` contra el proveedor de
@@ -234,7 +234,10 @@ dinámicamente desde el endpoint `menu/paginas`.
   catálogo **completo** como toda LOV) y que muestra el **rubro** de cada artículo en la etiqueta,
   para distinguir Filtro de aire / Filtro / Filtro de caja al elegir. La grilla muestra el **Rubro**
   del artículo con ese OEM (JOIN de solo lectura, no se guarda en la tabla) y botones para filtrar
-  por rubro las filas ya cargadas. Backend:
+  por rubro las filas ya cargadas. Al lado del OEM, un ícono abre la **imagen del repuesto**
+  (`ArticuloImgModal`): es la del artículo con ese OEM —activo primero, el más nuevo, mismo
+  criterio que el rubro—, que el `LISTAR` devuelve como `id_articulo` + `articulo` (`OUTER APPLY`).
+  Sin artículo para ese OEM, o con la BD sin el paquete nuevo, el ícono no aparece. Backend:
   `db/vehiculos_repuestos_sql.sql` + `BUSCAR_ARTICULOS` de `db/codigos_barras_sql.sql`.
 - **Rendición de Caja** (page_id 73) — CRUD de `rendiciones_cajas` (cierres de caja por fecha).
   Al elegir la fecha, un endpoint `rendiciones/sugeridos` precarga (editables) caja anterior, venta
@@ -291,7 +294,9 @@ dinámicamente desde el endpoint `menu/paginas`.
       variación por rubro. Se probaron y no le servían; no volver a proponerlos.
 - **Suba de Precios** (page_id 100) — último precio por artículo con margen y stock. Búsqueda
   (filtro estándar de artículos: palabras sueltas, OEM con o sin guion, ID) + facetas
-  Rubro/Marca con el `Faceta` compartido. El lápiz de cada fila abre el modal de siempre
+  Stock/Rubro/Marca con el `Faceta` compartido. **Stock** (Con stock / Sin stock) sale del `stock`
+  que ya manda el endpoint (`PKG_STOCK.fn_existencia`, por artículo); el negativo cuenta como
+  "Sin stock". El lápiz de cada fila abre el modal de siempre
   ("Actualizar precio", `POST suba-precios`). Backend: `db/ORDS_SUBA_PRECIOS.sql`.
   - **Nueva suba**, desde el botón del encabezado (elige el artículo con `BuscadorModal`:
     catálogo completo, también artículos sin precio; tiene "Guardar y otro") o desde el botón ↗

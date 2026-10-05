@@ -694,6 +694,15 @@ deselecciona a `null`). Modelos: `compras-vs-ventas-view` (¿Activos/Gastos?),
 `saldos-proveedores-view` (¿Saldo?), `consulta-inventarios-view` (¿Con diferencia?/¿Cerrado?/
 ¿Es activo?). Facetas con muchos valores (Rubro, Marca, Proveedor) siguen usando `ui/faceta`.
 
+**Faceta derivada (estados calculados en el front).** Cuando la faceta no es un campo sino un
+estado que se deduce de uno o más campos ("Con stock / Sin stock", "Costo subió / bajó / …"), va
+una función `estadoX(r)` que devuelve la etiqueta y una constante `ESTADOS_X` con el **orden
+fijo** de las opciones (lo accionable primero, no alfabético); los valores de la faceta se arman
+como `ESTADOS_X.filter((e) => conteo.has(e))`. La misma `estadoX` filtra y cuenta, así que nunca
+difieren. Definir en el comentario qué pasa con los bordes (en Stock, el negativo cuenta como
+"Sin stock"). Modelo: `suba-precios-view` (`estadoStock`, `estadoCosto`). Si son exactamente dos
+valores opuestos y en la vista no hay otras facetas con checkbox, considerar los botones toggle de arriba.
+
 `ui/faceta` acepta `limite` (default 8) para cuántas opciones mostrar antes de "Mostrar todo", y
 pone los **seleccionados primero** (así el valor elegido no se esconde al colapsar). Para ocultar
 el conteo `(N)` de una faceta, pasar `n: 0` en sus valores.
@@ -792,24 +801,36 @@ cambia nada y con filtro queda acotado solo.
   hay ambigüedad y el nombre dice mucho más; con varios, el rubro es la única etiqueta común.
   Cuando una columna cambia de contenido así, `valor` y `sort` tienen que salir de **la misma
   función** (`etiquetaPrincipal`), o la grilla ordena por algo distinto de lo que se ve.
-- **Una faceta sobre un campo multivaluado** (un OEM tiene varios proveedores) filtra con
-  `some()`, y al contar las opciones se pasa por un `Set` para no contar dos veces el mismo
-  proveedor dentro del mismo grupo.
-- **Esa faceta además ACOTA el grupo, no solo elige cuáles se muestran.** Si el usuario ya dijo
-  qué proveedor mira, el grupo se re-arma con las filas de ese proveedor (`acotarAProveedores`)
+- **Facetas de grupo vs. facetas de fila.** En Falta y Rubro son del OEM (un valor por grupo).
+  **Proveedor y Marca son de fila**: cada línea (artículo + proveedor) tiene la suya y un OEM
+  junta varias (la marca es del artículo: SAKURA y VIC del mismo filtro). Las de fila se declaran
+  en `CAMPO_FILA` (clave → cómo leer el valor de una fila) y al contar opciones se pasa por un
+  `Set` para no contar dos veces el mismo valor dentro del mismo grupo.
+- **Las facetas de fila ACOTAN el grupo, no solo eligen cuáles se muestran.** Si el usuario ya
+  dijo qué proveedor o marca mira, el grupo se re-arma con las filas que cumplen (`acotar`)
   llamando a la MISMA función que lo armó (`armarGrupo`). Por eso no hay código aparte para el
-  filtrado: la etiqueta pasa a mostrar el artículo, desaparece el badge "N prov." y las tres
-  magnitudes se recalculan sobre lo que quedó. Cuatro detalles de orden:
-  - Las facetas se evalúan sobre el grupo **completo** y recién después se acota; al revés, la
-    faceta de proveedor se auto-excluiría.
+  filtrado: con un proveedor la etiqueta pasa a mostrar el artículo, desaparece el badge
+  "N prov." y las tres magnitudes se recalculan sobre lo que quedó. Detalles de orden:
+  - **Primero se acota, después se evalúa.** `acotar` devuelve `null` si no queda ninguna fila
+    (el OEM no pasa); sobre el grupo acotado se evalúan las facetas de grupo y el texto.
+  - **Con varias facetas de fila, la MISMA fila tiene que cumplir todas.** Un OEM con la marca X
+    de un proveedor A y la Y de otro B no pasa con "marca X + proveedor B". Evaluar cada faceta
+    con `some()` por separado sobre el grupo completo lo dejaría pasar con una fila que no existe.
   - El **texto** se evalúa sobre el grupo **ya acotado**: con un proveedor filtrado, buscar el
     artículo de otro proveedor del mismo OEM no debe traer la fila.
-  - Las **opciones** de las facetas se siguen contando sobre los grupos sin acotar (es el cálculo
-    de facetas dependientes de siempre); acotarlas ahí sería circular.
+  - Las **opciones** de cada faceta se cuentan sobre el grupo acotado por las **otras** facetas de
+    fila (`acotar(g, facetas, f.clave)`): con un proveedor tildado, Marca muestra solo las marcas
+    que trae ese proveedor, y viceversa. Excluir la propia evita que la faceta se auto-reduzca a lo
+    ya tildado.
   - **Acotar todo o nada.** Si una columna queda acotada y las de al lado no, los números de la
     fila se contradicen entre sí y es peor que no filtrar. Cuando el filtro cambia lo que muestran
     las columnas, **decirlo en pantalla**: acá el subtítulo avisa "existencia, ventas y compras
-    acotadas al proveedor filtrado".
+    acotadas a los artículos filtrados".
+- **Faceta que depende de un campo nuevo del backend: ocultarla hasta que llegue.** `marca` es
+  opcional en el tipo; mientras la BD tenga el endpoint viejo ningún registro la trae y la faceta
+  no se muestra (`facetasVisibles`), en vez de quedar en "Sin opciones" como un filtro roto. Ojo:
+  `APEX_JSON.WRITE` **omite** las claves con valor nulo, así que "no vino el campo" y "vino nulo"
+  se ven igual en el front; el chequeo es "algún registro lo trae" (`some((r) => r.marca)`).
 
 ## Reporte con gráficos (modelo: `evolucion-precios.tsx`)
 

@@ -68,8 +68,22 @@ CREATE OR REPLACE PACKAGE BODY PKG_VEHICULOS_REPUESTOS_LUBRIMEC AS
                    AND a.codigo_oem  = vr.codigo_oem
                  ORDER BY CASE WHEN UPPER(NVL(a.estado, 'A')) = 'A' THEN 0 ELSE 1 END,
                           a.id_articulo DESC
-                 FETCH FIRST 1 ROW ONLY) AS rubro
+                 FETCH FIRST 1 ROW ONLY) AS rubro,
+               art.id_articulo,
+               art.descripcion AS articulo
           FROM vehiculos_repuestos vr
+          -- Articulo para la imagen del repuesto (id_articulo) y su descripcion (titulo
+          -- del modal). Mismo criterio que el rubro: activo primero, el mas nuevo. Va
+          -- en un OUTER APPLY aparte para no tocar como se elige el rubro (aquel exige
+          -- que el articulo tenga rubro). OUTER: un OEM sin articulo igual se lista.
+          OUTER APPLY (
+               SELECT a.id_articulo, a.descripcion
+                 FROM articulos a
+                WHERE a.cod_empresa = vr.cod_empresa
+                  AND a.codigo_oem  = vr.codigo_oem
+                ORDER BY CASE WHEN UPPER(NVL(a.estado, 'A')) = 'A' THEN 0 ELSE 1 END,
+                         a.id_articulo DESC
+                FETCH FIRST 1 ROW ONLY) art
          WHERE vr.cod_empresa = p_cod_empresa
          ORDER BY vr.id_vehiculo DESC
     ) LOOP
@@ -79,6 +93,8 @@ CREATE OR REPLACE PACKAGE BODY PKG_VEHICULOS_REPUESTOS_LUBRIMEC AS
       APEX_JSON.WRITE('modelo', r.modelo);
       APEX_JSON.WRITE('codigo_oem', r.codigo_oem);
       APEX_JSON.WRITE('rubro', r.rubro);
+      APEX_JSON.WRITE('id_articulo', r.id_articulo);
+      APEX_JSON.WRITE('articulo', r.articulo);
       APEX_JSON.CLOSE_OBJECT;
     END LOOP;
     APEX_JSON.CLOSE_ARRAY;

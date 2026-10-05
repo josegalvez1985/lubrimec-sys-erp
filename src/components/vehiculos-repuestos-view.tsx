@@ -1,7 +1,7 @@
 import { useMemo, useState, type FormEvent } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Plus, Eye, Pencil, Trash2, Loader2, Car, X } from "lucide-react";
+import { Plus, Eye, Pencil, Trash2, Loader2, Car, X, ImageIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -26,6 +26,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { DataTable, type Column } from "@/components/ui/data-table";
 import { BuscadorModal } from "@/components/ui/buscador-modal";
+import { ArticuloImgModal } from "@/components/articulo-img-modal";
 import {
   listarVehiculosRepuestos,
   crearVehiculoRepuesto,
@@ -61,6 +62,8 @@ export function VehiculosRepuestosView() {
   const [modal, setModal] = useState<ModalState>({ mode: "closed" });
   const [aEliminar, setAEliminar] = useState<VehiculoRepuesto | null>(null);
   const [rubroSel, setRubroSel] = useState<string | null>(null);
+  // Repuesto cuya imagen se muestra (null = cerrado).
+  const [img, setImg] = useState<{ id: string; titulo: string } | null>(null);
 
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ["vehiculos-repuestos", COD_EMPRESA],
@@ -114,7 +117,28 @@ export function VehiculosRepuestosView() {
       key: "codigo_oem",
       header: "Código OEM",
       accessor: (r) => r.codigo_oem,
-      render: (r) => <span className="font-mono">{r.codigo_oem}</span>,
+      // La imagen es la del artículo con ese OEM (id_articulo del LISTAR). Sin
+      // artículo, o con la BD sin el paquete nuevo, no hay botón.
+      render: (r) => (
+        <span className="flex items-center gap-2">
+          {r.id_articulo != null && (
+            <button
+              type="button"
+              onClick={() =>
+                setImg({
+                  id: String(r.id_articulo),
+                  titulo: r.articulo ?? `OEM ${r.codigo_oem}`,
+                })
+              }
+              aria-label={`Ver imagen del repuesto ${r.codigo_oem}`}
+              className="shrink-0 text-muted-foreground hover:text-primary"
+            >
+              <ImageIcon className="h-4 w-4" />
+            </button>
+          )}
+          <span className="font-mono">{r.codigo_oem}</span>
+        </span>
+      ),
     },
     {
       key: "rubro",
@@ -236,6 +260,13 @@ export function VehiculosRepuestosView() {
           qc.invalidateQueries({ queryKey: ["vehiculos-repuestos"] });
           setModal({ mode: "closed" });
         }}
+      />
+
+      <ArticuloImgModal
+        open={img != null}
+        id={img?.id ?? null}
+        titulo={img?.titulo}
+        onClose={() => setImg(null)}
       />
 
       <AlertDialog open={!!aEliminar} onOpenChange={(o) => !o && setAEliminar(null)}>

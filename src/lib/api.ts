@@ -1260,6 +1260,11 @@ export type VehiculoRepuesto = {
   modelo: string;
   codigo_oem: string;
   rubro?: string | null;
+  // Artículo con ese OEM (activo primero, el más nuevo): para la imagen del
+  // repuesto. Solo lectura. No vienen si el OEM no tiene artículo o si la BD
+  // tiene el paquete viejo.
+  id_articulo?: number | null;
+  articulo?: string | null;
 };
 
 export type VehiculoRepuestoInput = {

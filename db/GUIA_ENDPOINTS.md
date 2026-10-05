@@ -473,8 +473,11 @@ anónimo que antes se ejecutaba a mano en la BD.
 - **Sumar un campo a un `LISTAR` que usan varias vistas** (el de `precios_ventas_sql.sql` lo usan
   la grilla de la pág 34 y la pestaña Evolución): igual que con las LOVs compartidas, agregar es
   seguro y quitar no. En el front el campo va **opcional** (`viscosidad?: string | null`) y la UI
-  que depende de él se **oculta si no llega** (`hayViscosidad` en `evolucion-precios.tsx`): así
-  la pantalla no queda con un filtro vacío mientras el `.sql` no se re-ejecute en la BD.
+  que depende de él se **oculta si no llega** (`hayViscosidad` en `evolucion-precios.tsx`,
+  `facetasVisibles` para la marca en `pedidos-articulos-view.tsx`): así la pantalla no queda con
+  un filtro vacío mientras el `.sql` no se re-ejecute en la BD. `APEX_JSON.WRITE` **omite** la
+  clave cuando el valor es nulo, así que el front no distingue "BD vieja" de "valor nulo": el
+  chequeo es que **algún** registro lo traiga.
 
 - **Un JOIN que multiplica filas duplica todos los `SUM` de la query (fan-out).** Antes de
   sumar, revisar que CADA join de la query sea 1:1 con el grano de la fila. Basta una tabla
@@ -567,6 +570,15 @@ anónimo que antes se ejecutaba a mano en la BD.
   es lo que rompió la query. La salida limpia es calcular ese dato en su **propio CTE** con la
   clave que sí le corresponde (ahí `codigo_oem`) y `LEFT JOIN`-earlo al final —el mismo patrón
   que ya usaba `existencias_totales`—, agregando la columna al `GROUP BY`.
+- **Sumar un atributo a una fila que ya toma otro con `MAX`: `KEEP (DENSE_RANK LAST)`, no
+  otro `MAX`.** La fila final de la pág 63 agrupa por descripción y toma
+  `MAX(ag_id_articulo)`; al sumarle la marca del artículo, un `MAX(ag_marca)` suelto podía
+  traer la marca de **otro** artículo del mismo grupo (cada `MAX` elige por su cuenta). Con
+  `MAX(ag_marca) KEEP (DENSE_RANK LAST ORDER BY ag_id_articulo)` la marca sale del mismo
+  artículo que el id. Meterla en el `GROUP BY`, en cambio, cambiaría el grano de la fila (podría
+  partirla en dos). Antes, la marca se agrega en el CTE de base (`LEFT JOIN marcas` por
+  `cod_empresa` + `id_marca`, 1:1 por PK) y viaja por el `GROUP BY` del CTE `agrupado`, que es
+  por artículo y no cambia de grano.
 
 - **Síntoma "el código está bien pero la app se comporta viejo":** los `.sql` de este repo **no** se
   aplican solos, hay que ejecutarlos a mano en la BD. Si el front manda un parámetro que el handler

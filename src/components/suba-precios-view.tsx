@@ -139,6 +139,13 @@ function estadoCosto(r: SubaPrecio, ultimas: Map<number, UltimaCompra> | null): 
   return "Sin cambio";
 }
 
+// ─── Stock ───────────────────────────────────────────────────────────────────
+
+// Stock negativo (vendido sin compra cargada) cuenta como "Sin stock": no hay
+// unidades para vender. El valor sale de PKG_STOCK.fn_existencia (por artículo).
+const ESTADOS_STOCK = ["Con stock", "Sin stock"];
+const estadoStock = (r: SubaPrecio) => ((r.stock ?? 0) > 0 ? "Con stock" : "Sin stock");
+
 // % de la última compra sobre el costo del precio vigente.
 function varCosto(r: SubaPrecio, ultimas: Map<number, UltimaCompra>): number | null {
   const u = ultimas.get(r.id_articulo);
@@ -186,6 +193,7 @@ export function SubaPreciosView() {
   const [marcasSel, setMarcasSel] = useState<Set<string>>(new Set());
   const [rubrosSel, setRubrosSel] = useState<Set<string>>(new Set());
   const [costosSel, setCostosSel] = useState<Set<string>>(new Set());
+  const [stockSel, setStockSel] = useState<Set<string>>(new Set());
   const [editar, setEditar] = useState<SubaPrecio | null>(null);
   // Modal "Nueva suba": fila = null desde el encabezado (se elige el artículo),
   // con fila desde el botón de la grilla (artículo fijo).
@@ -221,7 +229,7 @@ export function SubaPreciosView() {
   const tokens = busqueda.trim().toUpperCase().split(/\s+/).filter(Boolean);
 
   // Conteo de facetas sobre las filas ya filtradas por las OTRAS facetas + búsqueda.
-  const coincide = (r: SubaPrecio, ignora: "marca" | "rubro" | "costo" | null) => {
+  const coincide = (r: SubaPrecio, ignora: "marca" | "rubro" | "costo" | "stock" | null) => {
     if (tokens.length > 0) {
       const texto =
         `${r.articulo ?? ""} ${r.codigo_oem ?? ""} ${r.id_articulo} ${r.marca ?? ""} ${r.rubro ?? ""}`.toUpperCase();
@@ -232,6 +240,7 @@ export function SubaPreciosView() {
     if (ignora !== "rubro" && rubrosSel.size > 0 && !rubrosSel.has(r.rubro ?? "")) return false;
     if (ignora !== "costo" && costosSel.size > 0 && !costosSel.has(estadoCosto(r, ultimas)))
       return false;
+    if (ignora !== "stock" && stockSel.size > 0 && !stockSel.has(estadoStock(r))) return false;
     return true;
   };
 
@@ -243,7 +252,7 @@ export function SubaPreciosView() {
       .map(([valor, n]) => ({ valor, n }))
       .sort((a, b) => a.valor.localeCompare(b.valor));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filas, busqueda, marcasSel, rubrosSel, costosSel, ultimas]);
+  }, [filas, busqueda, marcasSel, rubrosSel, costosSel, stockSel, ultimas]);
 
   const facetRubros = useMemo(() => {
     const c = new Map<string, number>();
@@ -253,7 +262,7 @@ export function SubaPreciosView() {
       .map(([valor, n]) => ({ valor, n }))
       .sort((a, b) => a.valor.localeCompare(b.valor));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filas, busqueda, marcasSel, rubrosSel, costosSel, ultimas]);
+  }, [filas, busqueda, marcasSel, rubrosSel, costosSel, stockSel, ultimas]);
 
   // En el orden de ESTADOS_COSTO (subió primero), no alfabético.
   const facetCostos = useMemo(() => {
@@ -266,12 +275,24 @@ export function SubaPreciosView() {
     }
     return ESTADOS_COSTO.filter((e) => c.has(e)).map((valor) => ({ valor, n: c.get(valor) ?? 0 }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filas, busqueda, marcasSel, rubrosSel, costosSel, ultimas]);
+  }, [filas, busqueda, marcasSel, rubrosSel, costosSel, stockSel, ultimas]);
+
+  // Con stock primero, no alfabético.
+  const facetStock = useMemo(() => {
+    const c = new Map<string, number>();
+    for (const r of filas) {
+      if (!coincide(r, "stock")) continue;
+      const e = estadoStock(r);
+      c.set(e, (c.get(e) ?? 0) + 1);
+    }
+    return ESTADOS_STOCK.filter((e) => c.has(e)).map((valor) => ({ valor, n: c.get(valor) ?? 0 }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filas, busqueda, marcasSel, rubrosSel, costosSel, stockSel, ultimas]);
 
   const filasFiltradas = useMemo(
     () => filas.filter((r) => coincide(r, null)),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [filas, busqueda, marcasSel, rubrosSel, costosSel, ultimas],
+    [filas, busqueda, marcasSel, rubrosSel, costosSel, stockSel, ultimas],
   );
 
   // Con la última compra disponible, "Precio Compra" la muestra debajo cuando difiere.
@@ -295,10 +316,15 @@ export function SubaPreciosView() {
     setMarcasSel(new Set());
     setRubrosSel(new Set());
     setCostosSel(new Set());
+    setStockSel(new Set());
   };
 
   const hayFiltro =
-    busqueda.trim() !== "" || marcasSel.size > 0 || rubrosSel.size > 0 || costosSel.size > 0;
+    busqueda.trim() !== "" ||
+    marcasSel.size > 0 ||
+    rubrosSel.size > 0 ||
+    costosSel.size > 0 ||
+    stockSel.size > 0;
 
   return (
     <div className="rounded-2xl border border-border bg-card shadow-elegant">
@@ -364,6 +390,13 @@ export function SubaPreciosView() {
                 onToggle={(v) => toggle(costosSel, setCostosSel, v)}
               />
             )}
+            <Faceta
+              titulo="Stock"
+              valores={facetStock}
+              seleccion={stockSel}
+              onToggle={(v) => toggle(stockSel, setStockSel, v)}
+            />
+
             <Faceta
               titulo="Rubro"
               valores={facetRubros}
