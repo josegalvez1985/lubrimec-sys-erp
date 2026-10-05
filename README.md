@@ -296,7 +296,9 @@ dinámicamente desde el endpoint `menu/paginas`.
   (filtro estándar de artículos: palabras sueltas, OEM con o sin guion, ID) + facetas
   Stock/Rubro/Marca con el `Faceta` compartido. **Stock** (Con stock / Sin stock) sale del `stock`
   que ya manda el endpoint (`PKG_STOCK.fn_existencia`, por artículo); el negativo cuenta como
-  "Sin stock". El lápiz de cada fila abre el modal de siempre
+  "Sin stock". Un ícono en la celda Artículo abre la **imagen** (`ArticuloImgModal`, por el
+  `id_articulo` que ya trae la fila; va dentro de la celda y no como columna, ver abajo por
+  qué). El lápiz de cada fila abre el modal de siempre
   ("Actualizar precio", `POST suba-precios`). Backend: `db/ORDS_SUBA_PRECIOS.sql`.
   - **Nueva suba**, desde el botón del encabezado (elige el artículo con `BuscadorModal`:
     catálogo completo, también artículos sin precio; tiene "Guardar y otro") o desde el botón ↗

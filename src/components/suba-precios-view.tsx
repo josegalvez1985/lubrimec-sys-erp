@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { TrendingUp, Search, X, Pencil, Loader2, Plus } from "lucide-react";
+import { TrendingUp, Search, X, Pencil, Loader2, Plus, ImageIcon } from "lucide-react";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -9,6 +9,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { DataTable, type Column } from "@/components/ui/data-table";
 import { Faceta } from "@/components/ui/faceta";
 import { BuscadorModal } from "@/components/ui/buscador-modal";
+import { ArticuloImgModal } from "@/components/articulo-img-modal";
 import {
   Dialog,
   DialogContent,
@@ -139,6 +140,29 @@ function estadoCosto(r: SubaPrecio, ultimas: Map<number, UltimaCompra> | null): 
   return "Sin cambio";
 }
 
+// ─── Imagen del artículo ─────────────────────────────────────────────────────
+
+// El ícono va dentro de la celda "Artículo" y no como columna aparte, por el mismo
+// motivo que la última compra: en 1366 px una columna más corta la de acciones.
+function conImagen(col: Column<SubaPrecio>, onVer: (r: SubaPrecio) => void): Column<SubaPrecio> {
+  return {
+    ...col,
+    render: (r) => (
+      <div className="flex items-start gap-2">
+        <button
+          type="button"
+          onClick={() => onVer(r)}
+          aria-label={`Ver imagen de ${r.articulo ?? "el artículo"}`}
+          className="mt-0.5 shrink-0 text-muted-foreground hover:text-primary"
+        >
+          <ImageIcon className="h-4 w-4" />
+        </button>
+        {col.render?.(r)}
+      </div>
+    ),
+  };
+}
+
 // ─── Stock ───────────────────────────────────────────────────────────────────
 
 // Stock negativo (vendido sin compra cargada) cuenta como "Sin stock": no hay
@@ -194,6 +218,8 @@ export function SubaPreciosView() {
   const [rubrosSel, setRubrosSel] = useState<Set<string>>(new Set());
   const [costosSel, setCostosSel] = useState<Set<string>>(new Set());
   const [stockSel, setStockSel] = useState<Set<string>>(new Set());
+  // Artículo cuya imagen se muestra (null = cerrado).
+  const [imgArticulo, setImgArticulo] = useState<SubaPrecio | null>(null);
   const [editar, setEditar] = useState<SubaPrecio | null>(null);
   // Modal "Nueva suba": fila = null desde el encabezado (se elige el artículo),
   // con fila desde el botón de la grilla (artículo fijo).
@@ -295,12 +321,17 @@ export function SubaPreciosView() {
     [filas, busqueda, marcasSel, rubrosSel, costosSel, stockSel, ultimas],
   );
 
-  // Con la última compra disponible, "Precio Compra" la muestra debajo cuando difiere.
+  // "Artículo" lleva el ícono de imagen. Con la última compra disponible, "Precio
+  // Compra" la muestra debajo cuando difiere.
   const columnas = useMemo(
     () =>
-      ultimas
-        ? COLUMNAS.map((c) => (c.key === "precio_compra" ? conUltimaCompra(c, ultimas) : c))
-        : COLUMNAS,
+      COLUMNAS.map((c) =>
+        c.key === "articulo"
+          ? conImagen(c, setImgArticulo)
+          : c.key === "precio_compra" && ultimas
+            ? conUltimaCompra(c, ultimas)
+            : c,
+      ),
     [ultimas],
   );
 
@@ -453,6 +484,13 @@ export function SubaPreciosView() {
           </div>
         </div>
       )}
+
+      <ArticuloImgModal
+        open={imgArticulo != null}
+        id={imgArticulo ? String(imgArticulo.id_articulo) : null}
+        titulo={imgArticulo?.articulo}
+        onClose={() => setImgArticulo(null)}
+      />
 
       <SubaPrecioDialog
         item={editar}
