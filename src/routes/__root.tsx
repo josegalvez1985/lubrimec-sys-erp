@@ -78,10 +78,10 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
       { title: "Lubrimesys — Sistema Administrativo" },
-      { name: "description", content: "Lubrimesys: sistema administrativo moderno para tu negocio." },
+      { name: "description", content: "Lubrimesys: sistema administrativo de Lubrimec." },
       { name: "theme-color", content: "#f37316" },
       { property: "og:title", content: "Lubrimesys" },
-      { property: "og:description", content: "Sistema administrativo moderno para tu negocio." },
+      { property: "og:description", content: "Sistema administrativo de Lubrimec." },
       { property: "og:type", content: "website" },
     ],
     links: [

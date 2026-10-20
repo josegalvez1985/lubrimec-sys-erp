@@ -3,6 +3,22 @@ import { tanstackStart } from "@tanstack/react-start/plugin/vite";
 import viteReact from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { nitro } from "nitro/vite";
+import type { Plugin } from "vite";
+import { manualParaAsistente } from "./src/lib/manual-asistente";
+
+// El manual del asistente: `README.md?raw` llega al bundle ya recortado y sin
+// nombres de la base ni del código (ver src/lib/manual-asistente.ts).
+function manualAsistente(): Plugin {
+  return {
+    name: "manual-asistente",
+    transform(code, id) {
+      if (!/README\.md\?raw$/.test(id)) return;
+      const m = /^export default ([\s\S]*?);?\s*$/.exec(code.trim());
+      if (!m) return;
+      return `export default ${JSON.stringify(manualParaAsistente(JSON.parse(m[1])))};`;
+    },
+  };
+}
 
 // Base path: "/lubrimec-sys-erp/" en GitHub Pages, "/" en local.
 const BASE = process.env.GITHUB_PAGES === "true" ? "/lubrimec-sys-erp/" : "/";
@@ -46,6 +62,7 @@ export default defineConfig(({ mode }) => {
     // open: abre solo el navegador por defecto al arrancar `npm run dev`.
     server: { host: "::", port: 8080, strictPort: true, open: true },
     plugins: [
+      manualAsistente(),
       tailwindcss(),
       tanstackStart({ server: { entry: "server" }, spa: { enabled: true } }),
       nitro(),

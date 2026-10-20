@@ -95,6 +95,8 @@ import { CobrosTarjetaView } from "@/components/cobros-tarjeta-view";
 import { CobrosAcreditarCard } from "@/components/cobros-acreditar-card";
 import { PerfilModal } from "@/components/perfil-modal";
 import { BusquedaGlobal } from "@/components/busqueda-global";
+import { Asistente, type PantallaAsistente } from "@/components/asistente";
+import { abrirAsistente, useAsistente } from "@/lib/asistente";
 import { VISTAS } from "@/lib/vistas";
 
 // Gráficos del dashboard: se cargan aparte porque son los únicos que usan recharts.
@@ -258,6 +260,8 @@ function HomePage() {
   // Sidebar colapsable en escritorio: SIEMPRE arranca oculto (no se recuerda la
   // preferencia). El botón de la topbar lo muestra mientras dure la sesión de pantalla.
   const [menuColapsado, setMenuColapsado] = useState(true);
+  // Con el chat abierto en escritorio, la página le hace lugar (no lo tapa).
+  const { abierto: asistenteAbierto } = useAsistente();
   function toggleMenu() {
     setMenuColapsado((c) => !c);
   }
@@ -324,8 +328,8 @@ function HomePage() {
   // botón físico de Android se mapea a mano: primero cierra modales, después retrocede
   // en el historial, y ya en el dashboard sale de la app (como antes).
   const router = useRouter();
-  const estadoRef = useRef({ active, cotizadorOpen, perfilOpen, mobileOpen });
-  estadoRef.current = { active, cotizadorOpen, perfilOpen, mobileOpen };
+  const estadoRef = useRef({ active, cotizadorOpen, perfilOpen, mobileOpen, asistenteAbierto });
+  estadoRef.current = { active, cotizadorOpen, perfilOpen, mobileOpen, asistenteAbierto };
 
   useEffect(() => {
     if (!Capacitor.isNativePlatform()) return;
@@ -334,6 +338,8 @@ function HomePage() {
       const e = estadoRef.current;
       if (e.cotizadorOpen) {
         setCotizadorOpen(false);
+      } else if (e.asistenteAbierto) {
+        abrirAsistente(false);
       } else if (e.perfilOpen) {
         setPerfilOpen(false);
       } else if (e.mobileOpen) {
@@ -353,6 +359,16 @@ function HomePage() {
 
   const paginaActiva =
     typeof active === "number" ? paginas.find((p) => p.page_id === active) : null;
+
+  // Para el asistente ("¿cómo se usa esta pantalla?"): el page_id le sirve a la
+  // IA para ubicar la página en el manual (README).
+  const pantallaAsistente: PantallaAsistente =
+    active === "dashboard"
+      ? { nombre: "Inicio", texto: "Inicio (el panel de cobros y ventas)" }
+      : {
+          nombre: paginaActiva?.page_title ?? null,
+          texto: `${paginaActiva?.page_title ?? "Página"} (page_id ${active})`,
+        };
 
   return (
     <div className="flex min-h-screen bg-background">
@@ -387,7 +403,7 @@ function HomePage() {
       </Sheet>
 
       {/* Main */}
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className={cn("flex min-w-0 flex-1 flex-col", asistenteAbierto && "lg:mr-[420px]")}>
         {/* Topbar */}
         <header className="sticky top-0 z-20 flex h-[var(--topbar-h)] items-center gap-3 border-b border-border bg-background/80 px-[var(--panel-p)] backdrop-blur">
           <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
@@ -489,6 +505,8 @@ function HomePage() {
       </div>
 
       <PerfilModal open={perfilOpen} onOpenChange={setPerfilOpen} />
+
+      <Asistente pantalla={pantallaAsistente} />
 
       {/* Cotizador externo (page_id 98) embebido en un modal */}
       <Dialog open={cotizadorOpen} onOpenChange={setCotizadorOpen}>

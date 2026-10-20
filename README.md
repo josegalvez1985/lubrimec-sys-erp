@@ -122,6 +122,27 @@ dinámicamente desde el endpoint `menu/paginas`.
 - **Shell (menú y topbar)** — el **sidebar arranca siempre oculto** (la preferencia no se recuerda);
   se muestra con el botón de la topbar. Junto al usuario hay un **botón Home** que vuelve al
   dashboard, visible solo cuando se está en otra página.
+- **Asistente** (sin page_id, en todas las pantallas) — botón redondo abajo a la derecha que abre
+  un chat: responde cómo se usa una pantalla (con esta sección del README como manual) y
+  preguntas sobre los datos (ventas, stock, cobros…). En escritorio es un panel a la derecha que
+  no tapa la página y sigue abierto al navegar; en el celular, una hoja casi a pantalla completa
+  (el botón atrás del APK la cierra). Lo ve todo el que entra, sin permiso en Roles de Páginas;
+  límite de preguntas por usuario y por día (30 de entrada). La conversación vive solo en memoria:
+  recargar o cambiar de usuario la borra. **Solo lee**: si piden cargar algo, explica en qué
+  pantalla se hace. **Nunca muestra cómo está hecha la base** (tablas, columnas, paquetes, SQL),
+  aunque se lo pidan: lo prohíben sus instrucciones, el backend borra de la respuesta cualquier
+  nombre del esquema que se le escape, el SQL no viaja al navegador y los errores llegan sin
+  detalle técnico. El manual que recibe se arma en el build sin nombres técnicos (plugin de
+  `vite.config.ts` + `src/lib/manual-asistente.ts`), así que el README completo tampoco se publica.
+  Front: `src/components/asistente.tsx`, `src/lib/asistente.ts` y
+  `src/components/markdown.tsx` (renderer propio, sin dependencias ni HTML crudo). Backend:
+  `db/ia_asistente_sql.sql` — la IA corre en Oracle (`PKG_IA_LUBRIMEC` llama a la API de Claude,
+  la clave nunca llega al navegador) y cada consulta SQL que pide pasa un filtro y corre en
+  `READ ONLY`; las tablas `LUBRIMEC_*` (tokens, clave, registro) quedan fuera de su alcance. La
+  clave se carga a mano con `PKG_IA_LUBRIMEC.fijar_clave` y se prueba con `PKG_IA_LUBRIMEC.probar`;
+  modelo, límite y filas se cambian en `LUBRIMEC_IA_CONFIG`, y cada pregunta (con su SQL y
+  tokens) queda en `LUBRIMEC_IA_CONSULTAS`. El manual se arma con el título
+  `## Páginas implementadas` hasta `## Rendimiento`: si se renombran, el asistente pierde el manual.
 - **Dashboard** (vista fija) — de arriba a abajo. Todos los paneles de cobros **se ocultan si no
   tienen registros** (si el endpoint falla, en cambio, muestran el error):
   - **Cobros por acreditar** (tarjeta): cheques/tarjetas/transferencias pendientes; cada fila abre

@@ -19,10 +19,6 @@ dist-ssr
 .env.*
 !.env.example
 
-# Wrangler / Cloudflare
-.wrangler/
-.dev.vars
-
 # APK artifacts (Capacitor). android/ se commitea; sus build/ los ignora android/.gitignore.
 *.apk
 *.aab

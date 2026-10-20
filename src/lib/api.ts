@@ -3749,3 +3749,36 @@ export async function cargarArticulos(): Promise<CargaArticulosResultado> {
     jobs: (data.data ?? []) as ResultadoJobCarga[],
   };
 }
+
+// ─── Asistente con IA (botón flotante, sin page_id) ───────────────────────────
+// POST ia/preguntar (db/ia_asistente_sql.sql). La IA corre en Oracle: acá solo
+// viaja la pregunta con lo que el backend no sabe (conversación, pantalla y
+// manual). La respuesta trae solo el texto: el SQL que corrió la IA no sale de
+// Oracle, y los errores llegan sin detalle técnico.
+
+export type PedidoAsistente = {
+  pregunta: string;
+  historial: { rol: "usuario" | "asistente"; texto: string }[];
+  manual: string;
+  pantalla: string | null;
+  nombre: string;
+};
+
+export type RespuestaAsistente = {
+  respuesta: string;
+  usadas_hoy: number | null;
+  limite: number | null;
+};
+
+export async function preguntarAsistente(pedido: PedidoAsistente): Promise<RespuestaAsistente> {
+  const data = await authFetch("ia/preguntar", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(pedido),
+  });
+  return {
+    respuesta: String(data.respuesta ?? ""),
+    usadas_hoy: data.usadas_hoy ?? null,
+    limite: data.limite ?? null,
+  };
+}
