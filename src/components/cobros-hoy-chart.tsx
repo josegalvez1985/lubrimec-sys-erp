@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Wallet, Loader2, TrendingUp } from "lucide-react";
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from "recharts";
 import { listarCierreDia } from "@/lib/api";
+import { GC_DASHBOARD } from "@/lib/cache-dashboard";
 
 const COD_EMPRESA = 24;
 
@@ -35,6 +36,7 @@ export function CobrosHoyChart() {
   const { data, isLoading, isError, isSuccess } = useQuery({
     queryKey: ["cierre-dia", COD_EMPRESA],
     queryFn: () => listarCierreDia(COD_EMPRESA),
+    gcTime: GC_DASHBOARD,
     retry: false,
   });
 

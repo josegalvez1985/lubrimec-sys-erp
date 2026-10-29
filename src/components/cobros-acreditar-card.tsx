@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { listarCobrosPorAcreditar, type CobroPorAcreditar } from "@/lib/api";
+import { GC_DASHBOARD } from "@/lib/cache-dashboard";
 import { AcreditarDialog } from "@/components/cobros-acreditar-view";
 
 const COD_EMPRESA = 24;
@@ -46,6 +47,7 @@ export function CobrosAcreditarCard() {
   const { data, isLoading } = useQuery({
     queryKey: ["cobros-acreditar", COD_EMPRESA],
     queryFn: () => listarCobrosPorAcreditar(COD_EMPRESA),
+    gcTime: GC_DASHBOARD,
     retry: false,
   });
 

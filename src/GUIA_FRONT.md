@@ -63,7 +63,16 @@ entorno tiene servidor Node (y por lo tanto proxy) o no:
   deploy a un host con Node.
 
 > **`.env` NO se versiona** (está en `.gitignore`): después de clonar hay que crearlo a mano
-> o el front sale sin base de API.
+> o el front sale sin base de API. Se copia de la plantilla y se reinicia el dev server:
+>
+> ```bash
+> cp .env.example .env   # PowerShell: Copy-Item .env.example .env
+> ```
+>
+> **Sin datos sensibles:** `.env.example` (versionado) lleva solo valores públicos (URLs, app
+> id); las `VITE_*` quedan embebidas en el bundle, así que nunca deben llevar secretos. Claves y
+> contraseñas viven en Oracle (p. ej. `PKG_IA_LUBRIMEC.fijar_clave`), no en el repo. Un secreto
+> server-side futuro va solo en el `.env` local y en `.env.example` con el valor vacío.
 >
 > **Síntoma de `.env` faltante en dev:** el login dice **"Usuario o contraseña incorrectos"**
 > con credenciales válidas. Con `VITE_API_URL` vacío la llamada va a `/auth/login` del propio
@@ -461,6 +470,17 @@ que hacer nada extra**, solo respetar el patrón:
      Síntoma de SW viejo pegado en un dispositivo (móvil incluido): `sw.js:NN Failed to fetch`.
      Fix manual una sola vez: DevTools → Application → Clear site data (unregister SW) + cerrar
      TODAS las pestañas del origen y reabrir con Ctrl+Shift+R.
+
+4. **Excepción acotada: widgets del dashboard.** Las consultas del home (`cobros-hoy-chart`,
+   `cobros-acreditar-card`, `cobros-tarjeta-view`, `ventas-dashboard-chart`) pasan
+   `gcTime: GC_DASHBOARD` (`src/lib/cache-dashboard.ts`, 30 min). Al volver al home muestran
+   **al instante** el último dato en memoria y `refetchOnMount: "always"` lo vuelve a pedir por
+   debajo (sin spinner: usan `isLoading`, que solo es `true` sin dato previo). El dato se
+   re-consulta igual cada vez; solo se evita el parpadeo. No se persiste (un F5 arranca vacío).
+   - React Query usa el **mayor** `gcTime` de quienes observan una clave: si una página comparte
+     la `queryKey` con el dashboard (ej. Cierre del Día con `["cierre-dia", 24]`), también abre
+     mostrando ese dato un instante mientras refresca. Es aceptable; no extender la excepción a
+     otras vistas sin pedirlo.
 
 ## Qué NO poner en una `queryKey` (rendimiento)
 

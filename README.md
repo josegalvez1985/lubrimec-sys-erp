@@ -36,13 +36,16 @@ Componente React (react-query)
 
 ## Desarrollo
 
+**Primer arranque (después de clonar):** el `.env` no se versiona, así que hay que crearlo
+desde la plantilla **antes** de levantar el server:
+
 ```bash
 npm install
-npm run dev        # http://localhost:8080 (puerto fijo: strictPort)
+cp .env.example .env   # PowerShell: Copy-Item .env.example .env
+npm run dev            # http://localhost:8080 (puerto fijo: strictPort)
 ```
 
-**El `.env` no se versiona: hay que crearlo a mano tras clonar** (copiar `.env.example`). En dev
-debe tener `VITE_API_URL=/api/ords/` para usar el proxy:
+`.env.example` ya trae los valores de dev; `VITE_API_URL=/api/ords/` es el que usa el proxy:
 
 ```env
 VITE_API_URL=/api/ords/
@@ -54,6 +57,13 @@ ORDS_TARGET=https://oracleapex.com
 > credenciales válidas. Sin `VITE_API_URL` la llamada va a `/auth/login` del propio dev server,
 > que devuelve el HTML del SPA; al no ser JSON, el cliente lo reporta como credenciales inválidas.
 > Vite lee el `.env` **solo al arrancar**: después de crearlo hay que reiniciar `npm run dev`.
+
+> **Nada sensible en `.env.example` ni en el repo.** Hoy el `.env` solo lleva URLs y el app id,
+> datos públicos (las `VITE_*` además terminan embebidas en el JS que baja el navegador). Las
+> claves y contraseñas no van acá: la clave de la API del asistente se carga en Oracle con
+> `PKG_IA_LUBRIMEC.fijar_clave` y las credenciales las valida APEX. Si algún día hace falta un
+> secreto del lado servidor, va **solo** en el `.env` local (ignorado por git) y en
+> `.env.example` se agrega el nombre con el valor vacío.
 
 ### Scripts
 
@@ -176,7 +186,10 @@ dinámicamente desde el endpoint `menu/paginas`.
   recalcula existencia, ventas y compras con solo los artículos de esa marca; con proveedor y
   marca a la vez, la misma fila tiene que cumplir los dos) y orden por columnas. La marca es la
   del artículo (`marca` en el endpoint); mientras la BD no tenga esa versión, la faceta no
-  aparece. Check + cantidad por fila y botón "Copiar pedido" al portapapeles. Backend:
+  aparece. Check + cantidad por fila y botón "Copiar pedido" al portapapeles: cada línea lleva el
+  **costo de compra** (costo último de esa línea artículo + proveedor; con más de una unidad,
+  `₲ costo c/u = ₲ subtotal`) y el texto cierra con `Total: ₲ …` (las líneas sin costo no suman y
+  se avisan como `(N sin costo)`). Backend:
   `db/pedidos_articulos_sql.sql` (query cruda, devuelve todo el dataset).
   **La columna Ventas se corrige respecto del APEX**, que la tiene rota (daba 0 para todo): la
   rama VENTAS del UNION cruzaba el cliente de `ventas_cabecera` contra el proveedor de

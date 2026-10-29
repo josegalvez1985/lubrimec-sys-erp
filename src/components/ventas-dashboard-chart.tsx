@@ -18,6 +18,7 @@ import {
 } from "recharts";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { listarAniosVentas, listarMesesVentas, ventasPorDia } from "@/lib/api";
+import { GC_DASHBOARD } from "@/lib/cache-dashboard";
 
 const COD_EMPRESA = 24;
 
@@ -50,6 +51,7 @@ export function VentasDashboardChart() {
   const aniosQuery = useQuery({
     queryKey: ["ventas-anios", COD_EMPRESA],
     queryFn: () => listarAniosVentas(COD_EMPRESA),
+    gcTime: GC_DASHBOARD,
     retry: false,
   });
   const anioActivo =
@@ -60,6 +62,7 @@ export function VentasDashboardChart() {
   const mesesQuery = useQuery({
     queryKey: ["ventas-meses", COD_EMPRESA, anioActivo],
     queryFn: () => listarMesesVentas(anioActivo!, COD_EMPRESA),
+    gcTime: GC_DASHBOARD,
     enabled: anioActivo != null,
     retry: false,
   });
@@ -73,6 +76,7 @@ export function VentasDashboardChart() {
   const diasQuery = useQuery({
     queryKey: ["ventas-por-dia", COD_EMPRESA, anioActivo, mesActivo],
     queryFn: () => ventasPorDia(anioActivo!, mesActivo!, COD_EMPRESA),
+    gcTime: GC_DASHBOARD,
     enabled: anioActivo != null && mesActivo != null,
     retry: false,
   });

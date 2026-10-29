@@ -425,23 +425,40 @@ export function PedidosArticulosView() {
   async function copiarPedido() {
     // Se recorre `todos` (sin acotar por facetas): lo cargado sigue en el pedido
     // aunque después se cambie el filtro de la pantalla.
-    const lineas = todos
+    const items = todos
       .flatMap((g) => g.filas)
-      .filter((f) => pedido[filaKey(f)] != null)
+      .filter((f) => pedido[filaKey(f)] != null);
+    // Costo de compra = costo último de ESA línea (artículo + proveedor). El
+    // subtotal solo se muestra con más de una unidad; sin costo la línea va sin
+    // monto y no suma al total (se avisa cuántas quedaron afuera).
+    let total = 0;
+    let sinCosto = 0;
+    const lineas = items.map((f) => {
+      const cant = pedido[filaKey(f)];
+      const costo = f.costo_ultimo;
+      let monto = "";
+      if (costo == null) {
+        sinCosto++;
+      } else {
+        total += cant * costo;
+        monto =
+          cant > 1 ? `· ₲ ${fmtN(costo)} c/u = ₲ ${fmtN(cant * costo)}` : `· ₲ ${fmtN(costo)}`;
+      }
       // Va el código del proveedor, no su nombre: el pedido se le manda a él, así
       // que lo que sirve es la referencia con la que identifica el artículo.
-      .map((f) =>
-        [
-          `${pedido[filaKey(f)]} x`,
-          f.cod_proveedor ? `${f.cod_proveedor} ·` : "",
-          f.articulo ?? f.codigo_oem ?? "",
-        ]
-          .filter(Boolean)
-          .join(" ")
-          .trim(),
-      );
+      return [
+        `${cant} x`,
+        f.cod_proveedor ? `${f.cod_proveedor} ·` : "",
+        f.articulo ?? f.codigo_oem ?? "",
+        monto,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .trim();
+    });
     if (lineas.length === 0) return;
-    const texto = `Pedido:\n${lineas.join("\n")}`;
+    const pie = `Total: ₲ ${fmtN(total)}${sinCosto > 0 ? ` (${sinCosto} sin costo)` : ""}`;
+    const texto = `Pedido:\n${lineas.join("\n")}\n\n${pie}`;
     if (await copiarTexto(texto)) {
       toast.success(`Pedido copiado (${lineas.length} artículo${lineas.length === 1 ? "" : "s"})`);
     } else {

@@ -5,7 +5,8 @@ import { routeTree } from "./routeTree.gen";
 export const getRouter = () => {
   // Datos multi-sistema: nunca servir desde caché. Toda consulta va al servidor en el
   // momento (staleTime 0) y no se conserva entre desmontajes (gcTime 0). Además refetch
-  // al montar, al volver a la ventana y al reconectar.
+  // al montar, al volver a la ventana y al reconectar. Excepción: los widgets del dashboard
+  // conservan el dato en memoria (GC_DASHBOARD) para no parpadear al volver al home.
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: {

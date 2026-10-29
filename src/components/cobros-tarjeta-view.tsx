@@ -17,6 +17,7 @@ import {
   acreditarCobroTarjeta,
   type CobroTarjeta,
 } from "@/lib/api";
+import { GC_DASHBOARD } from "@/lib/cache-dashboard";
 
 const COD_EMPRESA = 24;
 
@@ -41,6 +42,7 @@ export function CobrosTarjetaView() {
   const cobrosQuery = useQuery({
     queryKey: ["cobros-tarjeta", COD_EMPRESA],
     queryFn: () => listarCobrosTarjeta(COD_EMPRESA),
+    gcTime: GC_DASHBOARD,
     retry: false,
   });
   const cobros = cobrosQuery.data ?? [];
