@@ -5,11 +5,11 @@ los días una copia del esquema en scripts SQL comprimidos (estructura, aplicaci
 y la manda por correo. **El código completo va al final, en el anexo A**: esta guía es lo único que
 hay que llevar al otro proyecto.
 
-> **Estado al 06/11/2026: todavía no está probado de punta a punta.** La primera versión corrió en
-> `oracleapex.com` y se cortó por el límite de CPU (ver sección 10). La versión del anexo, partida en
-> tramos para evitar ese límite, todavía no se había compilado ni corrido en Oracle. Tampoco están
-> probados el envío de adjuntos, la exportación de APEX y ORDS ni una restauración. Hacer las pruebas
-> de las secciones 5 y 6 antes de confiar en la copia.
+> **Estado: todavía no está probado de punta a punta.** La versión en tramos ya completó una corrida en
+> `oracleapex.com`: 6 partes, 108 tablas, 57.987 filas y 4,7 MB comprimidos. Esa corrida dejó ajustes
+> que el anexo ya incluye, pero que todavía no se volvieron a correr. Falta probar el envío de una copia
+> completa, la exportación del workspace y una restauración. Hacer las pruebas de las secciones 5 y 6
+> antes de confiar en la copia.
 
 **Funciona tal cual en:** Oracle con APEX. Sin APEX o con otro motor hay que cambiar partes o usar otra
 herramienta: ver sección 9.
@@ -67,18 +67,27 @@ Es lo más importante de adaptar, porque cambia de un proyecto a otro.
 
 | Qué | Dónde se ajusta | Por defecto |
 |---|---|---|
-| Tablas con la estructura, pero sin los datos | `c_sin_datos` | Solo las de control del backup (`PROY_BACKUP_*`) |
-| Columnas que van vacías | `c_col_secreta` | Nombre con `PASSWORD`, `PASSWD`, `API_KEY`, `APIKEY`, `TOKEN` o `SECRET` |
+| Tablas con la estructura, pero sin los datos | `c_sin_datos` | Las de control del backup (`PROY_BACKUP_*`) y `HTMLDB_PLAN_TABLE` |
+| Columnas de texto que van vacías | `c_col_secreta` | Nombre con `PASSWORD`, `PASSWD`, `API_KEY`, `APIKEY`, `TOKEN` o `SECRET` |
 | Imágenes y archivos (BLOB) | Fijo en `datos_tabla` | **No se copian nunca** |
 
 - **Agregar a `c_sin_datos` las tablas con claves, sesiones o registros de API.** Por ejemplo:
-  `'^(PROY_BACKUP_|PROY_SESION|IA_)'`. La constante mide 60 caracteres: agrandarla si hace falta.
-- **Una clave en una columna con otro nombre viaja por correo.** Revisarlo con:
+  `'^(PROY_BACKUP_|PROY_SESION|IA_|HTMLDB_PLAN_TABLE$)'`.
+- **Un esquema puede tener tablas de otras aplicaciones,** con otro prefijo: agregarlas también. En
+  Lubrimesys aparecieron así `LT_IA_*`, `PW_IA_*`, `LT_TOKENS` y `PW_TOKENS`.
+- **Una clave guardada en una tabla o columna con otro nombre viaja por correo,** por ejemplo en una
+  tabla `*_CONFIG` con columnas `CLAVE` y `VALOR`. Revisarlo con:
   ```sql
+  SELECT table_name FROM user_tables
+   WHERE REGEXP_LIKE(table_name, 'CONFIG|AJUSTE|PARAM|CLAVE|KEY|CREDENC|SESION|TOKEN', 'i')
+   ORDER BY 1;
+
   SELECT table_name, column_name FROM user_tab_cols
-   WHERE REGEXP_LIKE(column_name, 'CLAVE|PASS|KEY|TOKEN|SECRET|CREDENCIAL', 'i')
+   WHERE REGEXP_LIKE(column_name, 'CLAVE|PASS|KEY|TOKEN|SECRET|CREDENC', 'i')
    ORDER BY 1, 2;
   ```
+- **Si una columna secreta es obligatoria,** viaja con un valor al azar para no perder la fila. Al
+  restaurar hay que restablecerla: por ejemplo, las contraseñas de una tabla de usuarios.
 - **Una clave escrita en el código de un paquete también viaja**, porque la estructura copia el código
   fuente. Moverla a una tabla excluida.
 - **Revisar los BLOB antes de instalar.** En Lubrimesys las imágenes se pueden volver a cargar. Si en el
@@ -174,7 +183,7 @@ todas en el mismo instante.
             'SELECT COUNT(*) c FROM "' || table_name || '"')), '/ROWSET/ROW/C'))) AS filas
      FROM user_tables
     WHERE temporary = 'N' AND table_name NOT LIKE '%$%'
-      AND NOT REGEXP_LIKE(table_name, '^PROY_BACKUP_');
+         AND NOT REGEXP_LIKE(table_name, '^(PROY_BACKUP_|HTMLDB_PLAN_TABLE$)');
    ```
 3. Con todo descomprimido en una carpeta, en PowerShell:
    ```powershell
@@ -295,6 +304,10 @@ Lo que hay que mantener con cualquier motor:
   da `ORA-06502` y tapa el error real. Usar `SUBSTRB`.
 - **`WHEN OTHERS` en un bucle:** si se traga la cancelación o el límite, cada objeto siguiente falla igual
   y el detalle se llena. `ORA-01013`, `ORA-00040`, `ORA-00028` y `ORA-02393` se vuelven a lanzar.
+- **`ORA-01008` al exportar el workspace:** en el job, la búsqueda por nombre devolvió vacío y el bloque
+  se ejecutó con un valor de menos. Ahora también busca en `APEX_WORKSPACES`, y si no lo encuentra lo dice.
+- **Columnas numéricas tratadas como secretas:** `TOKENS_ENTRADA` e `ID_TOKEN` coincidían por el nombre.
+  Ahora el filtro se aplica solo a texto.
 - **`ORA-00942` al crear la tabla:** una tabla creada en un bloque no se puede usar con SQL estático en
   ese mismo bloque, y Oracle no crea nada. Usar `EXECUTE IMMEDIATE`.
 - **`PLS-00231`:** una función privada del paquete no se puede usar dentro de SQL. Pasarla antes a una
@@ -349,8 +362,9 @@ Lo que hay que mantener con cualquier motor:
 --
 --   - Los DATOS de las tablas de c_sin_datos: las de control de esta copia y las que
 --     se agreguen con claves o sesiones. Su estructura sí va. Se cargan a mano.
---   - Columnas de cualquier tabla cuyo nombre diga PASSWORD, API_KEY, TOKEN o
---     SECRET: van vacías y el resumen las lista.
+--   - Columnas de texto de cualquier tabla cuyo nombre diga PASSWORD, API_KEY, TOKEN o
+--     SECRET: van vacías y el resumen las lista. Si son obligatorias van con un valor
+--     al azar, para que el INSERT no falle: al restaurar hay que restablecerlas.
 --   - Las contraseñas de los usuarios de APEX no se pueden exportar en claro.
 --   - Las imágenes (columnas BLOB), por decisión del dueño: se vuelven a cargar.
 --     Si la columna es obligatoria, va EMPTY_BLOB() para que el INSERT no falle.
@@ -489,7 +503,8 @@ CREATE OR REPLACE PACKAGE BODY PKG_BACKUP_PROY AS
   c_workspace CONSTANT VARCHAR2(64) := 'MI_WORKSPACE_APEX';
   c_desfase   CONSTANT NUMBER       := -3 / 24;  -- UTC -> hora local
   -- De estas tablas va la estructura, nunca los datos (ver el encabezado).
-  c_sin_datos CONSTANT VARCHAR2(60) := '^(PROY_BACKUP_)';
+  -- HTMLDB_PLAN_TABLE es de APEX, sin datos del negocio, y su columna LONG no se puede copiar.
+  c_sin_datos CONSTANT VARCHAR2(200) := '^(PROY_BACKUP_|HTMLDB_PLAN_TABLE$)';
   -- Estas columnas van vacías (ver el encabezado).
   c_col_secreta CONSTANT VARCHAR2(60) := 'PASSWORD|PASSWD|API_?KEY|TOKEN|SECRET';
   -- Un adjunto más grande que esto suele rebotar: se avisa en el resumen.
@@ -541,9 +556,31 @@ CREATE OR REPLACE PACKAGE BODY PKG_BACKUP_PROY AS
     g_detalle := SUBSTRB(g_detalle || p_txt || CHR(10), 1, 3900);
   END anotar;
 
-  PROCEDURE contexto_apex IS
+  -- NULL si no lo encuentra. En un job la búsqueda por nombre puede volver vacía: entonces
+  -- se busca en la vista, con SQL dinámico para no atar la compilación a esa columna.
+  FUNCTION id_workspace RETURN NUMBER IS
+    l_id NUMBER;
   BEGIN
-    APEX_UTIL.SET_SECURITY_GROUP_ID(APEX_UTIL.FIND_SECURITY_GROUP_ID(p_workspace => c_workspace));
+    BEGIN
+      l_id := APEX_UTIL.FIND_SECURITY_GROUP_ID(p_workspace => c_workspace);
+    EXCEPTION
+      WHEN OTHERS THEN l_id := NULL;
+    END;
+    IF l_id IS NULL THEN
+      EXECUTE IMMEDIATE 'SELECT MAX(workspace_id) FROM apex_workspaces WHERE UPPER(workspace) = UPPER(:1)'
+        INTO l_id USING c_workspace;
+    END IF;
+    RETURN l_id;
+  EXCEPTION
+    WHEN OTHERS THEN RETURN NULL;
+  END id_workspace;
+
+  PROCEDURE contexto_apex IS
+    l_id NUMBER := id_workspace;
+  BEGIN
+    IF l_id IS NOT NULL THEN
+      APEX_UTIL.SET_SECURITY_GROUP_ID(l_id);
+    END IF;
   EXCEPTION
     WHEN OTHERS THEN NULL;  -- en SQL Workshop ya hay workspace
   END contexto_apex;
@@ -902,14 +939,17 @@ CREATE OR REPLACE PACKAGE BODY PKG_BACKUP_PROY AS
         || 'f := APEX_EXPORT.GET_APPLICATION(p_application_id => :1); :2 := f(1).contents; END;',
         TO_NUMBER(config('APP_ID', 'MI_APP_ID')));
     ELSIF p_que = 'WORKSPACE' THEN
-      BEGIN
-        l_ws := APEX_UTIL.FIND_SECURITY_GROUP_ID(p_workspace => c_workspace);
-      EXCEPTION
-        WHEN OTHERS THEN l_ws := -1;
-      END;
-      exportar('EL WORKSPACE DE APEX (usuarios)',
-        'DECLARE f apex_t_export_files; BEGIN '
-        || 'f := APEX_EXPORT.GET_WORKSPACE(p_workspace_id => :1); :2 := f(1).contents; END;', l_ws);
+      l_ws := id_workspace;
+      IF l_ws IS NULL THEN
+        g_errores := g_errores + 1;
+        linea('-- NO SE PUDO EXPORTAR EL WORKSPACE: no se encontró ' || c_workspace);
+        anotar('FALTA EL WORKSPACE DE APEX (usuarios): no se encontró ' || c_workspace
+               || '. Exportarlo a mano desde APEX.');
+      ELSE
+        exportar('EL WORKSPACE DE APEX (usuarios)',
+          'DECLARE f apex_t_export_files; BEGIN '
+          || 'f := APEX_EXPORT.GET_WORKSPACE(p_workspace_id => :1); :2 := f(1).contents; END;', l_ws);
+      END IF;
     ELSE
       exportar('LOS MÓDULOS ORDS', 'BEGIN :1 := ORDS_METADATA.ORDS_EXPORT.EXPORT_SCHEMA(); END;');
     END IF;
@@ -965,6 +1005,8 @@ CREATE OR REPLACE PACKAGE BODY PKG_BACKUP_PROY AS
   PROCEDURE datos_tabla(p_orden IN NUMBER, p_tabla IN VARCHAR2, p_desde IN NUMBER) IS
     TYPE t_txt IS TABLE OF VARCHAR2(30) INDEX BY PLS_INTEGER;
     l_clase  t_txt;
+    l_fijo   t_txt;
+    l_lit    VARCHAR2(30);
     l_sel    VARCHAR2(32767);
     l_ins    VARCHAR2(32767);
     l_n      PLS_INTEGER := 0;
@@ -977,14 +1019,28 @@ CREATE OR REPLACE PACKAGE BODY PKG_BACKUP_PROY AS
     l_expr   VARCHAR2(400);
     l_col    VARCHAR2(140);
   BEGIN
-    FOR c IN (SELECT column_name, data_type, nullable FROM user_tab_cols
+    FOR c IN (SELECT column_name, data_type, nullable, char_length FROM user_tab_cols
                WHERE table_name = p_tabla AND hidden_column = 'NO' AND virtual_column = 'NO'
                ORDER BY column_id) LOOP
       l_col    := '"' || c.column_name || '"';
       l_clase1 := NULL;
-      IF REGEXP_LIKE(c.column_name, c_col_secreta, 'i') THEN
+      -- Solo texto: un número no es una clave (ID_TOKEN, TOKENS_ENTRADA).
+      IF REGEXP_LIKE(c.column_name, c_col_secreta, 'i')
+         AND c.data_type NOT IN ('NUMBER', 'FLOAT', 'BINARY_FLOAT', 'BINARY_DOUBLE') THEN
         IF p_desde = 0 THEN
           anotar('Sin copiar (dato secreto): ' || p_tabla || '.' || c.column_name);
+        END IF;
+        -- Obligatoria: sin valor, el INSERT fallaría y se perdería la fila entera. Al azar y
+        -- no un texto fijo, para que nadie pueda entrar con él después de restaurar.
+        IF c.nullable = 'N' THEN
+          IF c.data_type IN ('VARCHAR2', 'NVARCHAR2', 'CHAR', 'NCHAR', 'CLOB', 'NCLOB') THEN
+            l_clase1 := 'S';
+            l_expr   := 'NULL';
+            l_lit    := 'DBMS_RANDOM.STRING(''X'',' || LEAST(NVL(NULLIF(c.char_length, 0), 30), 30) || ')';
+          ELSIF p_desde = 0 THEN
+            g_errores := g_errores + 1;
+            anotar('Obligatoria y sin copiar: ' || p_tabla || '.' || c.column_name);
+          END IF;
         END IF;
       ELSIF c.data_type IN ('NUMBER', 'FLOAT', 'BINARY_FLOAT', 'BINARY_DOUBLE') THEN
         l_clase1 := 'N';
@@ -1020,6 +1076,9 @@ CREATE OR REPLACE PACKAGE BODY PKG_BACKUP_PROY AS
       IF l_clase1 IS NOT NULL THEN
         l_n := l_n + 1;
         l_clase(l_n) := l_clase1;
+        IF l_clase1 = 'S' THEN
+          l_fijo(l_n) := l_lit;
+        END IF;
         l_sel := l_sel || CASE WHEN l_n > 1 THEN ', ' END || l_expr;
         l_ins := l_ins || CASE WHEN l_n > 1 THEN ',' END
                  || CASE WHEN MOD(l_n, 10) = 0 THEN CHR(10) END || l_col;
@@ -1054,6 +1113,8 @@ CREATE OR REPLACE PACKAGE BODY PKG_BACKUP_PROY AS
         END IF;
         IF l_clase(i) = 'E' THEN
           poner('EMPTY_BLOB()');
+        ELSIF l_clase(i) = 'S' THEN
+          poner(l_fijo(i));
         ELSIF l_clase(i) = 'C' THEN
           DBMS_SQL.COLUMN_VALUE(l_cur, i, l_clob);
           poner_clob_literal(l_clob);

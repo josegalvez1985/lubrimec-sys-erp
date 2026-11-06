@@ -27,10 +27,12 @@
 --
 -- QUÉ NO VA, A PROPÓSITO (los correos no son un lugar seguro para esto)
 --
---   - Los DATOS de LUBRIMEC_* e IA_*: la clave de la API, sesiones y el registro
---     del asistente. Su estructura sí va. La clave se vuelve a cargar a mano.
---   - Columnas de cualquier tabla cuyo nombre diga PASSWORD, API_KEY, TOKEN o
---     SECRET: van vacías y el resumen las lista.
+--   - Los DATOS de las tablas de c_sin_datos: LUBRIMEC_*, IA_* y lo mismo de las otras
+--     aplicaciones del esquema (LT_IA_*, PW_IA_*, LT_TOKENS, PW_TOKENS): claves de API,
+--     sesiones y registros del asistente. Su estructura sí va. Se cargan a mano.
+--   - Columnas de texto de cualquier tabla cuyo nombre diga PASSWORD, API_KEY, TOKEN o
+--     SECRET: van vacías y el resumen las lista. Si son obligatorias van con un valor
+--     al azar, para que el INSERT no falle: al restaurar hay que restablecerlas.
 --   - Las contraseñas de los usuarios de APEX no se pueden exportar en claro.
 --   - Las imágenes (columnas BLOB), por decisión del dueño: se vuelven a cargar.
 --     Si la columna es obligatoria, va EMPTY_BLOB() para que el INSERT no falle.
@@ -169,7 +171,8 @@ CREATE OR REPLACE PACKAGE BODY PKG_BACKUP_LUBRIMEC AS
   c_workspace CONSTANT VARCHAR2(64) := 'lubrimec';
   c_desfase   CONSTANT NUMBER       := -3 / 24;  -- UTC -> Paraguay
   -- De estas tablas va la estructura, nunca los datos (ver el encabezado).
-  c_sin_datos CONSTANT VARCHAR2(60) := '^(LUBRIMEC_|IA_)';
+  -- HTMLDB_PLAN_TABLE es de APEX, sin datos del negocio, y su columna LONG no se puede copiar.
+  c_sin_datos CONSTANT VARCHAR2(200) := '^(LUBRIMEC_|IA_|LT_IA_|PW_IA_|LT_TOKENS|PW_TOKENS|HTMLDB_PLAN_TABLE$)';
   -- Estas columnas van vacías (ver el encabezado).
   c_col_secreta CONSTANT VARCHAR2(60) := 'PASSWORD|PASSWD|API_?KEY|TOKEN|SECRET';
   -- Un adjunto más grande que esto suele rebotar: se avisa en el resumen.
@@ -221,9 +224,31 @@ CREATE OR REPLACE PACKAGE BODY PKG_BACKUP_LUBRIMEC AS
     g_detalle := SUBSTRB(g_detalle || p_txt || CHR(10), 1, 3900);
   END anotar;
 
-  PROCEDURE contexto_apex IS
+  -- NULL si no lo encuentra. En un job la búsqueda por nombre puede volver vacía: entonces
+  -- se busca en la vista, con SQL dinámico para no atar la compilación a esa columna.
+  FUNCTION id_workspace RETURN NUMBER IS
+    l_id NUMBER;
   BEGIN
-    APEX_UTIL.SET_SECURITY_GROUP_ID(APEX_UTIL.FIND_SECURITY_GROUP_ID(p_workspace => c_workspace));
+    BEGIN
+      l_id := APEX_UTIL.FIND_SECURITY_GROUP_ID(p_workspace => c_workspace);
+    EXCEPTION
+      WHEN OTHERS THEN l_id := NULL;
+    END;
+    IF l_id IS NULL THEN
+      EXECUTE IMMEDIATE 'SELECT MAX(workspace_id) FROM apex_workspaces WHERE UPPER(workspace) = UPPER(:1)'
+        INTO l_id USING c_workspace;
+    END IF;
+    RETURN l_id;
+  EXCEPTION
+    WHEN OTHERS THEN RETURN NULL;
+  END id_workspace;
+
+  PROCEDURE contexto_apex IS
+    l_id NUMBER := id_workspace;
+  BEGIN
+    IF l_id IS NOT NULL THEN
+      APEX_UTIL.SET_SECURITY_GROUP_ID(l_id);
+    END IF;
   EXCEPTION
     WHEN OTHERS THEN NULL;  -- en SQL Workshop ya hay workspace
   END contexto_apex;
@@ -582,14 +607,17 @@ CREATE OR REPLACE PACKAGE BODY PKG_BACKUP_LUBRIMEC AS
         || 'f := APEX_EXPORT.GET_APPLICATION(p_application_id => :1); :2 := f(1).contents; END;',
         TO_NUMBER(config('APP_ID', '86972')));
     ELSIF p_que = 'WORKSPACE' THEN
-      BEGIN
-        l_ws := APEX_UTIL.FIND_SECURITY_GROUP_ID(p_workspace => c_workspace);
-      EXCEPTION
-        WHEN OTHERS THEN l_ws := -1;
-      END;
-      exportar('EL WORKSPACE DE APEX (usuarios)',
-        'DECLARE f apex_t_export_files; BEGIN '
-        || 'f := APEX_EXPORT.GET_WORKSPACE(p_workspace_id => :1); :2 := f(1).contents; END;', l_ws);
+      l_ws := id_workspace;
+      IF l_ws IS NULL THEN
+        g_errores := g_errores + 1;
+        linea('-- NO SE PUDO EXPORTAR EL WORKSPACE: no se encontró ' || c_workspace);
+        anotar('FALTA EL WORKSPACE DE APEX (usuarios): no se encontró ' || c_workspace
+               || '. Exportarlo a mano desde APEX.');
+      ELSE
+        exportar('EL WORKSPACE DE APEX (usuarios)',
+          'DECLARE f apex_t_export_files; BEGIN '
+          || 'f := APEX_EXPORT.GET_WORKSPACE(p_workspace_id => :1); :2 := f(1).contents; END;', l_ws);
+      END IF;
     ELSE
       exportar('LOS MÓDULOS ORDS', 'BEGIN :1 := ORDS_METADATA.ORDS_EXPORT.EXPORT_SCHEMA(); END;');
     END IF;
@@ -645,6 +673,8 @@ CREATE OR REPLACE PACKAGE BODY PKG_BACKUP_LUBRIMEC AS
   PROCEDURE datos_tabla(p_orden IN NUMBER, p_tabla IN VARCHAR2, p_desde IN NUMBER) IS
     TYPE t_txt IS TABLE OF VARCHAR2(30) INDEX BY PLS_INTEGER;
     l_clase  t_txt;
+    l_fijo   t_txt;
+    l_lit    VARCHAR2(30);
     l_sel    VARCHAR2(32767);
     l_ins    VARCHAR2(32767);
     l_n      PLS_INTEGER := 0;
@@ -657,14 +687,28 @@ CREATE OR REPLACE PACKAGE BODY PKG_BACKUP_LUBRIMEC AS
     l_expr   VARCHAR2(400);
     l_col    VARCHAR2(140);
   BEGIN
-    FOR c IN (SELECT column_name, data_type, nullable FROM user_tab_cols
+    FOR c IN (SELECT column_name, data_type, nullable, char_length FROM user_tab_cols
                WHERE table_name = p_tabla AND hidden_column = 'NO' AND virtual_column = 'NO'
                ORDER BY column_id) LOOP
       l_col    := '"' || c.column_name || '"';
       l_clase1 := NULL;
-      IF REGEXP_LIKE(c.column_name, c_col_secreta, 'i') THEN
+      -- Solo texto: un número no es una clave (ID_TOKEN, TOKENS_ENTRADA).
+      IF REGEXP_LIKE(c.column_name, c_col_secreta, 'i')
+         AND c.data_type NOT IN ('NUMBER', 'FLOAT', 'BINARY_FLOAT', 'BINARY_DOUBLE') THEN
         IF p_desde = 0 THEN
           anotar('Sin copiar (dato secreto): ' || p_tabla || '.' || c.column_name);
+        END IF;
+        -- Obligatoria: sin valor, el INSERT fallaría y se perdería la fila entera. Al azar y
+        -- no un texto fijo, para que nadie pueda entrar con él después de restaurar.
+        IF c.nullable = 'N' THEN
+          IF c.data_type IN ('VARCHAR2', 'NVARCHAR2', 'CHAR', 'NCHAR', 'CLOB', 'NCLOB') THEN
+            l_clase1 := 'S';
+            l_expr   := 'NULL';
+            l_lit    := 'DBMS_RANDOM.STRING(''X'',' || LEAST(NVL(NULLIF(c.char_length, 0), 30), 30) || ')';
+          ELSIF p_desde = 0 THEN
+            g_errores := g_errores + 1;
+            anotar('Obligatoria y sin copiar: ' || p_tabla || '.' || c.column_name);
+          END IF;
         END IF;
       ELSIF c.data_type IN ('NUMBER', 'FLOAT', 'BINARY_FLOAT', 'BINARY_DOUBLE') THEN
         l_clase1 := 'N';
@@ -700,6 +744,9 @@ CREATE OR REPLACE PACKAGE BODY PKG_BACKUP_LUBRIMEC AS
       IF l_clase1 IS NOT NULL THEN
         l_n := l_n + 1;
         l_clase(l_n) := l_clase1;
+        IF l_clase1 = 'S' THEN
+          l_fijo(l_n) := l_lit;
+        END IF;
         l_sel := l_sel || CASE WHEN l_n > 1 THEN ', ' END || l_expr;
         l_ins := l_ins || CASE WHEN l_n > 1 THEN ',' END
                  || CASE WHEN MOD(l_n, 10) = 0 THEN CHR(10) END || l_col;
@@ -734,6 +781,8 @@ CREATE OR REPLACE PACKAGE BODY PKG_BACKUP_LUBRIMEC AS
         END IF;
         IF l_clase(i) = 'E' THEN
           poner('EMPTY_BLOB()');
+        ELSIF l_clase(i) = 'S' THEN
+          poner(l_fijo(i));
         ELSIF l_clase(i) = 'C' THEN
           DBMS_SQL.COLUMN_VALUE(l_cur, i, l_clob);
           poner_clob_literal(l_clob);

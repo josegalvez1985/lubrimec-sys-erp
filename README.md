@@ -622,8 +622,10 @@ Paraguay** (job `JOB_BACKUP_LUBRIMEC`). Hay que ejecutarlo a mano como todo `.sq
   aplicación APEX y los módulos ORDS si la instancia deja exportarlos, y los datos.
 - **Qué no lleva:** imágenes (columnas BLOB) ni database links o permisos de red, por decisión del
   dueño: se vuelven a cargar o configurar después. Tampoco los datos de `LUBRIMEC_*` e `IA_*` (clave
-  de la API y sesiones), columnas de contraseñas o tokens, ni las contraseñas de los usuarios de
-  APEX.
+  de la API y sesiones), ni los de `LT_IA_*`, `PW_IA_*`, `LT_TOKENS` y `PW_TOKENS`, que son lo mismo
+  de las otras aplicaciones del esquema. Tampoco columnas de texto con contraseñas o tokens: si son
+  obligatorias, viajan con un valor al azar y hay que restablecerlas. Las contraseñas de los usuarios
+  de APEX tampoco se copian.
 - **Cómo saber si salió bien:** cada corrida termina con un correo de resumen, y queda en
   `LUBRIMEC_BACKUP_LOG`. Si no llegó, o dice `CON ERRORES`, esa copia no está completa.
 - **La casilla no va en el repo:** se carga con `PKG_BACKUP_LUBRIMEC.fijar_destino`. Los adjuntos
