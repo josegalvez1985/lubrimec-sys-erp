@@ -158,6 +158,13 @@ Copiar el anexo A a `backend/ia_asistente.sql` y cambiar esto:
 | Primer párrafo de `instrucciones()` | Describe Juventud con Valores | El negocio del otro y quién lo usa. Las reglas de SQL y "Cómo responder" quedan tal cual (incluido "no muestres SQL ni nombres de tablas") |
 | El bloque que busca `/asistente` en `menu_paginas` (sección 5) | Aviso de una versión vieja de ethos | Borrarlo (si no está la tabla, no hace nada) |
 
+**El bloque "Lo propio de este negocio" de `instrucciones()`** es donde va lo que la IA no puede
+deducir del esquema, y conviene revisarlo con datos reales. Dos casos reales de Lubrimesys: una
+columna `ES_ACTIVO` que no dice "artículo habilitado" sino "bien de uso", y una vista que rellena
+con 1 el costo que no existe (un `COUNT` da 100 % con costo y la suma inventa montos). Sin esas
+líneas la IA responde números creíbles y equivocados. Cambiar ese bloque pide volver a correr el
+script.
+
 **Si los dos proyectos comparten el mismo esquema de Oracle**, `IA_CONFIG` e `IA_CONSULTAS`
 chocarían: renombrarlas (por ejemplo `IA2_CONFIG`, `IA2_CONSULTAS`) y ajustar el patrón de
 `es_privada` y de los filtros de `cargar_esquema` (`'IA\_%'` cubre `IA_*`, no `IA2_*`). Si
@@ -267,8 +274,12 @@ Dependencias:
   `text-on-brand`, `shadow-elegant`, `shadow-soft`, `tap`, `font-display`, `bg-primary-soft`,
   `bg-brand-red`. El resto (`bg-primary`, `bg-muted`, `border-border`, `text-muted-foreground`,
   `destructive`) es estándar de shadcn.
-- **Posición del botón**: en el celular es `bottom-[calc(5.75rem+env(safe-area-inset-bottom))]`
-  para quedar sobre la barra inferior de ethos. Si el otro no tiene barra abajo, `bottom-4`.
+- **Posición del botón**: arranca, en el celular, en
+  `bottom-[calc(5.75rem+env(safe-area-inset-bottom))]` para quedar sobre la barra inferior de
+  ethos. Si el otro no tiene barra abajo, `bottom-4`.
+- **Botón movible** (`useBotonMovible`): se arrastra con mouse o dedo a cualquier lugar y el lugar
+  queda en `localStorage`, por dispositivo. Si tapa algo, cada usuario lo corre. `TAM_BOTON` tiene
+  que coincidir con la clase `size-14`.
 
 ### 3.4 Montarlo
 
@@ -297,7 +308,9 @@ permiso: lo ve todo el que entra.
 - **Tablas privadas** (`IA_*`, sesiones, contraseñas) fuera del esquema y del filtro.
 - **Ve todas las tablas sin filtrar por permisos** (así se decidió en ethos). Si el otro proyecto
   tiene datos que no todos deberían ver, decidirlo antes: o se suman a `es_privada` o se filtra
-  por usuario.
+  por usuario. Lubrimesys filtra por usuario (`db/ia_asistente_sql.sql`, "QUIÉN VE QUÉ"): el
+  usuario sale del token, en cada pregunta porque ORDS reusa la sesión, y arranca restringido.
+  Sin eso alcanza con pedírselo: una regla solo en las instrucciones se puede esquivar.
 
 ## 5. Prueba final
 
@@ -306,7 +319,9 @@ permiso: lo ve todo el que entra.
 3. En el sitio:
    - "¿cómo se usa esta pantalla?" responde con lo del README, sin nombrar archivos;
    - una pregunta de datos ("¿cuántos X hay este mes?") da números;
-   - el pie muestra "Hoy: 1 de N".
+   - el pie muestra "Hoy: 1 de N";
+   - el botón se arrastra sin abrir el chat, y un toque corto lo abre. En un celular real: un
+     navegador headless no genera el `click` de un toque simulado.
 4. `SELECT * FROM ia_consultas ORDER BY id DESC FETCH FIRST 5 ROWS ONLY` → aparecen la
    pregunta, el SQL y los tokens.
 5. Revisar en la consola de Claude (workspace "fc") que el gasto del mes subió.
@@ -1902,7 +1917,7 @@ const GUIA_BASICA = `## Lo básico
 - En el celular (y en la app de Android, que es el mismo sitio) la barra de abajo tiene Inicio, Menú (todas las pantallas, agrupadas por menú principal: tocá uno para abrirlo), Perfil (Mi cuenta: tema, color y cerrar sesión) y Salir.
 - En la computadora el menú está a la izquierda, agrupado por menú principal.
 - Cada usuario ve solo las pantallas que tiene habilitadas. Si falta una, hay que pedírsela a quien administra los permisos (Administrador → Roles de páginas).
-- Este asistente se abre con el botón redondo de abajo a la derecha; recuerda la conversación hasta que se recarga la página.`;
+- Este asistente se abre con el botón redondo, que arranca abajo a la derecha y se puede arrastrar a cualquier lugar de la pantalla. Recuerda la conversación hasta que se recarga la página.`;
 
 /** Desde el título `desde` hasta antes de `hasta` (o el final). */
 function seccion(md: string, desde: string, hasta?: string) {
@@ -1959,11 +1974,19 @@ import {
   Sparkles,
   X,
 } from "lucide-react";
-import { useEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type KeyboardEvent,
+  type PointerEvent,
+} from "react";
 import { toast } from "sonner";
 
 import { Markdown } from "@/components/markdown";
 import { Drawer, DrawerContent, DrawerDescription, DrawerTitle } from "@/components/ui/drawer";
+import { cn } from "@/lib/utils";
 import {
   abrirAsistente,
   cargarManual,
@@ -1982,8 +2005,8 @@ import { usePermisos } from "@/lib/permisos";
  *
  * | | Botón | Chat |
  * | --- | --- | --- |
- * | Celular y APK (`< lg`) | abajo a la derecha, encima de la barra | hoja casi a pantalla completa |
- * | Escritorio (`≥ lg`) | abajo a la derecha | panel fijo a la derecha, **sin tapar** la pantalla: `AppShell` le hace lugar, y sigue abierto al navegar |
+ * | Celular y APK (`< lg`) | abajo a la derecha, encima de la barra, arrastrable | hoja casi a pantalla completa |
+ * | Escritorio (`≥ lg`) | abajo a la derecha, arrastrable | panel fijo a la derecha, **sin tapar** la pantalla: `AppShell` le hace lugar, y sigue abierto al navegar |
  *
  * Lo ven todos los que entran: no depende de Roles de páginas (Jose,
  * 15/10/2026; la primera versión pedía la página `/asistente`).
@@ -1991,19 +2014,27 @@ import { usePermisos } from "@/lib/permisos";
 export function Asistente() {
   const { abierto, pendiente } = useAsistente();
   const escritorio = useEscritorio();
+  const { posicion, eventos, fueArrastre } = useBotonMovible();
 
   return (
     <>
       {!(escritorio && abierto) && (
         <button
           type="button"
+          {...eventos}
           onClick={() => {
+            if (fueArrastre()) return;
             void cargarManual(); // que esté listo para la primera pregunta
             abrirAsistente(true);
           }}
           aria-label="Abrir el asistente"
-          title="Asistente"
-          className="tap bg-hero-gradient fixed right-4 bottom-[calc(5.75rem+env(safe-area-inset-bottom))] z-40 grid size-14 place-items-center rounded-full text-on-brand shadow-elegant lg:right-6 lg:bottom-6"
+          title="Asistente (arrastralo para moverlo)"
+          style={posicion ? { left: posicion.x, top: posicion.y } : undefined}
+          className={cn(
+            "tap bg-hero-gradient fixed z-40 grid size-14 cursor-grab touch-none select-none place-items-center rounded-full text-on-brand shadow-elegant active:cursor-grabbing",
+            !posicion &&
+              "right-4 bottom-[calc(5.75rem+env(safe-area-inset-bottom))] lg:right-6 lg:bottom-6",
+          )}
         >
           <Sparkles className="size-6" />
           {pendiente && (
@@ -2037,6 +2068,111 @@ export function Asistente() {
       )}
     </>
   );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Botón movible                                                               */
+/* -------------------------------------------------------------------------- */
+
+const CLAVE_POSICION = "asistente_boton_pos";
+const TAM_BOTON = 56; // size-14
+const MARGEN = 8;
+const UMBRAL_ARRASTRE = 6; // px: con menos que esto es un toque y abre el chat
+
+type Posicion = { x: number; y: number };
+
+/** Lo mantiene entero dentro de la ventana, por más que se suelte o se achique. */
+function limitar({ x, y }: Posicion): Posicion {
+  const { clientWidth: ancho, clientHeight: alto } = document.documentElement;
+  return {
+    x: Math.max(MARGEN, Math.min(x, ancho - TAM_BOTON - MARGEN)),
+    y: Math.max(MARGEN, Math.min(y, alto - TAM_BOTON - MARGEN)),
+  };
+}
+
+function leerPosicion(): Posicion | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const p = JSON.parse(localStorage.getItem(CLAVE_POSICION) ?? "null");
+    return Number.isFinite(p?.x) && Number.isFinite(p?.y) ? limitar(p) : null;
+  } catch {
+    return null;
+  }
+}
+
+function guardarPosicion(p: Posicion) {
+  try {
+    localStorage.setItem(CLAVE_POSICION, JSON.stringify(p));
+  } catch {
+    // Sin almacenamiento el botón se mueve igual; solo no se recuerda al recargar.
+  }
+}
+
+/**
+ * Arrastre con mouse o dedo. Sin posición guardada, el botón queda en su esquina
+ * por CSS. El estado vive en `Asistente`, no en el botón: en escritorio el botón
+ * se desmonta con el chat abierto y al cerrarlo vuelve al mismo lugar.
+ */
+function useBotonMovible() {
+  const [posicion, setPosicion] = useState<Posicion | null>(leerPosicion);
+  const arrastre = useRef<{
+    inicioX: number;
+    inicioY: number;
+    difX: number;
+    difY: number;
+    movido: boolean;
+  } | null>(null);
+  const hayQueIgnorarClick = useRef(false);
+
+  useEffect(() => {
+    const alCambiarVentana = () => setPosicion((p) => p && limitar(p));
+    window.addEventListener("resize", alCambiarVentana);
+    return () => window.removeEventListener("resize", alCambiarVentana);
+  }, []);
+
+  const terminar = (e: PointerEvent<HTMLButtonElement>) => {
+    const a = arrastre.current;
+    arrastre.current = null;
+    if (!a?.movido) return;
+    hayQueIgnorarClick.current = true;
+    guardarPosicion(limitar({ x: e.clientX - a.difX, y: e.clientY - a.difY }));
+  };
+
+  return {
+    posicion,
+    eventos: {
+      onPointerDown: (e: PointerEvent<HTMLButtonElement>) => {
+        if (e.button !== 0) return;
+        // Un arrastre con el dedo puede no disparar click: que no se coma el próximo toque.
+        hayQueIgnorarClick.current = false;
+        const caja = e.currentTarget.getBoundingClientRect();
+        arrastre.current = {
+          inicioX: e.clientX,
+          inicioY: e.clientY,
+          difX: e.clientX - caja.left,
+          difY: e.clientY - caja.top,
+          movido: false,
+        };
+        e.currentTarget.setPointerCapture(e.pointerId);
+      },
+      onPointerMove: (e: PointerEvent<HTMLButtonElement>) => {
+        const a = arrastre.current;
+        if (!a) return;
+        const distancia = Math.hypot(e.clientX - a.inicioX, e.clientY - a.inicioY);
+        if (!a.movido && distancia < UMBRAL_ARRASTRE) return;
+        a.movido = true;
+        setPosicion(limitar({ x: e.clientX - a.difX, y: e.clientY - a.difY }));
+      },
+      onPointerUp: terminar,
+      onPointerCancel: terminar,
+    },
+    /** `true` si el click viene de soltar un arrastre (no tiene que abrir el chat). */
+    fueArrastre: () => {
+      const ignorar = hayQueIgnorarClick.current;
+      hayQueIgnorarClick.current = false;
+      return ignorar;
+    },
+  };
 }
 
 /** `≥ lg`, el mismo corte que la sidebar. */

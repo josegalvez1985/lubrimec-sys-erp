@@ -180,7 +180,7 @@ const GUIA_BASICA = `## Lo básico
 - En el celular (y en la app de Android, que es el mismo sitio) el menú se abre con el botón ☰ de arriba a la izquierda. En la app, el botón atrás del teléfono cierra lo que esté abierto y vuelve a la pantalla anterior.
 - Arriba está el buscador de artículos y clientes. La casita vuelve al Inicio (el panel con cobros y ventas del día). El menú del usuario, arriba a la derecha, tiene Perfil (tema claro u oscuro y, en la app, el ingreso con huella) y Cerrar sesión.
 - Cada usuario ve solo las páginas que tiene habilitadas. Si falta una, hay que pedírsela a quien administra los permisos (Roles de Páginas).
-- Este asistente se abre con el botón redondo de abajo a la derecha; recuerda la conversación hasta que se recarga la página.`;
+- Este asistente se abre con el botón redondo, que arranca abajo a la derecha y se puede arrastrar a cualquier lugar de la pantalla (con el mouse o con el dedo; el lugar queda guardado en ese dispositivo). Recuerda la conversación hasta que se recarga la página.`;
 
 let manual: Promise<string> | null = null;
 

@@ -38,6 +38,10 @@
 --     manual que manda el sitio ya llega sin nombres técnicos (vite.config.ts).
 --   - Quién lo usa: CUALQUIER USUARIO CON SESIÓN, sin página ni permiso en
 --     Roles de Páginas. El gasto lo controla LIMITE_DIARIO, por usuario.
+--   - COSTOS Y SUELDOS, SOLO JOSEG (decisión del dueño, 06/11/2026). Compras,
+--     costos, precios de compra, márgenes, rentabilidad, recargos, comisiones,
+--     aguinaldos y sueldos no se le responden a nadie más. Se decide con el
+--     usuario del TOKEN, no con lo que manda el sitio. Ver "QUIÉN VE QUÉ".
 --
 -- QUÉ PUBLICA ESTE SCRIPT (módulo ORDS lubrimec)
 --
@@ -81,6 +85,14 @@
 --        BEGIN PKG_IA_LUBRIMEC.probar_ocultar('Sale de V_FICHA_EXISTENCIA por COD_EMPRESA'); END;
 --          -> "Sale de un dato interno por un dato interno"
 --
+--   Y lo que solo ve JOSEG (el segundo parámetro es el usuario; sin él, restringe):
+--
+--        BEGIN PKG_IA_LUBRIMEC.probar_consulta('SELECT MAX(costo_ultima_compra) FROM articulos', 'JOSEG'); END;  -- [OK]
+--        BEGIN PKG_IA_LUBRIMEC.probar_consulta('SELECT MAX(costo_ultima_compra) FROM articulos'); END;           -- [RECHAZADA]
+--        BEGIN PKG_IA_LUBRIMEC.probar_consulta('SELECT COUNT(*) FROM compras_detalle'); END;                     -- [RECHAZADA]
+--        BEGIN PKG_IA_LUBRIMEC.probar_consulta('SELECT * FROM articulos'); END;                                  -- [RECHAZADA]
+--        BEGIN PKG_IA_LUBRIMEC.probar_consulta('SELECT COUNT(*) FROM articulos'); END;                           -- [OK]
+--
 --   No hay nada que dar de alta en Roles de Páginas: el botón le aparece a
 --   todo el que entra.
 --
@@ -107,6 +119,33 @@
 --
 --   NO hay tope de tiempo por consulta: un SELECT muy pesado puede tardar. Es
 --   el mismo riesgo que un reporte de APEX mal filtrado.
+--
+--------------------------------------------------------------------------------
+-- QUIÉN VE QUÉ (costos y sueldos, solo JOSEG)
+--------------------------------------------------------------------------------
+--
+--   `g_restringido` se recalcula en CADA pregunta con el usuario del token (ORDS
+--   reusa la sesión entre usuarios) y arranca en TRUE: ante la duda, restringe.
+--   Para cualquiera que no sea JOSEG (c_admin):
+--
+--   - `es_sensible` rechaza toda consulta que nombre algo de c_sensible: las
+--     tablas COMPRAS_* (ahí están los costos y los sueldos, comprobantes SAL) y
+--     toda columna o tabla con COSTO, PRECIO_COMPRA, RENTAB, GANANCIA, MARGEN,
+--     RECARGO, SALARIO, SUELDO, AGUINALDO, COMISION o UTILIDAD en el nombre.
+--     Se mira el texto de la consulta: un alias no lo esquiva.
+--   - Sin * ni t.* ni JSON_OBJECT(*), salvo COUNT(*): con * se leerían esas
+--     columnas sin nombrarlas. Por las dudas, `consultar` también revisa los
+--     nombres de las columnas que devuelve.
+--   - No se le describen en el esquema (g_esquema_restr) y `contexto` le avisa
+--     que debe responder que no está disponible.
+--
+--   El chequeo es por NOMBRE: una vista que traiga un costo con otro nombre (por
+--   ejemplo PRECIO) pasaría. Para revisar las vistas que salen de las compras:
+--
+--     SELECT DISTINCT name FROM user_dependencies
+--      WHERE type = 'VIEW' AND referenced_name LIKE 'COMPRAS%' ORDER BY name;
+--
+--   Si alguna expone un costo con otro nombre, sumarla a c_sensible.
 --
 --------------------------------------------------------------------------------
 -- CONFIGURACIÓN (LUBRIMEC_IA_CONFIG, clave / valor)
@@ -264,8 +303,9 @@ CREATE OR REPLACE PACKAGE PKG_IA_LUBRIMEC AS
   PROCEDURE probar;
 
   -- Corre una consulta como la correría la IA (mismo filtro, solo lectura) y
-  -- escribe el resultado en DBMS_OUTPUT. Para probar a mano.
-  PROCEDURE probar_consulta(p_sql IN VARCHAR2);
+  -- escribe el resultado en DBMS_OUTPUT. Para probar a mano. p_usuario: como quién
+  -- se prueba (sin él, como un usuario restringido).
+  PROCEDURE probar_consulta(p_sql IN VARCHAR2, p_usuario IN VARCHAR2 DEFAULT NULL);
 
   -- Pasa un texto por el mismo filtro que la respuesta (ocultar_nombres) y
   -- escribe cómo queda. Para probar a mano que no se escapan nombres.
@@ -285,6 +325,15 @@ CREATE OR REPLACE PACKAGE BODY PKG_IA_LUBRIMEC AS
   c_desfase   CONSTANT NUMBER        := -3 / 24;
   -- La empresa con la que trabaja todo el front (COD_EMPRESA = 24 en cada vista).
   c_cod_empresa CONSTANT NUMBER      := 24;
+
+  -- El único usuario que ve costos y sueldos, y lo que no ve el resto (ver "QUIÉN
+  -- VE QUÉ" en el encabezado). Se compara con el nombre de tablas y columnas.
+  c_admin     CONSTANT VARCHAR2(30)  := 'JOSEG';
+  c_sensible  CONSTANT VARCHAR2(200) :=
+    '^COMPRAS|COSTO|PRECIO_COMPRA|RENTAB|GANANCIA|MARGEN|RECARGO|SALARIO|SUELDO|AGUINALDO|COMISION|UTILIDAD';
+  c_msg_sensible CONSTANT VARCHAR2(300) :=
+    'Esa información (compras, costos, márgenes, comisiones y sueldos) no está disponible para '
+    || 'este usuario. No intentes obtenerla con otra consulta: decile que solo la ve el administrador.';
 
   -- Topes de una pregunta: idas y vueltas con la API, consultas SQL, tokens de
   -- la respuesta (incluye lo que piensa), mensajes previos que se mandan y
@@ -315,6 +364,11 @@ CREATE OR REPLACE PACKAGE BODY PKG_IA_LUBRIMEC AS
   g_nombres    t_set;
   g_esquema    CLOB;
   g_esquema_al DATE;
+  -- El mismo esquema sin lo sensible, para quien no es c_admin.
+  g_esquema_restr CLOB;
+  -- Si esta pregunta no puede ver lo sensible. La sesión la reusan otros usuarios:
+  -- se fija en cada pregunta y arranca restringida.
+  g_restringido BOOLEAN := TRUE;
 
   -- Una consulta rechazada o con error: g_msg dice por qué y se le devuelve a
   -- la IA para que la corrija.
@@ -487,6 +541,12 @@ CREATE OR REPLACE PACKAGE BODY PKG_IA_LUBRIMEC AS
     RETURN p_nombre LIKE 'LUBRIMEC\_%' ESCAPE '\' OR p_nombre LIKE 'IA\_%' ESCAPE '\';
   END es_privada;
 
+  -- Tablas y columnas que solo ve c_admin. p_nombre en MAYÚSCULAS.
+  FUNCTION es_sensible(p_nombre IN VARCHAR2) RETURN BOOLEAN IS
+  BEGIN
+    RETURN REGEXP_LIKE(p_nombre, c_sensible);
+  END es_sensible;
+
   ------------------------------------------------------------------------------
   -- Arma la descripción del esquema (tablas y vistas con sus columnas y
   -- comentarios, relaciones y bitácoras) y las listas de identificadores
@@ -498,6 +558,14 @@ CREATE OR REPLACE PACKAGE BODY PKG_IA_LUBRIMEC AS
     l_cols  VARCHAR2(32767);
     l_jn    VARCHAR2(32767);
     l_fks   CLOB;
+    -- Lo mismo sin lo sensible (g_esquema_restr).
+    l_txt_r  CLOB;
+    l_cols_r VARCHAR2(32767);
+    l_jn_r   VARCHAR2(32767);
+    l_fks_r  CLOB;
+    l_col    VARCHAR2(1000);
+    l_cab    VARCHAR2(1500);
+    l_bit    VARCHAR2(1000);
 
     PROCEDURE anotar_nombre(p_nombre IN VARCHAR2) IS
     BEGIN
@@ -533,6 +601,7 @@ CREATE OR REPLACE PACKAGE BODY PKG_IA_LUBRIMEC AS
 
     l_txt := 'ESQUEMA DE LA BASE (Oracle). Las tablas y vistas que podés consultar, con sus '
           || 'columnas (NOMBRE TIPO) y, entre corchetes, su comentario:' || CHR(10);
+    l_txt_r := l_txt;
 
     FOR o IN (SELECT o.object_name AS nombre, o.object_type AS tipo, tc.comments AS comentario
                 FROM user_objects o
@@ -547,6 +616,7 @@ CREATE OR REPLACE PACKAGE BODY PKG_IA_LUBRIMEC AS
                ORDER BY o.object_name) LOOP
       g_permitidos(o.nombre) := TRUE;
       l_cols := NULL;
+      l_cols_r := NULL;
       FOR c IN (SELECT tc.column_name, tc.data_type, cc.comments
                   FROM user_tab_columns tc
                   LEFT JOIN user_col_comments cc
@@ -554,17 +624,22 @@ CREATE OR REPLACE PACKAGE BODY PKG_IA_LUBRIMEC AS
                  WHERE tc.table_name = o.nombre
                  ORDER BY tc.column_id) LOOP
         g_permitidos(c.column_name) := TRUE;
-        l_cols := SUBSTR(l_cols || CASE WHEN l_cols IS NOT NULL THEN '; ' END
-                  || c.column_name || ' ' || c.data_type
-                  || CASE WHEN TRIM(c.comments) IS NOT NULL
-                          THEN ' [' || SUBSTR(TRIM(c.comments), 1, 90) || ']' END,
-                  1, 30000);
+        l_col := c.column_name || ' ' || c.data_type
+                 || CASE WHEN TRIM(c.comments) IS NOT NULL
+                         THEN ' [' || SUBSTR(TRIM(c.comments), 1, 90) || ']' END;
+        l_cols := SUBSTR(l_cols || CASE WHEN l_cols IS NOT NULL THEN '; ' END || l_col, 1, 30000);
+        IF NOT es_sensible(c.column_name) THEN
+          l_cols_r := SUBSTR(l_cols_r || CASE WHEN l_cols_r IS NOT NULL THEN '; ' END || l_col, 1, 30000);
+        END IF;
       END LOOP;
-      l_txt := l_txt || CHR(10) || o.nombre
+      l_cab := o.nombre
             || CASE WHEN o.tipo = 'VIEW' THEN ' (vista)' END
             || CASE WHEN TRIM(o.comentario) IS NOT NULL
-                    THEN ' [' || SUBSTR(TRIM(o.comentario), 1, 200) || ']' END
-            || ': ' || l_cols;
+                    THEN ' [' || SUBSTR(TRIM(o.comentario), 1, 200) || ']' END;
+      l_txt := l_txt || CHR(10) || l_cab || ': ' || l_cols;
+      IF NOT es_sensible(o.nombre) THEN
+        l_txt_r := l_txt_r || CHR(10) || l_cab || ': ' || l_cols_r;
+      END IF;
     END LOOP;
 
     -- Las relaciones, para que sepa cómo unir.
@@ -584,9 +659,17 @@ CREATE OR REPLACE PACKAGE BODY PKG_IA_LUBRIMEC AS
                ORDER BY a.table_name, ac.column_name, r.table_name) LOOP
       l_fks := l_fks || CHR(10) || f.tabla || '.' || f.columna
             || ' -> ' || f.ref_tabla || '.' || f.ref_columna;
+      IF NOT (es_sensible(f.tabla) OR es_sensible(f.columna)
+              OR es_sensible(f.ref_tabla) OR es_sensible(f.ref_columna)) THEN
+        l_fks_r := l_fks_r || CHR(10) || f.tabla || '.' || f.columna
+              || ' -> ' || f.ref_tabla || '.' || f.ref_columna;
+      END IF;
     END LOOP;
     IF l_fks IS NOT NULL THEN
       l_txt := l_txt || CHR(10) || CHR(10) || 'RELACIONES (claves foráneas):' || l_fks;
+    END IF;
+    IF l_fks_r IS NOT NULL THEN
+      l_txt_r := l_txt_r || CHR(10) || CHR(10) || 'RELACIONES (claves foráneas):' || l_fks_r;
     END IF;
 
     -- Las bitácoras: se pueden consultar, sin describir cada una.
@@ -598,17 +681,24 @@ CREATE OR REPLACE PACKAGE BODY PKG_IA_LUBRIMEC AS
                ORDER BY table_name) LOOP
       g_permitidos(j.table_name) := TRUE;
       l_jn := SUBSTR(l_jn || CASE WHEN l_jn IS NOT NULL THEN ', ' END || j.table_name, 1, 30000);
+      IF NOT es_sensible(j.table_name) THEN
+        l_jn_r := SUBSTR(l_jn_r || CASE WHEN l_jn_r IS NOT NULL THEN ', ' END || j.table_name, 1, 30000);
+      END IF;
     END LOOP;
+    l_bit := 'BITÁCORAS: cada tabla X_JN tiene las columnas de X más JN_OPERATION (''INS'', '
+          || '''UPD'' o ''DEL''), JN_ORACLE_USER (el usuario que hizo el cambio) y JN_DATETIME '
+          || '(fecha y hora del cambio, en UTC: restale 3 horas para Paraguay). En un UPD guardan '
+          || 'cómo quedó la fila. Sirven para "quién cargó / modificó / borró". Son: ';
     IF l_jn IS NOT NULL THEN
-      l_txt := l_txt || CHR(10) || CHR(10)
-            || 'BITÁCORAS: cada tabla X_JN tiene las columnas de X más JN_OPERATION (''INS'', '
-            || '''UPD'' o ''DEL''), JN_ORACLE_USER (el usuario que hizo el cambio) y JN_DATETIME '
-            || '(fecha y hora del cambio, en UTC: restale 3 horas para Paraguay). En un UPD guardan '
-            || 'cómo quedó la fila. Sirven para "quién cargó / modificó / borró". Son: ' || l_jn;
+      l_txt := l_txt || CHR(10) || CHR(10) || l_bit || l_jn;
+    END IF;
+    IF l_jn_r IS NOT NULL THEN
+      l_txt_r := l_txt_r || CHR(10) || CHR(10) || l_bit || l_jn_r;
     END IF;
 
-    g_esquema    := l_txt;
-    g_esquema_al := SYSDATE;
+    g_esquema       := l_txt;
+    g_esquema_restr := l_txt_r;
+    g_esquema_al    := SYSDATE;
   END cargar_esquema;
 
   ------------------------------------------------------------------------------
@@ -744,11 +834,21 @@ CREATE OR REPLACE PACKAGE BODY PKG_IA_LUBRIMEC AS
     IF REGEXP_LIKE(l_s, 'FOR[[:space:]]+UPDATE') THEN
       rechazar('Sin FOR UPDATE: el asistente solo lee.');
     END IF;
+    -- Con * se leerían columnas sensibles sin nombrarlas, y un WITH t(a, b) AS
+    -- (SELECT * ...) hasta les cambiaría el nombre. COUNT(*) no trae columnas.
+    IF g_restringido AND REGEXP_LIKE(
+         REGEXP_REPLACE(l_s, 'COUNT[[:space:]]*\([[:space:]]*\*[[:space:]]*\)', ' '),
+         '(SELECT|DISTINCT|UNIQUE|ALL|,|\.|\()[[:space:]]*\*') THEN
+      rechazar('No uses * en la consulta: nombrá las columnas que necesitás.');
+    END IF;
 
     LOOP
       l_pos := REGEXP_INSTR(l_s, c_patron, l_pos);
       EXIT WHEN l_pos = 0;
       l_tok := REGEXP_SUBSTR(l_s, c_patron, l_pos);
+      IF g_restringido AND es_sensible(l_tok) THEN
+        rechazar(c_msg_sensible);
+      END IF;
       IF prohibido(l_tok) THEN
         rechazar('No se puede usar ' || l_tok || ' en las consultas del asistente: solo las '
                  || 'tablas y vistas del esquema y las funciones de SQL de Oracle.');
@@ -800,6 +900,17 @@ CREATE OR REPLACE PACKAGE BODY PKG_IA_LUBRIMEC AS
     l_cur := DBMS_SQL.OPEN_CURSOR;
     DBMS_SQL.PARSE(l_cur, l_sql, DBMS_SQL.NATIVE);
     DBMS_SQL.DESCRIBE_COLUMNS2(l_cur, l_n, l_desc);
+    -- Segunda barrera para lo sensible: lo que la consulta devolvería.
+    IF g_restringido THEN
+      FOR i IN 1 .. l_n LOOP
+        IF es_sensible(UPPER(l_desc(i).col_name)) THEN
+          DBMS_SQL.CLOSE_CURSOR(l_cur);
+          ROLLBACK;  -- termina la transacción de solo lectura
+          g_msg := c_msg_sensible;
+          RAISE e_sql;
+        END IF;
+      END LOOP;
+    END IF;
     FOR i IN 1 .. l_n LOOP
       l_cols.append(l_desc(i).col_name);
       IF l_desc(i).col_type = c_tipo_fecha THEN
@@ -901,6 +1012,8 @@ CONFIDENCIALIDAD (sin excepciones):
 Lo propio de este negocio:
 - Casi todas las tablas tienen COD_EMPRESA. El sistema trabaja con la empresa {EMPRESA}: filtrá siempre por COD_EMPRESA = {EMPRESA}, salvo que pidan otra.
 - El stock (existencia) de un artículo es SUM(CANTIDAD) de V_FICHA_EXISTENCIA por ID_ARTICULO y COD_EMPRESA; para el stock a una fecha, sumá solo las filas con FEC_COMPROBANTE hasta esa fecha. No uses la columna EXISTENCIA de ARTICULOS: está desactualizada.
+- Los artículos tienen dos datos distintos. ESTADO = 'A' dice que el artículo está habilitado. ES_ACTIVO = 'S' dice que es un bien de uso del negocio, que no se vende (notebook, mesa, escalera); los de venta tienen ES_ACTIVO = 'N'. En las pantallas ese dato aparece como "¿Bien de uso?", "¿Es activo?" o "¿Activos/Gastos?". Si preguntan por mercadería, por lo que hay para vender o por su valor, filtrá NVL(ES_ACTIVO, 'S') = 'N' y decí que no contaste los bienes de uso.
+- El COSTO_ULTIMO de V_FICHA_EXISTENCIA no sirve como costo: vale 1 cuando el artículo no tiene costo. Usá COSTO_ULTIMA_COMPRA de ARTICULOS y, si está vacío (les pasa a los bienes de uso), el PRECIO de la última compra: COMPRAS_DETALLE con COMPRAS_CABECERA por ID_FACTURA, con PRECIO distinto de 0, TIP_COMPROBANTE distinto de 'AJS' y la FEC_COMPROBANTE más reciente. Si tampoco hay, decí que no tiene costo y no lo sumes: nunca lo cuentes como 1.
 - Los montos están en guaraníes (Gs.), sin decimales.
 
 Cómo responder:
@@ -943,7 +1056,13 @@ Cómo responder:
       || '- Ahora: ' || TO_CHAR(ahora, 'fmDay dd/mm/yyyy HH24:MI', 'NLS_DATE_LANGUAGE=SPANISH')
       || ' (hora de Paraguay).' || CHR(10)
       || '- Pantalla que tiene abierta: ' || NVL(p_pantalla, 'ninguna (el Inicio)')
-      || '. "Esta pantalla" es esa.';
+      || '. "Esta pantalla" es esa.'
+      || CASE WHEN g_restringido THEN CHR(10)
+           || '- Este usuario NO puede ver compras, costos, precios de compra, márgenes, rentabilidad, '
+           || 'recargos, comisiones, aguinaldos ni sueldos: solo los ve el administrador. Si los pide, '
+           || 'decile eso y no intentes calcularlos ni estimarlos de otra forma. Ventas, precios de '
+           || 'venta, stock y cobros sí los puede ver.'
+         END;
   END contexto;
 
   ------------------------------------------------------------------------------
@@ -1048,10 +1167,13 @@ Cómo responder:
     END fallar;
   BEGIN
     -- Solo sesión: lo usa cualquiera que entró.
+    g_restringido := TRUE;
     IF l_usuario IS NULL THEN
       p_error(401, 'Unauthorized', 'Token invalido o expirado');
       RETURN;
     END IF;
+    -- Lo sensible, solo con el usuario del token (nunca con lo que manda el sitio).
+    g_restringido := UPPER(TRIM(l_usuario)) <> c_admin;
 
     -- El pedido.
     BEGIN
@@ -1105,7 +1227,8 @@ Cómo responder:
 
     l_bloque := JSON_OBJECT_T();
     l_bloque.put('type', 'text');
-    l_bloque.put('text', instrucciones(l_max_filas) || CHR(10) || CHR(10) || g_esquema);
+    l_bloque.put('text', instrucciones(l_max_filas) || CHR(10) || CHR(10)
+                         || CASE WHEN g_restringido THEN g_esquema_restr ELSE g_esquema END);
     IF l_manual IS NULL OR DBMS_LOB.GETLENGTH(l_manual) = 0 THEN
       l_bloque.put('cache_control', cache_efimero);
     END IF;
@@ -1361,17 +1484,20 @@ Cómo responder:
       DBMS_OUTPUT.PUT_LINE('        deja salir a ese host: el asistente no puede correr en Oracle.');
   END probar;
 
-  PROCEDURE probar_consulta(p_sql IN VARCHAR2) IS
+  PROCEDURE probar_consulta(p_sql IN VARCHAR2, p_usuario IN VARCHAR2 DEFAULT NULL) IS
     l_res   CLOB;
     l_filas PLS_INTEGER;
   BEGIN
     g_esquema := NULL;  -- que tome la estructura de este momento
     cargar_esquema;
+    g_restringido := NVL(UPPER(TRIM(p_usuario)), '-') <> c_admin;
     consultar(p_sql, l_res, l_filas);
+    g_restringido := TRUE;
     DBMS_OUTPUT.PUT_LINE('[OK]   ' || l_filas || ' fila(s):');
     DBMS_OUTPUT.PUT_LINE(DBMS_LOB.SUBSTR(l_res, 4000, 1));
   EXCEPTION
     WHEN e_sql THEN
+      g_restringido := TRUE;
       DBMS_OUTPUT.PUT_LINE('[RECHAZADA] ' || g_msg);
   END probar_consulta;
 

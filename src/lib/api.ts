@@ -3479,6 +3479,7 @@ export type ExistenciaArticulo = {
   cantidad: number | null;
   codigo_oem: string | null;
   es_activo: string | null;
+  desc_rubro?: string | null; // no llega si la BD todavía no tiene el .sql nuevo
   costo_ultimo?: number | null;
   total_costo?: number | null;
 };

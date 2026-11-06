@@ -26,8 +26,9 @@ export function manualParaAsistente(md: string): string {
   s = s
     // Enlaces: solo el texto (suelen apuntar a archivos del repo).
     .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
-    // Código en línea: el técnico se va, el de pantalla queda como texto.
-    .replace(/`([^`\n]+)`/g, (_, c: string) => (esTecnico(c) ? "" : c))
+    // Código en línea: el técnico se va, el de pantalla queda como texto. Puede
+    // ocupar dos líneas: el README corta los párrafos a 100 columnas.
+    .replace(/`([^`]+)`/g, (_, c: string) => (esTecnico(c) ? "" : c))
     // Archivos sueltos.
     .replace(/[\w./-]+\.(sql|tsx?|jsx?|md|json)\b/gi, "")
     // Identificadores con guion bajo (tablas, columnas, paquetes), aunque vengan

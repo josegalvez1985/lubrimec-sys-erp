@@ -8,6 +8,7 @@ import { DataTable, type Column } from "@/components/ui/data-table";
 import { Faceta } from "@/components/ui/faceta";
 import { ArticuloImgModal } from "@/components/articulo-img-modal";
 import { listarFichaExistencia, type FichaExistencia } from "@/lib/api";
+import { etiquetaSiNo } from "@/lib/utils";
 
 const COD_EMPRESA = 24;
 
@@ -253,10 +254,11 @@ export function FichaArticulosView() {
               onToggle={(v) => toggle(tipoSel, setTipoSel, v)}
             />
             <Faceta
-              titulo="¿Activo?"
+              titulo="¿Bien de uso?"
               valores={facetActivo}
               seleccion={activoSel}
               onToggle={(v) => toggle(activoSel, setActivoSel, v)}
+              etiqueta={etiquetaSiNo}
             />
             <Faceta
               titulo="Fecha"

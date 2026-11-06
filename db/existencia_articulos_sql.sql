@@ -3,12 +3,17 @@
 --
 -- Estructura PLANA (ver db/GUIA_ENDPOINTS.md). Solo lectura, sin paquete.
 -- Reporte de existencia agrupada por articulo (SUM de cantidad sobre
--- V_FICHA_EXISTENCIA) + costo. El filtrado (busqueda + facetas Articulo/OEM/
--- Activo) es 100% en el front (como pag 55/56/57).
+-- V_FICHA_EXISTENCIA) + costo. El filtrado (busqueda + facetas Rubro/OEM/Bien de
+-- uso + botones Existencia) es 100% en el front (como pag 55/56/57).
 --
 --   GET /ords/josegalvez/lubrimec/existencia?cod_empresa=24&app_user=JOSEG
 --       -> data: [{ id_articulo, desc_articulo, cantidad, codigo_oem,
---                   es_activo, costo_ultimo, total_costo }]
+--                   es_activo, desc_rubro, costo_ultimo, total_costo }]
+--
+-- es_activo = 'S' son bienes de uso (notebook, mesa...), no se venden: nunca se les
+-- registra precio, asi que ARTICULOS.costo_ultima_compra les queda vacio. Su costo
+-- es el de la ultima compra (mismo criterio que suba-precios: precio <> 0, sin AJS).
+-- Sin ninguna compra, costo_ultimo y total_costo no se mandan (el front muestra "—").
 --
 -- PERMISO POR USUARIO (como conteo-efectivo): costo_ultimo y total_costo solo
 -- se devuelven si app_user = 'JOSEG'; para el resto van NULL (el front no los
@@ -82,18 +87,53 @@ BEGIN
     APEX_JSON.OPEN_ARRAY('data');
     -- Agrupacion en subconsulta y total_costo afuera: evita mezclar la funcion
     -- de grupo (SUM) con la multiplicacion por costo_ultimo (daba ORA-00937).
+    -- desc_rubro con MAX y no en el GROUP BY: el rubro es solo una etiqueta y no
+    -- debe poder partir a un articulo en dos filas (cambiaria su existencia).
+    -- El costo NO sale de la vista: su costo_ultimo rellena con 1 lo que no tiene.
+    -- ultima_compra solo se calcula para los articulos sin costo guardado.
     FOR r IN (
-        SELECT id_articulo, desc_articulo, cantidad, codigo_oem, es_activo,
-               costo_ultimo,
-               NVL(costo_ultimo, 0) * NVL(cantidad, 0) AS total_costo
+        WITH ultima_compra AS (
+            SELECT id_articulo, precio
+              FROM (
+                SELECT d.id_articulo, d.precio,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY d.id_articulo
+                           ORDER BY c.fec_comprobante DESC NULLS LAST,
+                                    d.id_factura DESC, d.nro_linea DESC
+                       ) AS rn
+                  FROM compras_detalle d
+                  JOIN compras_cabecera c ON c.id_factura = d.id_factura
+                  JOIN articulos x
+                    ON x.id_articulo = d.id_articulo
+                   AND x.cod_empresa = c.cod_empresa
+                 WHERE c.cod_empresa = TO_NUMBER(l_cod_empresa)
+                   AND x.costo_ultima_compra IS NULL
+                   AND NVL(d.precio, 0) <> 0
+                   AND NVL(c.tip_comprobante, 'X') <> 'AJS'
+              )
+             WHERE rn = 1
+        )
+        SELECT t.id_articulo, t.desc_articulo, t.cantidad, t.codigo_oem, t.es_activo,
+               t.desc_rubro, t.costo_ultimo,
+               t.costo_ultimo * NVL(t.cantidad, 0) AS total_costo
           FROM (
-            SELECT id_articulo, desc_articulo, codigo_oem, es_activo, costo_ultimo,
-                   SUM(cantidad) AS cantidad
-              FROM v_ficha_existencia
-             WHERE cod_empresa = TO_NUMBER(l_cod_empresa)
-             GROUP BY id_articulo, desc_articulo, codigo_oem, es_activo, costo_ultimo
-          )
-         ORDER BY cantidad ASC
+            SELECT e.id_articulo, e.desc_articulo, e.codigo_oem, e.es_activo,
+                   e.desc_rubro, e.cantidad,
+                   COALESCE(a.costo_ultima_compra, u.precio) AS costo_ultimo
+              FROM (
+                SELECT id_articulo, desc_articulo, codigo_oem, es_activo,
+                       MAX(desc_rubro) AS desc_rubro,
+                       SUM(cantidad) AS cantidad
+                  FROM v_ficha_existencia
+                 WHERE cod_empresa = TO_NUMBER(l_cod_empresa)
+                 GROUP BY id_articulo, desc_articulo, codigo_oem, es_activo
+              ) e
+              LEFT JOIN articulos a
+                ON a.id_articulo = e.id_articulo
+               AND a.cod_empresa = TO_NUMBER(l_cod_empresa)
+              LEFT JOIN ultima_compra u ON u.id_articulo = e.id_articulo
+          ) t
+         ORDER BY t.cantidad ASC
     ) LOOP
         APEX_JSON.OPEN_OBJECT;
         APEX_JSON.WRITE('id_articulo', r.id_articulo);
@@ -101,6 +141,7 @@ BEGIN
         APEX_JSON.WRITE('cantidad', r.cantidad);
         APEX_JSON.WRITE('codigo_oem', r.codigo_oem);
         APEX_JSON.WRITE('es_activo', r.es_activo);
+        APEX_JSON.WRITE('desc_rubro', r.desc_rubro);
         IF l_ve_costo THEN
             APEX_JSON.WRITE('costo_ultimo', r.costo_ultimo);
             APEX_JSON.WRITE('total_costo', r.total_costo);

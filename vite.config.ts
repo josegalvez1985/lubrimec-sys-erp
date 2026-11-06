@@ -20,6 +20,22 @@ function manualAsistente(): Plugin {
   };
 }
 
+// Solo en dev: un <img> manda `Sec-Fetch-Dest: image` y la capa de dev de Nitro lo
+// toma por un archivo estático: no llega a los proxies /api/ y responde 404. fetch
+// y curl no mandan ese valor, por eso con ellos anda. Tiene que ir antes de nitro().
+function imagenesPorProxyEnDev(): Plugin {
+  return {
+    name: "imagenes-por-proxy-en-dev",
+    apply: "serve",
+    configureServer(server) {
+      server.middlewares.use((req, _res, next) => {
+        if (req.url?.startsWith("/api/")) delete req.headers["sec-fetch-dest"];
+        next();
+      });
+    },
+  };
+}
+
 // Base path: "/lubrimec-sys-erp/" en GitHub Pages, "/" en local.
 const BASE = process.env.GITHUB_PAGES === "true" ? "/lubrimec-sys-erp/" : "/";
 
@@ -63,6 +79,7 @@ export default defineConfig(({ mode }) => {
     server: { host: "::", port: 8080, strictPort: true, open: true },
     plugins: [
       manualAsistente(),
+      imagenesPorProxyEnDev(),
       tailwindcss(),
       tanstackStart({ server: { entry: "server" }, spa: { enabled: true } }),
       nitro(),

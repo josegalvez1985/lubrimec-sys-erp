@@ -45,6 +45,12 @@ el binario tal cual, sin forzar JSON. Es **público** (sin token). Endpoint:
   el artículo no tiene imagen y se devuelve tal cual; si es timeout/red, responde **504** para que
   el `<img>` falle rápido y muestre "Sin imagen disponible" en vez de girar para siempre.
 - **`cache-control: no-store`** en la respuesta (regla sin caché) y el SW no intercepta `/api/img/`.
+- **`<img>` en dev:** un `<img>` manda `Sec-Fetch-Dest: image` y la capa de desarrollo de Nitro lo
+  toma por un archivo estático: no llega a los proxies `/api/` y da 404 al instante, aunque con
+  `curl` o `fetch` responda 200. Lo resuelve el plugin `imagenesPorProxyEnDev` de `vite.config.ts`,
+  que saca ese encabezado solo en `/api/` y solo con `npm run dev`. En Pages las imágenes van
+  directo a ORDS y en el server Node no hay Vite: no los afecta. Para probar un proxy de imágenes,
+  mandar ese encabezado: `curl -H 'Sec-Fetch-Dest: image' <url>`.
 
 ## `VITE_API_URL` por entorno
 
@@ -53,8 +59,9 @@ entorno tiene servidor Node (y por lo tanto proxy) o no:
 
 - **Dev y prod con Nitro** → `VITE_API_URL=/api/ords/` (pasa por el proxy: sin CORS y el
   token no viaja en la URL).
-  - `.env` (dev) → `VITE_API_URL=/api/ords/` + `ORDS_TARGET=https://oracleapex.com`
-  - `.env.production` → lo mismo, para `node .output/server/index.mjs`.
+  - `.env.development` (dev, **versionado**, Vite lo lee solo) → `VITE_API_URL=/api/ords/`.
+    `ORDS_TARGET` tiene su valor por defecto en el proxy.
+  - `.env.production` (no versionado) → lo mismo, para `node .output/server/index.mjs`.
 - **GitHub Pages** (el deploy que se usa hoy, SPA estático **sin** servidor Node) →
   `VITE_API_URL=https://oracleapex.com/ords/josegalvez/lubrimec/`, es decir el navegador
   llama a ORDS **directo**. Funciona porque los handlers emiten
@@ -62,23 +69,20 @@ entorno tiene servidor Node (y por lo tanto proxy) o no:
   si esos headers CORS se sacaran del backend, Pages dejaría de andar y habría que mover el
   deploy a un host con Node.
 
-> **`.env` NO se versiona** (está en `.gitignore`): después de clonar hay que crearlo a mano
-> o el front sale sin base de API. Se copia de la plantilla y se reinicia el dev server:
+> **Después de clonar no hay que configurar nada:** `.env.development` está versionado. `.env` y
+> `.env.*` siguen en `.gitignore`, con excepción de ese archivo y de `.env.example`. Prioridad de
+> Vite en dev: `.env.development.local` > `.env.development` > `.env`.
 >
-> ```bash
-> cp .env.example .env   # PowerShell: Copy-Item .env.example .env
-> ```
+> **Sin datos sensibles:** `.env.development` y `.env.example` (versionados) llevan solo valores
+> públicos (URLs, app id); las `VITE_*` quedan embebidas en el bundle, así que nunca deben llevar
+> secretos. Claves y contraseñas viven en Oracle (p. ej. `PKG_IA_LUBRIMEC.fijar_clave`), no en el
+> repo. Un secreto server-side futuro va solo en el `.env` local y en `.env.example` con el valor
+> vacío.
 >
-> **Sin datos sensibles:** `.env.example` (versionado) lleva solo valores públicos (URLs, app
-> id); las `VITE_*` quedan embebidas en el bundle, así que nunca deben llevar secretos. Claves y
-> contraseñas viven en Oracle (p. ej. `PKG_IA_LUBRIMEC.fijar_clave`), no en el repo. Un secreto
-> server-side futuro va solo en el `.env` local y en `.env.example` con el valor vacío.
->
-> **Síntoma de `.env` faltante en dev:** el login dice **"Usuario o contraseña incorrectos"**
-> con credenciales válidas. Con `VITE_API_URL` vacío la llamada va a `/auth/login` del propio
-> dev server, que responde el HTML del SPA; `res.json()` falla, el parser recibe `{}` y como no
-> hay `token` tira ese mensaje. No es el backend ni la contraseña. Vite lee el `.env` **solo al
-> arrancar**: hay que reiniciar `npm run dev` después de crearlo.
+> **Síntoma de que falta `VITE_API_URL` en dev:** el login dice **"Usuario o contraseña
+> incorrectos"** con credenciales válidas. La llamada va a `/auth/login` del propio dev server,
+> que responde el HTML del SPA; `res.json()` falla, el parser recibe `{}` y como no hay `token`
+> tira ese mensaje. No es el backend ni la contraseña.
 
 ## `src/lib/api.ts` — el cliente
 
@@ -558,7 +562,10 @@ const COLUMNAS: Column<Fila>[] = [
 ```
 Notas de `Column<T>`:
 - `accessor` = valor crudo para ordenar/filtrar/search (texto o número). Sin `accessor` la columna
-  no ordena ni filtra (útil para columnas de solo-render).
+  no ordena ni filtra (útil para columnas de solo-render). **Dato faltante: devolver `null`, no
+  `""` ni `0`.** Con `null` la celda muestra "—", el Excel queda en blanco y al ordenar va al
+  final; con `?? 0` el Excel dice 0 (un costo que no existe) y con `?? ""` queda primero al
+  ordenar. Modelo: Rubro y costos de `existencia-articulos-view`.
 - `render` = celda a mostrar; si falta, usa el `accessor` (null/"" → "—").
 - `num: true` alinea a la derecha y ordena numéricamente.
 - `sortable`/`filterable`/`hideable` = `false` para desactivar por columna (la columna principal
@@ -572,6 +579,11 @@ Notas de `Column<T>`:
 - **Export Excel** (`exportName`): exporta las columnas **visibles** con `accessor` y las filas
   **ya filtradas/ordenadas** (lo que se ve en pantalla), reusando `exportarExcel` de
   `src/lib/export.ts`. Sin `exportName` no se muestra el botón.
+- **Columna condicional** (ocultarla según un filtro): armar `columns` con un spread condicional;
+  el Excel la sigue solo, sin código aparte. Si esa columna tenía orden o filtro activo, se
+  ignoran mientras no está y vuelven con ella. Modelo: en `existencia-articulos-view`, Rubro se
+  oculta con exactamente un rubro filtrado (con varios sirve para distinguirlos) y también si la
+  BD todavía no manda el campo.
 
 ## Responsive: escala fluida + Web/Mobile (regla del proyecto)
 
@@ -674,9 +686,14 @@ Uso desde JSX con arbitrary values de Tailwind v4 (verificados en el CSS compila
 - **Facetas — componente compartido `src/components/ui/faceta.tsx`.** Toda vista con búsqueda
   facetada usa `<Faceta>` (look de Pedidos de Artículos: título simple, checkbox muted con hover,
   conteo `(N)`, "Mostrar todo/menos" con límite 8, sin caja). NO crear un `Faceta` local con borde.
-  Props: `titulo`, `valores: {valor,n}[]`, `seleccion: Set<string>`, `onToggle`. Sidebar en
-  `<aside className="space-y-5">`. Modelos: `existencia-articulos-view`, `compras-articulos-view`,
-  `ficha-articulos-view`, `articulos-sin-barra-view`.
+  Props: `titulo`, `valores: {valor,n}[]`, `seleccion: Set<string>`, `onToggle` y, opcional,
+  `etiqueta: (valor) => string`, que cambia **solo el texto visible** (el filtro sigue usando el
+  valor crudo). Para campos `S`/`N`: `etiqueta={etiquetaSiNo}` de `@/lib/utils`; nunca mostrar la
+  letra. Sidebar en `<aside className="space-y-5">`. Modelos: `existencia-articulos-view`,
+  `compras-articulos-view`, `ficha-articulos-view`, `articulos-sin-barra-view`.
+- **`es_activo` no es "artículo habilitado":** `S` = bien de uso, `N` = mercadería de venta (ver
+  `db/GUIA_ENDPOINTS.md`). En un filtro nuevo, titularlo **¿Bien de uso?**. Lo que dice si está
+  habilitado es `estado`.
 - **Ningún dato de la cabecera queda invisible.** Si el modal de edición solo permite tocar algunos
   campos (porque el back solo actualiza esos), los demás **no se omiten**: van como texto de solo
   lectura. Dos piezas, modelo `compras-view.tsx`:
@@ -851,6 +868,43 @@ cambia nada y con filtro queda acotado solo.
   no se muestra (`facetasVisibles`), en vez de quedar en "Sin opciones" como un filtro roto. Ojo:
   `APEX_JSON.WRITE` **omite** las claves con valor nulo, así que "no vino el campo" y "vino nulo"
   se ven igual en el front; el chequeo es "algún registro lo trae" (`some((r) => r.marca)`).
+
+## Asistente (`src/components/asistente.tsx`, `src/lib/asistente.ts`)
+
+Puesta en marcha y qué tocar según el cambio: README, "Asistente: puesta en marcha". Reglas fijas:
+solo lectura y nunca mostrar nombres de la base.
+
+**Manual:** `README.md?raw` no es el README entero: el plugin de `vite.config.ts` lo pasa por
+`manualParaAsistente` (`src/lib/manual-asistente.ts`) y deja solo "Páginas implementadas" sin
+nombres técnicos. Consecuencias al documentar una pantalla ahí:
+
+- Los nombres técnicos van **entre comillas invertidas**, para que se borren; lo que quede tiene
+  que seguir leyéndose bien sin ellos ("El rubro sale de `V_X`; mientras..." queda "sale de;
+  mientras..."). Detalles técnicos que no le sirven al usuario, mejor en `db/GUIA_ENDPOINTS.md`
+  o en "Reglas que no se reabren", que no llegan al manual.
+- Código en línea con espacios y sin símbolos técnicos se toma como **texto de pantalla** y queda
+  (`Nueva marca`).
+- Para ver cómo queda: importar `manualParaAsistente` en un script de node (node 24 corre `.ts`)
+  y pasarle el README.
+
+**Botón movible:** arrastre con pointer events, para mouse y dedo con el mismo código.
+
+- `touch-none` en el botón: sin eso el navegador toma el gesto como scroll y cancela el arrastre.
+- `setPointerCapture`: el arrastre sigue aunque el puntero se adelante y salga del botón.
+- Menos de 6 px de movimiento (`UMBRAL_ARRASTRE`) es un toque y abre el chat; si no, un dedo que
+  tiembla no podría abrirlo nunca.
+- El `click` que llega al soltar un arrastre se ignora, y esa marca se **limpia en cada
+  `pointerdown`**: un arrastre con el dedo puede no disparar `click`, y sin limpiarla se comería
+  el toque siguiente.
+- El estado vive en `Asistente` y no en el botón: en escritorio el botón se desmonta con el chat
+  abierto y al cerrarlo tiene que volver al mismo lugar.
+- `limitar()` lo mantiene entero dentro de la ventana, al arrastrar, al leer lo guardado y en
+  cada `resize` (girar el celular). Sin posición guardada queda en la esquina por CSS.
+- La posición va a `localStorage` (`asistente_boton_pos`), por dispositivo. No es un dato del
+  negocio, así que no choca con "Sin caché". Lectura y escritura con `try/catch`.
+- **Al probar:** en Chrome headless los toques simulados por CDP llegan como `pointerdown` y
+  `pointerup` pero no generan `click`, ni en un botón común. El arrastre se puede probar así; que
+  un toque abra el chat, en un celular real.
 
 ## Reporte con gráficos (modelo: `evolucion-precios.tsx`)
 

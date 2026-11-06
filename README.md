@@ -36,30 +36,27 @@ Componente React (react-query)
 
 ## Desarrollo
 
-**Primer arranque (después de clonar):** el `.env` no se versiona, así que hay que crearlo
-desde la plantilla **antes** de levantar el server:
+**Primer arranque (después de clonar):** no hay nada que configurar.
 
 ```bash
 npm install
-cp .env.example .env   # PowerShell: Copy-Item .env.example .env
 npm run dev            # http://localhost:8080 (puerto fijo: strictPort)
 ```
 
-`.env.example` ya trae los valores de dev; `VITE_API_URL=/api/ords/` es el que usa el proxy:
+Los valores de desarrollo vienen en **`.env.development`**, que está en el repo y Vite lee solo
+con `npm run dev`. `ORDS_TARGET` no hace falta: el proxy ya apunta a `https://oracleapex.com` por
+defecto.
 
-```env
-VITE_API_URL=/api/ords/
-VITE_APP_ID=86972
-ORDS_TARGET=https://oracleapex.com
-```
+> **Para cambiar algo solo en tu máquina,** crear un `.env` desde `.env.example` (git lo ignora).
+> Ojo: `.env.development` tiene prioridad sobre `.env`; para pisar una variable de ese archivo,
+> usar `.env.development.local`.
 
-> **Síntoma de `.env` faltante:** el login responde **"Usuario o contraseña incorrectos"** con
-> credenciales válidas. Sin `VITE_API_URL` la llamada va a `/auth/login` del propio dev server,
-> que devuelve el HTML del SPA; al no ser JSON, el cliente lo reporta como credenciales inválidas.
-> Vite lee el `.env` **solo al arrancar**: después de crearlo hay que reiniciar `npm run dev`.
+> **Síntoma de que falta `VITE_API_URL`:** el login responde **"Usuario o contraseña incorrectos"**
+> con credenciales válidas. La llamada va a `/auth/login` del propio dev server, que devuelve el
+> HTML del SPA; al no ser JSON, el cliente lo reporta como credenciales inválidas.
 
-> **Nada sensible en `.env.example` ni en el repo.** Hoy el `.env` solo lleva URLs y el app id,
-> datos públicos (las `VITE_*` además terminan embebidas en el JS que baja el navegador). Las
+> **Nada sensible en `.env.development`, `.env.example` ni en el repo.** Solo llevan URLs y el app
+> id, datos públicos (las `VITE_*` además terminan embebidas en el JS que baja el navegador). Las
 > claves y contraseñas no van acá: la clave de la API del asistente se carga en Oracle con
 > `PKG_IA_LUBRIMEC.fijar_clave` y las credenciales las valida APEX. Si algún día hace falta un
 > secreto del lado servidor, va **solo** en el `.env` local (ignorado por git) y en
@@ -132,12 +129,16 @@ dinámicamente desde el endpoint `menu/paginas`.
 - **Shell (menú y topbar)** — el **sidebar arranca siempre oculto** (la preferencia no se recuerda);
   se muestra con el botón de la topbar. Junto al usuario hay un **botón Home** que vuelve al
   dashboard, visible solo cuando se está en otra página.
-- **Asistente** (sin page_id, en todas las pantallas) — botón redondo abajo a la derecha que abre
-  un chat: responde cómo se usa una pantalla (con esta sección del README como manual) y
+- **Asistente** (sin page_id, en todas las pantallas) — botón redondo que arranca abajo a la
+  derecha y se puede **arrastrar a cualquier lugar de la pantalla**, con mouse o con el dedo (el
+  lugar se recuerda en cada dispositivo). Al tocarlo abre un chat: responde cómo se usa una
+  pantalla (con esta sección del README como manual) y
   preguntas sobre los datos (ventas, stock, cobros…). En escritorio es un panel a la derecha que
   no tapa la página y sigue abierto al navegar; en el celular, una hoja casi a pantalla completa
   (el botón atrás del APK la cierra). Lo ve todo el que entra, sin permiso en Roles de Páginas;
-  límite de preguntas por usuario y por día (30 de entrada). La conversación vive solo en memoria:
+  límite de preguntas por usuario y por día (30 de entrada). **Compras, costos, márgenes,
+  comisiones y sueldos solo se los responde a JOSEG**; a los demás les dice que no están disponibles
+  para su usuario. La conversación vive solo en memoria:
   recargar o cambiar de usuario la borra. **Solo lee**: si piden cargar algo, explica en qué
   pantalla se hace. **Nunca muestra cómo está hecha la base** (tablas, columnas, paquetes, SQL),
   aunque se lo pidan: lo prohíben sus instrucciones, el backend borra de la respuesta cualquier
@@ -258,7 +259,7 @@ dinámicamente desde el endpoint `menu/paginas`.
   `articulos/:id/imagen` (al tocarlo se **amplía en un modal**); el modal de detalle trae la imagen
   grande vía `articulos/:id` (base64). Backend: `db/articulos_sql.sql`.
   **Stock por artículo:** grilla y detalle lo calculan con `pkg_stock.fn_existencia(id_articulo,
-  cod_empresa)` (decisión del usuario: por `id_articulo`, no por OEM). La columna guardada
+  cod_empresa)` (decisión del usuario: por artículo, no por OEM). La columna guardada
   `ARTICULOS.existencia` queda desactualizada y hacía que el stock no coincidiera con Ventas por
   Artículos.
 - **Detalle de Monedas** (page_id 83) — vista propia del detalle de `monedas_detalle`: selector de
@@ -275,8 +276,8 @@ dinámicamente desde el endpoint `menu/paginas`.
   `db/vehiculos_repuestos_sql.sql` + `BUSCAR_ARTICULOS` de `db/codigos_barras_sql.sql`.
 - **Rendición de Caja** (page_id 73) — CRUD de `rendiciones_cajas` (cierres de caja por fecha).
   Al elegir la fecha, un endpoint `rendiciones/sugeridos` precarga (editables) caja anterior, venta
-  y pago replicando los auto-cálculos del modal APEX; `Total Caja = caja_anterior + venta − retiro
-  − pago` se calcula en vivo. Backend: `db/rendiciones_cajas_sql.sql`.
+  y pago replicando los auto-cálculos del modal APEX; Total Caja = caja anterior + venta − retiro
+  − pago, se calcula en vivo. Backend: `db/rendiciones_cajas_sql.sql`.
 - **Ventas** (page_id 60) — grilla de `ventas_cabecera` (solo update/delete: las ventas se crean en
   otro sistema) con filtros de fecha (por defecto el último día con ventas) y **columna Total con
   fila de totales al pie** (el backend la calcula sumando el detalle). Por fila: **Artículos**
@@ -295,8 +296,8 @@ dinámicamente desde el endpoint `menu/paginas`.
   `fecha` la asigna un trigger; otro trigger sincroniza `articulos.precio_venta` con el último
   precio (el paquete resincroniza también en update/delete). Al elegir artículo, un endpoint
   `precios-ventas/sugerir` replica los Dynamic Actions del APEX: precio de compra + nro línea de la
-  factura, % recargo del rubro, **precio de venta sugerido** (`CEIL((compra·(1+recargo/100))/1000)·
-  1000` con delivery prorrateado) y **precio de venta anterior** (`pkg_ventas.fn_precio_venta`).
+  factura, % recargo del rubro, **precio de venta sugerido** (compra más recargo, redondeado hacia
+  arriba al millar, con delivery prorrateado) y **precio de venta anterior** (`pkg_ventas.fn_precio_venta`).
   Grilla con margen/rubro/marca/OEM. Backend: `db/precios_ventas_sql.sql`.
   - **Pestaña "Evolución"** (`evolucion-precios.tsx`, lazy con recharts): cómo cambió el precio
     de venta y el costo en cada registro. Patrón en [src/GUIA_FRONT.md](src/GUIA_FRONT.md)
@@ -363,7 +364,8 @@ dinámicamente desde el endpoint `menu/paginas`.
   por mes** ("Mostrar más"), imagen por artículo, total al pie y export. Backend:
   `db/compras_articulos_sql.sql`.
 - **Ficha de Artículos** (page_id 56) — reporte de solo lectura de `V_FICHA_EXISTENCIA`
-  (movimientos por artículo). Búsqueda + facetas Rubro/Tipo/Activo/Fecha, carga por mes, imagen.
+  (movimientos por artículo). Búsqueda + facetas Rubro/Tipo/¿Bien de uso? (Sí/No)/Fecha, carga por
+  mes, imagen.
   Backend: `db/ficha_existencia_sql.sql`.
 - **Artículos sin Código de Barra** (page_id 57) — artículos activos con existencia y sin código
   de barra (excluye rubros 30/39). Búsqueda + faceta Rubro + imagen. Backend:
@@ -372,9 +374,15 @@ dinámicamente desde el endpoint `menu/paginas`.
   resuelve el artículo desde `codigos_barras` y muestra una tarjeta con precio
   (`pkg_ventas.fn_precio_venta`), existencia (`pkg_stock.fn_existencia`), imagen embebida, marca,
   rubro y viscosidad. Backend: `db/consulta_precios_sql.sql`.
-- **Existencia de Artículos** (page_id 70) — existencia agrupada por artículo (SUM de cantidad) +
-  costo. Búsqueda + facetas OEM/Activo, imagen. **Costo último / total costo solo para JOSEG**
-  (permiso por usuario, replica `fn_verifica_campo`). Backend: `db/existencia_articulos_sql.sql`.
+- **Existencia de Artículos** (page_id 70) — existencia agrupada por artículo (suma de sus
+  movimientos) y costo. Búsqueda, imagen y facetas Rubro, OEM y **¿Bien de uso?** (Sí/No: Sí son
+  los que no se venden, como una notebook o una mesa). Filtro **Existencia** Con/Sin/Todos: arranca
+  en Todos, y cero, negativo o sin dato cuentan como "Sin". La columna **Rubro** se oculta en la
+  grilla y en el Excel con un solo rubro filtrado; con varios sigue visible. La faceta y la columna
+  Rubro aparecen cuando el servidor tiene la versión nueva del reporte. El **costo** es el guardado
+  en el artículo o, si no tiene (los bienes de uso nunca reciben precio de venta), el de la última
+  compra; sin ninguna compra se ve "—" y no suma al total. **Costo último y total costo solo para
+  JOSEG** (permiso por usuario). Backend: `db/existencia_articulos_sql.sql`.
 - **Compras Vs Ventas** (page_id 75) — dos grillas (compras `COMPRAS_ARTICULOS` sin `FCR`, ventas
   `VENTAS_ARTICULOS`) del año elegido + KPIs de resumen (Rentabilidad / Compras / **Ganancia** =
   rentabilidad − compras). Filtros Año/Mes (single-select, actuales por defecto) y ¿Activos/Gastos?
@@ -395,8 +403,8 @@ dinámicamente desde el endpoint `menu/paginas`.
   (cliente con buscador, vendedor, serie/talonario) y **formas de cobro múltiples**. El modal abre
   **precargado**: cliente `cod_persona` 1 ("sin cliente"), vendedor por `app_user`, serie **A**, y el
   foco va directo a la forma de cobro; vendedor, talonario, forma de cobro y banco se eligen con
-  `SelectorModal` (modal de botones, ver `src/GUIA_FRONT.md`) y solo se listan **vendedores activos**. **Efectivo con vuelto:** el cajero ingresa lo recibido; se imputa `min(recibido,
-  restante)` y el excedente es el vuelto (se guardan `total`/`efectivo_recibido`/`efectivo_vuelto`).
+  `SelectorModal` (modal de botones, ver `src/GUIA_FRONT.md`) y solo se listan **vendedores activos**. **Efectivo con vuelto:** el cajero ingresa lo recibido; se imputa lo menor entre lo recibido y lo
+  restante, y el excedente es el vuelto (se guardan `total`/`efectivo_recibido`/`efectivo_vuelto`).
   Con una sola forma de cobro no se controla el total (permite vuelto); con varias, la suma debe
   igualarlo, y nunca superarlo. **Validaciones todas en el front** (cabecera, detalle, cobros). En
   **móvil** el carrito se abre desde un botón flotante (FAB) en un modal. Al facturar, un POST atómico
@@ -525,7 +533,7 @@ dinámicamente desde el endpoint `menu/paginas`.
   derivadas de los artículos pendientes según la fecha del parámetro `FECHA_INVENTARIO`). El modal
   Cantidad (pág 115) edita la cantidad física y permite **tomar una foto** (cámara trasera,
   compresión a 600px JPEG ≤100KB) que se sube como **binario crudo** (`PUT
-  planilla-inventarios/:id/foto`, bind `:body` BLOB); muestra además la imagen del artículo.
+  planilla-inventarios/:id/foto`); muestra además la imagen del artículo.
   Backend: `db/planilla_inventarios_sql.sql`.
 - **Sortear** (page_id 108) — sorteo de teléfonos de `VENTAS_CABECERA` en un rango de fechas
   (cada venta = una participación). Animación de 10 s con números enmascarados (`••••9999`) y
@@ -563,6 +571,43 @@ Detalle y casos concretos: **[src/GUIA_FRONT.md](src/GUIA_FRONT.md)** — "Qué 
 - **Servidor Node (Nitro):** `npm run build` (preset node-server) + `node .output/server/index.mjs`.
   Requiere `VITE_API_URL=/api/ords/`, `VITE_APP_ID`, `ORDS_TARGET` (ver `.env.production`).
 
+## Asistente: puesta en marcha
+
+Tiene una parte en Oracle y otra en el sitio. Nada de esto lleva claves en el repo.
+
+1. **Ejecutar `db/ia_asistente_sql.sql`** completo como `JOSEGALVEZ`, en SQL Workshop → SQL Scripts,
+   después de `PKG_AUTH_LUBRIMEC`. Se puede correr las veces que haga falta: no pisa la clave ni
+   la configuración que ya esté cargada.
+2. **Cargar la clave**, solo la primera vez y en SQL Commands, nunca en un archivo:
+   `BEGIN PKG_IA_LUBRIMEC.fijar_clave('<la clave>'); END;`. Si la API responde que la clave no
+   tiene workspace, cargarlo también con `PKG_IA_LUBRIMEC.fijar_workspace_id`.
+3. **Probar la conexión:** `BEGIN PKG_IA_LUBRIMEC.probar; END;` tiene que decir `[OK]`.
+4. **Probar las barreras** sin gastar tokens, con `PKG_IA_LUBRIMEC.probar_consulta`: un `SELECT`
+   común da `[OK]`; un `DELETE` o una tabla `LUBRIMEC_*` dan `[RECHAZADA]`. Para lo que solo ve
+   JOSEG, el segundo parámetro es el usuario:
+   `probar_consulta('SELECT MAX(costo_ultima_compra) FROM articulos', 'JOSEG')` da `[OK]` y sin
+   él da `[RECHAZADA]`. Más casos en el encabezado del `.sql`.
+5. **Publicar el sitio:** el botón, el chat y el manual llegan con el push a `main`.
+
+Qué hay que hacer según lo que cambie:
+
+| Cambio | Dónde se escribe | Para que llegue |
+|---|---|---|
+| Cómo se usa una pantalla | Este README, "Páginas implementadas" | Push (el manual se arma en el build) |
+| Lo básico del sistema (login, menú, el botón) | `GUIA_BASICA` en `src/lib/asistente.ts` | Push |
+| Qué significa un dato ("Lo propio de este negocio") | `instrucciones` en `db/ia_asistente_sql.sql` | Volver a ejecutar ese `.sql` |
+| Modelo, límite diario, filas | `LUBRIMEC_IA_CONFIG` | `UPDATE` + `COMMIT`, sin ejecutar el script |
+
+> **Compras, costos, márgenes, comisiones y sueldos: solo JOSEG** (decisión del dueño). Se decide
+> en Oracle con el usuario del token, y rechaza la consulta aunque la IA la intente: tablas
+> `COMPRAS_*`, columnas con esos nombres (`c_sensible` en `db/ia_asistente_sql.sql`) y `SELECT *`.
+> **El resto sí lo ve todo, sin los permisos de cada pantalla.** El chequeo es por nombre: una
+> vista que traiga un costo con otro nombre pasaría, y hay que sumarla a `c_sensible` (el
+> encabezado del `.sql` trae la consulta para revisarlas). Sumar ahí también cualquier dato nuevo
+> que solo deba ver JOSEG.
+
+Guía para llevarlo a otro proyecto: [GUIA_ASISTENTE_IA.md](GUIA_ASISTENTE_IA.md).
+
 ## APK Android
 
 El APK es una **WebView remota** que carga la app de GitHub Pages (`server.url` en
@@ -594,6 +639,8 @@ El APK es una **WebView remota** que carga la app de GitHub Pages (`server.url` 
   `fn_existencia_oem` suma todo el OEM y sale de otra fuente (la usa Ventas por Artículos).
 - [src/GUIA_FRONT.md](src/GUIA_FRONT.md) — consumo desde el front, proxy y gotchas.
 - [GENERAR_APK.md](GENERAR_APK.md) — generar, firmar, publicar y versionar el APK.
+- [GUIA_ASISTENTE_IA.md](GUIA_ASISTENTE_IA.md) — guía portable para llevar el asistente con IA a
+  **otro** proyecto Oracle APEX/ORDS + React.
 - [GUIA_LOGIN.md](GUIA_LOGIN.md) — guía portable para replicar este login (paquete
   `PKG_AUTH_*` + token en tabla + proxy + sesión en el front) en **otro** proyecto
   Oracle APEX/ORDS + React.
@@ -614,4 +661,9 @@ El APK es una **WebView remota** que carga la app de GitHub Pages (`server.url` 
   `ACCOUNT_EXPIRY` al chequeo: viene con fecha pasada en cuentas activas y rechaza usuarios sanos con
   "La cuenta expiró" (ya pasó). La expiración de la *sesión* es otra cosa (`FECHA_EXPIRACION` del
   token). Detalle en [GUIA_LOGIN.md](GUIA_LOGIN.md).
+- **`es_activo` no es "artículo habilitado":** `S` = bien de uso (no se vende), `N` = mercadería.
+  Lo que dice si está habilitado es `estado`. En pantalla: **¿Bien de uso?** con Sí/No, nunca la
+  letra.
+- **El `costo_ultimo` de `V_FICHA_EXISTENCIA` no se usa como costo:** vale 1 cuando no hay costo.
+  Detalle y alternativa en [db/GUIA_ENDPOINTS.md](db/GUIA_ENDPOINTS.md).
 - Idioma del proyecto (código, comentarios, UI, docs): **español**.

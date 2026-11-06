@@ -14,12 +14,14 @@ export function Faceta({
   seleccion,
   onToggle,
   limite = LIMITE_DEFAULT,
+  etiqueta,
 }: {
   titulo: string;
   valores: { valor: string; n: number }[];
   seleccion: Set<string>;
   onToggle: (v: string) => void;
   limite?: number; // opciones visibles antes de "Mostrar todo" (default 8)
+  etiqueta?: (valor: string) => string; // texto a mostrar; el filtro sigue usando el valor crudo
 }) {
   const [abierta, setAbierta] = useState(false);
   // Los seleccionados van primero, para que sigan visibles al colapsar a limite.
@@ -41,7 +43,7 @@ export function Faceta({
             className="flex cursor-pointer items-center gap-2 text-sm text-muted-foreground hover:text-foreground"
           >
             <Checkbox checked={seleccion.has(valor)} onCheckedChange={() => onToggle(valor)} />
-            <span className="min-w-0 flex-1 truncate">{valor}</span>
+            <span className="min-w-0 flex-1 truncate">{etiqueta ? etiqueta(valor) : valor}</span>
             {n > 0 && <span className="shrink-0 text-xs">({n})</span>}
           </label>
         ))

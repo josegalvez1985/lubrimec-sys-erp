@@ -131,9 +131,22 @@ endpoints de solo lectura sin paquete (`ORDS_MENU_PAGINAS.sql`, `ORDS_VENTAS_*.s
       NULL y una BD sin el paquete nuevo no los manda.
   - **`ARTICULOS` tiene DOS columnas de activo — filtrar por `ESTADO`, no por `es_activo`.**
     `ESTADO = 'A'` es Activo/Inactivo (lo que muestra el APEX y lo que el usuario espera ver);
-    `es_activo` (`'S'`/`'N'`) es otra cosa. Filtrar por la equivocada dejaba fuera artículos
-    válidos de las LOVs. Usar `UPPER(NVL(estado, 'A')) = 'A'` (criterio único en
-    `compras_sql.sql` y `codigos_barras_sql.sql`).
+    `es_activo = 'S'` significa **bien de uso** (notebook, mesa, escalera: no se vende) y `'N'`
+    es mercadería de venta. Filtrar por la equivocada dejaba fuera artículos válidos de las LOVs.
+    Usar `UPPER(NVL(estado, 'A')) = 'A'` (criterio único en `compras_sql.sql` y
+    `codigos_barras_sql.sql`).
+  - **El `costo_ultimo` de `V_FICHA_EXISTENCIA` no sirve como costo.** La vista hace
+    `NVL(articulos.costo_ultima_compra, 1)`: un 1 significa "sin costo", y un `COUNT` o un
+    `IS NOT NULL` sobre esa columna dan 100 % con costo. Ese campo se escribe al registrar un
+    precio de venta, así que a los bienes de uso les queda vacío. Para un costo real:
+    `COALESCE(a.costo_ultima_compra, <última compra>)`, con "última compra" = `precio <> 0`, sin
+    `AJS`, `fec_comprobante DESC NULLS LAST`, `id_factura DESC`, `nro_linea DESC` (criterio de
+    `ORDS_SUBA_PRECIOS.sql`). Sin dato, dejarlo NULL: `APEX_JSON` omite la clave y el front
+    muestra "—". Modelo: `existencia_articulos_sql.sql`. No cambiar la vista: la usa
+    `PKG_STOCK.fn_existencia` y la subconsulta se sacó de ahí por velocidad.
+  - **Una columna que es solo etiqueta no va en el `GROUP BY`.** Si un `SUM` agrupa por artículo,
+    sumar `desc_rubro` al `GROUP BY` puede partir un artículo en dos filas y cambiar su total.
+    Usar `MAX(desc_rubro)`. Modelo: `existencia_articulos_sql.sql`.
 - **Imagen en BLOB** (modelo: `articulos_sql.sql`). Reglas para no serializar megas de más:
   - `LISTAR` **no** devuelve el blob: solo `CASE WHEN DBMS_LOB.GETLENGTH(archivo_imagen) > 0 THEN 1
     ELSE 0 END AS tiene_imagen`.

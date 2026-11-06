@@ -8,17 +8,28 @@ import { DataTable, type Column } from "@/components/ui/data-table";
 import { Faceta } from "@/components/ui/faceta";
 import { ArticuloImgModal } from "@/components/articulo-img-modal";
 import { getSesion, listarExistencia, type ExistenciaArticulo } from "@/lib/api";
+import { etiquetaSiNo } from "@/lib/utils";
 
 const COD_EMPRESA = 24;
 
 const fmtNum = (n: number | null | undefined) =>
   n == null ? "—" : new Intl.NumberFormat("es-PY", { maximumFractionDigits: 0 }).format(n);
 
+type FiltroExistencia = "con" | "sin" | "todos";
+
+const OPCIONES_EXISTENCIA: { v: FiltroExistencia; label: string }[] = [
+  { v: "con", label: "Con" },
+  { v: "sin", label: "Sin" },
+  { v: "todos", label: "Todos" },
+];
+
 export function ExistenciaArticulosView() {
   const appUser = getSesion()?.app_user ?? "";
   const [busqueda, setBusqueda] = useState("");
+  const [rubroSel, setRubroSel] = useState<Set<string>>(new Set());
   const [oemSel, setOemSel] = useState<Set<string>>(new Set());
   const [activoSel, setActivoSel] = useState<Set<string>>(new Set());
+  const [existenciaSel, setExistenciaSel] = useState<FiltroExistencia>("todos");
   const [imgArticulo, setImgArticulo] = useState<ExistenciaArticulo | null>(null);
 
   const { data, isLoading, isError, error } = useQuery({
@@ -30,18 +41,26 @@ export function ExistenciaArticulosView() {
   const filas = useMemo(() => data?.filas ?? [], [data]);
   const veCosto = data?.ve_costo ?? false;
 
-  const coincide = (r: ExistenciaArticulo, ignora: "oem" | "activo" | null) => {
+  const coincide = (r: ExistenciaArticulo, ignora: "rubro" | "oem" | "activo" | null) => {
     const q = busqueda.trim().toLowerCase();
     if (q) {
       const txt = `${r.desc_articulo ?? ""} ${r.codigo_oem ?? ""}`.toLowerCase();
       if (!txt.includes(q)) return false;
     }
+    // Cantidad negativa (vendido sin compra cargada) cuenta como "Sin", igual que en Suba de Precios.
+    const hayExistencia = (r.cantidad ?? 0) > 0;
+    if (existenciaSel === "con" && !hayExistencia) return false;
+    if (existenciaSel === "sin" && hayExistencia) return false;
+    if (ignora !== "rubro" && rubroSel.size > 0 && !rubroSel.has(r.desc_rubro ?? "")) return false;
     if (ignora !== "oem" && oemSel.size > 0 && !oemSel.has(r.codigo_oem ?? "")) return false;
     if (ignora !== "activo" && activoSel.size > 0 && !activoSel.has(r.es_activo ?? "")) return false;
     return true;
   };
 
-  const facet = (campo: "codigo_oem" | "es_activo", ignora: "oem" | "activo") => {
+  const facet = (
+    campo: "desc_rubro" | "codigo_oem" | "es_activo",
+    ignora: "rubro" | "oem" | "activo",
+  ) => {
     const c = new Map<string, number>();
     for (const r of filas) {
       const v = r[campo];
@@ -52,16 +71,18 @@ export function ExistenciaArticulosView() {
       .sort((a, b) => a.valor.localeCompare(b.valor));
   };
 
+  const deps = [filas, busqueda, rubroSel, oemSel, activoSel, existenciaSel];
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const facetOem = useMemo(() => facet("codigo_oem", "oem"), [filas, busqueda, oemSel, activoSel]);
+  const facetRubro = useMemo(() => facet("desc_rubro", "rubro"), deps);
+  // Sin el .sql nuevo en la BD el campo no llega: la faceta no aparece, el resto sigue igual.
+  const hayRubros = filas.some((r) => r.desc_rubro);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const facetActivo = useMemo(() => facet("es_activo", "activo"), [filas, busqueda, oemSel, activoSel]);
+  const facetOem = useMemo(() => facet("codigo_oem", "oem"), deps);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const facetActivo = useMemo(() => facet("es_activo", "activo"), deps);
 
-  const filasFiltradas = useMemo(
-    () => filas.filter((r) => coincide(r, null)),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [filas, busqueda, oemSel, activoSel],
-  );
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const filasFiltradas = useMemo(() => filas.filter((r) => coincide(r, null)), deps);
 
   const toggle = (set: Set<string>, setter: (s: Set<string>) => void, v: string) => {
     const next = new Set(set);
@@ -72,11 +93,18 @@ export function ExistenciaArticulosView() {
 
   const limpiar = () => {
     setBusqueda("");
+    setRubroSel(new Set());
     setOemSel(new Set());
     setActivoSel(new Set());
+    setExistenciaSel("todos");
   };
 
-  const hayFiltro = busqueda.trim() !== "" || oemSel.size > 0 || activoSel.size > 0;
+  const hayFiltro =
+    busqueda.trim() !== "" ||
+    rubroSel.size > 0 ||
+    oemSel.size > 0 ||
+    activoSel.size > 0 ||
+    existenciaSel !== "todos";
 
   const COLUMNAS: Column<ExistenciaArticulo>[] = [
     {
@@ -118,6 +146,17 @@ export function ExistenciaArticulosView() {
       hideable: false,
       footer: () => "Total",
     },
+    // Con un solo rubro filtrado la columna sobra; con varios sigue siendo útil para
+    // distinguirlos. El Excel sale de estas mismas columnas.
+    ...(hayRubros && rubroSel.size !== 1
+      ? ([
+          {
+            key: "desc_rubro",
+            header: "Rubro",
+            accessor: (r) => r.desc_rubro, // null y no "": sin rubro va al final al ordenar
+          },
+        ] as Column<ExistenciaArticulo>[])
+      : []),
     {
       key: "cantidad",
       header: "Cantidad",
@@ -135,14 +174,14 @@ export function ExistenciaArticulosView() {
             key: "costo_ultimo",
             header: "Costo Último",
             num: true,
-            accessor: (r) => r.costo_ultimo ?? 0,
+            accessor: (r) => r.costo_ultimo, // sin costo: "—" y vacío en el Excel, no 0
             render: (r) => <span className="font-mono">{fmtNum(r.costo_ultimo)}</span>,
           },
           {
             key: "total_costo",
             header: "Total Costo",
             num: true,
-            accessor: (r) => r.total_costo ?? 0,
+            accessor: (r) => r.total_costo,
             render: (r) => <span className="font-mono font-semibold">{fmtNum(r.total_costo)}</span>,
             footer: (rows) => (
               <span className="font-mono">
@@ -200,6 +239,32 @@ export function ExistenciaArticulosView() {
                 className="pl-10"
               />
             </div>
+            <div className="space-y-1.5">
+              <p className="text-sm font-semibold">Existencia</p>
+              <div className="flex gap-2">
+                {OPCIONES_EXISTENCIA.map(({ v, label }) => (
+                  <Button
+                    key={v}
+                    type="button"
+                    variant={existenciaSel === v ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setExistenciaSel(v)}
+                    aria-pressed={existenciaSel === v}
+                    className="flex-1"
+                  >
+                    {label}
+                  </Button>
+                ))}
+              </div>
+            </div>
+            {hayRubros && (
+              <Faceta
+                titulo="Rubro"
+                valores={facetRubro}
+                seleccion={rubroSel}
+                onToggle={(v) => toggle(rubroSel, setRubroSel, v)}
+              />
+            )}
             <Faceta
               titulo="Cód. OEM"
               valores={facetOem}
@@ -207,10 +272,11 @@ export function ExistenciaArticulosView() {
               onToggle={(v) => toggle(oemSel, setOemSel, v)}
             />
             <Faceta
-              titulo="¿Activo?"
+              titulo="¿Bien de uso?"
               valores={facetActivo}
               seleccion={activoSel}
               onToggle={(v) => toggle(activoSel, setActivoSel, v)}
+              etiqueta={etiquetaSiNo}
             />
           </aside>
 
