@@ -476,6 +476,46 @@ anónimo que antes se ejecutaba a mano en la BD.
 - Proceso de carga masiva → **restringido a `app_user = 'JOSEG'`** (403 al resto), igual criterio
   que `conteo-efectivo`/`existencia-articulos`.
 
+## Proceso programado sin endpoint (modelo: `backup_sql.sql`)
+
+El backup no tiene endpoint: lo corre `JOB_BACKUP_LUBRIMEC` de madrugada y solo se dispara a mano
+desde SQL Commands. Uso y restauración: README, "Backup por correo". Lo que sirve para otro proceso
+así, y lo que ya falló:
+
+- **Una tabla creada en el mismo script no se puede usar con SQL estático en ese mismo bloque.**
+  Oracle compila el bloque entero antes de correrlo: da `ORA-00942` y no crea nada, ni siquiera la
+  tabla. Crearla con `EXECUTE IMMEDIATE` y usarla en ese bloque también con `EXECUTE IMMEDIATE`, o
+  en un bloque aparte.
+- **Una función privada del paquete no se puede usar dentro de SQL** (`PLS-00231`): si no está en
+  el `PACKAGE`, pasarla antes a una variable (`l_ahora DATE := ahora;`). Una constante del paquete
+  sí se puede.
+- **Lo que puede faltar en la instancia va en SQL dinámico** (`APEX_EXPORT`, `ORDS_EXPORT`): si no,
+  el paquete entero no compila. Si falla al correr, se avisa y el resto sigue.
+- **Un job entero es una sola llamada, y la instancia limita su CPU** (`CPU_PER_CALL`, `ORA-02393`,
+  se ve en `USER_RESOURCE_LIMITS`). Lo que no entra se parte en varios jobs, midiendo con
+  `DBMS_UTILITY.GET_CPU_TIME` y parando antes del límite: pasado ese punto, en esa llamada fallan
+  también el registro y el manejo de errores. Una transacción `READ ONLY` no cruza de un job a otro.
+- **`SUBSTR(x, 1, 3900)` no alcanza para una variable `VARCHAR2(3900)`:** corta caracteres y la
+  variable mide bytes. Con acentos da `ORA-06502`; si está en un `EXCEPTION`, tapa el error real.
+  Usar `SUBSTRB`.
+- **Fuera de una sesión de APEX, `APEX_MAIL` y `APEX_EXPORT` necesitan el workspace:**
+  `APEX_UTIL.SET_SECURITY_GROUP_ID(APEX_UTIL.FIND_SECURITY_GROUP_ID(p_workspace => ...))`.
+- **Armar un CLOB grande con un búfer** de `VARCHAR2` y `DBMS_LOB.WRITEAPPEND`, no con `||` sobre el
+  CLOB, que se vuelve lentísimo.
+- **Hora del job:** con `start_date` en `-03:00`, `BYHOUR` se calcula en hora de Paraguay y no en la
+  del servidor.
+- **Decir el resultado:** registrar cada corrida en una tabla y avisar al final, también si falló.
+  Un error por tabla u objeto no corta el proceso, pero deja el estado en `CON ERRORES`.
+- **Un proceso largo anota en qué va mientras corre,** en una transacción autónoma. Anotar solo al
+  final no alcanza: si Oracle mata la sesión, ningún `EXCEPTION` llega a correr y la fila queda
+  `EN CURSO` para siempre. Si está viva o no lo dice `USER_SCHEDULER_RUNNING_JOBS`.
+- **Un `WHEN OTHERS` dentro de un bucle deja pasar la cancelación y los límites:** `ORA-01013`,
+  `ORA-00040`, `ORA-00028` y `ORA-02393` se vuelven a lanzar; si no, cada objeto siguiente falla
+  igual y el registro se llena de errores que tapan la causa.
+- **Una tabla nueva de control lleva el prefijo `LUBRIMEC_`:** así queda fuera del asistente con IA
+  y el backup no copia sus datos. Una columna de datos con clave se llama con `PASSWORD`, `API_KEY`,
+  `TOKEN` o `SECRET` en el nombre, para que el backup la deje vacía; otro nombre sí viaja por correo.
+
 ## Notas / gotchas
 
 - **`VISCOSIDAD_LUBRICANTES` no tiene `cod_empresa`:** se une solo por id

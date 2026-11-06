@@ -608,6 +608,116 @@ Qué hay que hacer según lo que cambie:
 
 Guía para llevarlo a otro proyecto: [GUIA_ASISTENTE_IA.md](GUIA_ASISTENTE_IA.md).
 
+## Backup por correo
+
+La base está en un workspace gratuito que Oracle podría dar de baja. `db/backup_sql.sql` genera
+una copia completa en scripts SQL comprimidos y la manda por correo todos los días a las **03:00 de
+Paraguay** (job `JOB_BACKUP_LUBRIMEC`). Hay que ejecutarlo a mano como todo `.sql`.
+
+> **Falta verificarlo en esta instancia:** que `APEX_MAIL` mande los adjuntos (`oracleapex.com` no
+> publica sus límites), que deje exportar APEX y ORDS, y una restauración de prueba. Hasta eso, no
+> dar por respaldada la base.
+
+- **Qué lleva:** estructura (tablas, PK, índices, triggers, FK, vistas, paquetes, jobs...), la
+  aplicación APEX y los módulos ORDS si la instancia deja exportarlos, y los datos.
+- **Qué no lleva:** imágenes (columnas BLOB) ni database links o permisos de red, por decisión del
+  dueño: se vuelven a cargar o configurar después. Tampoco los datos de `LUBRIMEC_*` e `IA_*` (clave
+  de la API y sesiones), columnas de contraseñas o tokens, ni las contraseñas de los usuarios de
+  APEX.
+- **Cómo saber si salió bien:** cada corrida termina con un correo de resumen, y queda en
+  `LUBRIMEC_BACKUP_LOG`. Si no llegó, o dice `CON ERRORES`, esa copia no está completa.
+- **La casilla no va en el repo:** se carga con `PKG_BACKUP_LUBRIMEC.fijar_destino`. Los adjuntos
+  van **sin cifrar**: tiene que ser una casilla solo del dueño, con verificación en dos pasos.
+
+### Puesta en marcha y prueba
+
+Después de ejecutar `db/backup_sql.sql` en SQL Workshop → SQL Scripts, en SQL Commands:
+
+```sql
+-- 1. La casilla, y probar que llegue un correo con prueba.zip
+BEGIN PKG_BACKUP_LUBRIMEC.fijar_destino('<la casilla>'); END;
+BEGIN PKG_BACKUP_LUBRIMEC.probar_correo; END;
+
+-- 2. Generar SIN enviar: mide cuánto pesa y cuánto tarda (corre en segundo plano)
+BEGIN PKG_BACKUP_LUBRIMEC.lanzar(p_enviar => FALSE); END;
+
+-- 3. Ver el resultado. ESTADO: EN CURSO, OK, CON ERRORES, ERROR o INTERRUMPIDA.
+--    PASO y PASO_EN: en qué va y desde qué hora. DETALLE: el motivo y los minutos de cada etapa
+SELECT * FROM lubrimec_backup_log ORDER BY id DESC;
+
+-- 4. La primera copia real, sin esperar a la madrugada
+BEGIN PKG_BACKUP_LUBRIMEC.lanzar; END;
+```
+
+Si algo no aparece:
+
+```sql
+-- Correos pendientes y sus errores
+SELECT id, mail_subj, mail_send_count, mail_send_error FROM apex_mail_queue;
+-- Si el job está activo y cuándo corre
+SELECT job_name, enabled, state, next_run_date FROM user_scheduler_jobs
+ WHERE job_name = 'JOB_BACKUP_LUBRIMEC';
+-- Cómo le fue a cada corrida
+SELECT job_name, status, actual_start_date, errors FROM user_scheduler_job_run_details
+ WHERE job_name = 'JOB_BACKUP_LUBRIMEC' OR job_name LIKE 'BACKUP_MANUAL%' OR job_name LIKE 'BACKUP_TRAMO%'
+ ORDER BY actual_start_date DESC;
+```
+
+### Corre en tramos
+
+La instancia limita la CPU por llamada (`CPU_PER_CALL`, error `ORA-02393`) y un job entero cuenta
+como una sola llamada: la copia completa no entra en un job. Por eso cada tramo es un job
+(`BACKUP_TRAMO_*`) que usa el 60 % del límite, cierra su parte y deja lo que falta en
+`LUBRIMEC_BACKUP_TAREA` para el siguiente. Una tabla grande puede seguir en otro tramo.
+
+Las tablas no se leen todas en la misma foto: si alguien carga algo durante la copia, una venta
+puede quedar sin su detalle. Por eso conviene correrla de madrugada; una prueba de día sirve para
+medir, no como copia.
+
+### Si queda `EN CURSO` mucho tiempo
+
+`EN CURSO` no prueba que siga corriendo: si Oracle corta la sesión, la corrida no llega a anotar su
+final. La siguiente que arranque la marca `INTERRUMPIDA`. Para saberlo ahora:
+
+```sql
+-- Si sale una fila, hay un tramo corriendo o por arrancar. Si no sale nada, la corrida murió:
+-- el motivo está en USER_SCHEDULER_JOB_RUN_DETAILS (consulta de arriba)
+SELECT job_name, state FROM user_scheduler_jobs
+ WHERE job_name LIKE 'BACKUP_MANUAL%' OR job_name LIKE 'BACKUP_TRAMO%';
+-- Detenerla, con el JOB_NAME de la consulta anterior
+BEGIN DBMS_SCHEDULER.STOP_JOB('<job_name>'); END;
+```
+
+Si `PASO_EN` no cambia en mucho rato, ese paso es el que se traba. Antes de volver a ejecutar
+`db/backup_sql.sql` hay que detener la corrida: reemplazar el paquete mientras se usa deja el script
+esperando.
+
+### Configuración
+
+En `LUBRIMEC_BACKUP_CONFIG`, con `UPDATE` + `COMMIT`, sin volver a ejecutar el script:
+
+| Clave | Qué es |
+|---|---|
+| `DESTINO` | La casilla (con `fijar_destino`) |
+| `REMITENTE` | El "De:" del correo; por defecto, el mismo destino |
+| `PARTE_MB` | Tamaño de cada `.sql` antes de comprimir (30). Bajarlo si rechazan los adjuntos |
+| `APP_ID` | La aplicación APEX a exportar (86972) |
+| `CPU_SEG` | Opcional: segundos de CPU por tramo. Sin esto, el 60 % de `CPU_PER_CALL` |
+
+Para cambiar el horario, cambiar `BYHOUR` en `repeat_interval` con
+`DBMS_SCHEDULER.SET_ATTRIBUTE` y dejarlo también en el `.sql`, o la próxima ejecución lo pisa.
+
+### Restaurar
+
+1. Crear el esquema en una base con **APEX y ORDS**.
+2. Descomprimir los `.zip` del mismo día y correr los `.sql` **en orden de número**, con SQLcl o
+   SQL*Plus. La primera parte de `datos` apaga FK y triggers, y la última los vuelve a prender.
+3. Importar lo que falte a mano, si el resumen avisó que no se pudo exportar (aplicación APEX o
+   módulos ORDS).
+4. Volver a cargar lo que no viaja: la clave del asistente (`PKG_IA_LUBRIMEC.fijar_clave`), las
+   contraseñas de los usuarios de APEX, las imágenes y las integraciones externas (WaSender,
+   permisos de red para salir a esas APIs).
+
 ## APK Android
 
 El APK es una **WebView remota** que carga la app de GitHub Pages (`server.url` en
@@ -638,9 +748,12 @@ El APK es una **WebView remota** que carga la app de GitHub Pages (`server.url` 
   qué calcula cada función de stock. `fn_existencia(id_articulo, cod_empresa)` es por artículo;
   `fn_existencia_oem` suma todo el OEM y sale de otra fuente (la usa Ventas por Artículos).
 - [src/GUIA_FRONT.md](src/GUIA_FRONT.md) — consumo desde el front, proxy y gotchas.
+- [db/backup_sql.sql](db/backup_sql.sql) — backup completo por correo, ver "Backup por correo".
 - [GENERAR_APK.md](GENERAR_APK.md) — generar, firmar, publicar y versionar el APK.
 - [GUIA_ASISTENTE_IA.md](GUIA_ASISTENTE_IA.md) — guía portable para llevar el asistente con IA a
   **otro** proyecto Oracle APEX/ORDS + React.
+- [GUIA_BACKUP.md](GUIA_BACKUP.md) — guía portable para llevar el backup por correo a **otro**
+  proyecto y otra base. Su anexo es una copia de `db/backup_sql.sql`: si cambia el script, actualizarlo.
 - [GUIA_LOGIN.md](GUIA_LOGIN.md) — guía portable para replicar este login (paquete
   `PKG_AUTH_*` + token en tabla + proxy + sesión en el front) en **otro** proyecto
   Oracle APEX/ORDS + React.
