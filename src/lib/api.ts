@@ -3480,6 +3480,9 @@ export type ExistenciaArticulo = {
   codigo_oem: string | null;
   es_activo: string | null;
   desc_rubro?: string | null; // no llega si la BD todavía no tiene el .sql nuevo
+  // ARTICULOS.estado: 'A' Activo / 'I' Inactivo (no confundir con es_activo = bien de uso).
+  // No llega si la BD todavía no tiene el .sql nuevo.
+  estado?: string | null;
   costo_ultimo?: number | null;
   total_costo?: number | null;
 };

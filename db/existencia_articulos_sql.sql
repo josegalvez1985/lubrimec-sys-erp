@@ -3,12 +3,15 @@
 --
 -- Estructura PLANA (ver db/GUIA_ENDPOINTS.md). Solo lectura, sin paquete.
 -- Reporte de existencia agrupada por articulo (SUM de cantidad sobre
--- V_FICHA_EXISTENCIA) + costo. El filtrado (busqueda + facetas Rubro/OEM/Bien de
--- uso + botones Existencia) es 100% en el front (como pag 55/56/57).
+-- V_FICHA_EXISTENCIA) + costo. El filtrado (busqueda + facetas Estado/Rubro/OEM/
+-- Bien de uso + botones Existencia) es 100% en el front (como pag 55/56/57).
 --
 --   GET /ords/josegalvez/lubrimec/existencia?cod_empresa=24&app_user=JOSEG
 --       -> data: [{ id_articulo, desc_articulo, cantidad, codigo_oem,
---                   es_activo, desc_rubro, costo_ultimo, total_costo }]
+--                   es_activo, desc_rubro, estado, costo_ultimo, total_costo }]
+--
+-- estado = ARTICULOS.estado ('A' Activo / 'I' Inactivo); sin dato cuenta como 'A'.
+-- NO es lo mismo que es_activo (bien de uso). El front arranca mostrando Activos.
 --
 -- es_activo = 'S' son bienes de uso (notebook, mesa...), no se venden: nunca se les
 -- registra precio, asi que ARTICULOS.costo_ultima_compra les queda vacio. Su costo
@@ -114,11 +117,12 @@ BEGIN
              WHERE rn = 1
         )
         SELECT t.id_articulo, t.desc_articulo, t.cantidad, t.codigo_oem, t.es_activo,
-               t.desc_rubro, t.costo_ultimo,
+               t.desc_rubro, t.estado, t.costo_ultimo,
                t.costo_ultimo * NVL(t.cantidad, 0) AS total_costo
           FROM (
             SELECT e.id_articulo, e.desc_articulo, e.codigo_oem, e.es_activo,
                    e.desc_rubro, e.cantidad,
+                   UPPER(NVL(a.estado, 'A')) AS estado,
                    COALESCE(a.costo_ultima_compra, u.precio) AS costo_ultimo
               FROM (
                 SELECT id_articulo, desc_articulo, codigo_oem, es_activo,
@@ -142,6 +146,7 @@ BEGIN
         APEX_JSON.WRITE('codigo_oem', r.codigo_oem);
         APEX_JSON.WRITE('es_activo', r.es_activo);
         APEX_JSON.WRITE('desc_rubro', r.desc_rubro);
+        APEX_JSON.WRITE('estado', r.estado);
         IF l_ve_costo THEN
             APEX_JSON.WRITE('costo_ultimo', r.costo_ultimo);
             APEX_JSON.WRITE('total_costo', r.total_costo);

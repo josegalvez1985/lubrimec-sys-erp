@@ -23,12 +23,18 @@ const OPCIONES_EXISTENCIA: { v: FiltroExistencia; label: string }[] = [
   { v: "todos", label: "Todos" },
 ];
 
+// Estado del artículo (ARTICULOS.estado), distinto de es_activo (bien de uso).
+// Por defecto se muestran solo los Activos.
+const ESTADO_DEFAULT = "A";
+const etiquetaEstado = (v: string) => (v === "A" ? "Activo" : v === "I" ? "Inactivo" : v);
+
 export function ExistenciaArticulosView() {
   const appUser = getSesion()?.app_user ?? "";
   const [busqueda, setBusqueda] = useState("");
   const [rubroSel, setRubroSel] = useState<Set<string>>(new Set());
   const [oemSel, setOemSel] = useState<Set<string>>(new Set());
   const [activoSel, setActivoSel] = useState<Set<string>>(new Set());
+  const [estadoSel, setEstadoSel] = useState<Set<string>>(new Set([ESTADO_DEFAULT]));
   const [existenciaSel, setExistenciaSel] = useState<FiltroExistencia>("todos");
   const [imgArticulo, setImgArticulo] = useState<ExistenciaArticulo | null>(null);
 
@@ -40,8 +46,13 @@ export function ExistenciaArticulosView() {
 
   const filas = useMemo(() => data?.filas ?? [], [data]);
   const veCosto = data?.ve_costo ?? false;
+  // Sin el .sql nuevo en la BD el estado no llega: no se filtra por él y la faceta no
+  // aparece (se ve todo, como antes).
+  const hayEstado = filas.some((r) => r.estado);
 
-  const coincide = (r: ExistenciaArticulo, ignora: "rubro" | "oem" | "activo" | null) => {
+  type ClaveFaceta = "rubro" | "oem" | "activo" | "estado";
+
+  const coincide = (r: ExistenciaArticulo, ignora: ClaveFaceta | null) => {
     const q = busqueda.trim().toLowerCase();
     if (q) {
       const txt = `${r.desc_articulo ?? ""} ${r.codigo_oem ?? ""}`.toLowerCase();
@@ -53,13 +64,16 @@ export function ExistenciaArticulosView() {
     if (existenciaSel === "sin" && hayExistencia) return false;
     if (ignora !== "rubro" && rubroSel.size > 0 && !rubroSel.has(r.desc_rubro ?? "")) return false;
     if (ignora !== "oem" && oemSel.size > 0 && !oemSel.has(r.codigo_oem ?? "")) return false;
-    if (ignora !== "activo" && activoSel.size > 0 && !activoSel.has(r.es_activo ?? "")) return false;
+    if (ignora !== "activo" && activoSel.size > 0 && !activoSel.has(r.es_activo ?? ""))
+      return false;
+    if (ignora !== "estado" && hayEstado && estadoSel.size > 0 && !estadoSel.has(r.estado ?? ""))
+      return false;
     return true;
   };
 
   const facet = (
-    campo: "desc_rubro" | "codigo_oem" | "es_activo",
-    ignora: "rubro" | "oem" | "activo",
+    campo: "desc_rubro" | "codigo_oem" | "es_activo" | "estado",
+    ignora: ClaveFaceta,
   ) => {
     const c = new Map<string, number>();
     for (const r of filas) {
@@ -71,7 +85,7 @@ export function ExistenciaArticulosView() {
       .sort((a, b) => a.valor.localeCompare(b.valor));
   };
 
-  const deps = [filas, busqueda, rubroSel, oemSel, activoSel, existenciaSel];
+  const deps = [filas, busqueda, rubroSel, oemSel, activoSel, estadoSel, existenciaSel];
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const facetRubro = useMemo(() => facet("desc_rubro", "rubro"), deps);
   // Sin el .sql nuevo en la BD el campo no llega: la faceta no aparece, el resto sigue igual.
@@ -80,6 +94,8 @@ export function ExistenciaArticulosView() {
   const facetOem = useMemo(() => facet("codigo_oem", "oem"), deps);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const facetActivo = useMemo(() => facet("es_activo", "activo"), deps);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const facetEstado = useMemo(() => facet("estado", "estado"), deps);
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const filasFiltradas = useMemo(() => filas.filter((r) => coincide(r, null)), deps);
@@ -96,14 +112,19 @@ export function ExistenciaArticulosView() {
     setRubroSel(new Set());
     setOemSel(new Set());
     setActivoSel(new Set());
+    setEstadoSel(new Set([ESTADO_DEFAULT]));
     setExistenciaSel("todos");
   };
+
+  // Solo Activos es el estado inicial: no cuenta como filtro aplicado.
+  const estadoEsDefault = estadoSel.size === 1 && estadoSel.has(ESTADO_DEFAULT);
 
   const hayFiltro =
     busqueda.trim() !== "" ||
     rubroSel.size > 0 ||
     oemSel.size > 0 ||
     activoSel.size > 0 ||
+    (hayEstado && !estadoEsDefault) ||
     existenciaSel !== "todos";
 
   const COLUMNAS: Column<ExistenciaArticulo>[] = [
@@ -154,6 +175,16 @@ export function ExistenciaArticulosView() {
             key: "desc_rubro",
             header: "Rubro",
             accessor: (r) => r.desc_rubro, // null y no "": sin rubro va al final al ordenar
+          },
+        ] as Column<ExistenciaArticulo>[])
+      : []),
+    // Con un solo estado filtrado (lo normal: solo Activos) la columna sobra.
+    ...(hayEstado && estadoSel.size !== 1
+      ? ([
+          {
+            key: "estado",
+            header: "Estado",
+            accessor: (r) => etiquetaEstado(r.estado ?? ""),
           },
         ] as Column<ExistenciaArticulo>[])
       : []),
@@ -257,6 +288,15 @@ export function ExistenciaArticulosView() {
                 ))}
               </div>
             </div>
+            {hayEstado && (
+              <Faceta
+                titulo="Estado"
+                valores={facetEstado}
+                seleccion={estadoSel}
+                onToggle={(v) => toggle(estadoSel, setEstadoSel, v)}
+                etiqueta={etiquetaEstado}
+              />
+            )}
             {hayRubros && (
               <Faceta
                 titulo="Rubro"
