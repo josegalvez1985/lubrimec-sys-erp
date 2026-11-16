@@ -28,6 +28,15 @@ const OPCIONES_EXISTENCIA: { v: FiltroExistencia; label: string }[] = [
 const ESTADO_DEFAULT = "A";
 const etiquetaEstado = (v: string) => (v === "A" ? "Activo" : v === "I" ? "Inactivo" : v);
 
+// Depreciación: un % que se aplica SOLO a los bienes de uso (es_activo = 'S') sobre su
+// Total Costo. Es un cálculo de pantalla (no se guarda en la BD); a las mercaderías no
+// se les descuenta nada, así que su Valor Neto es su Total Costo.
+const esBienDeUso = (r: ExistenciaArticulo) => r.es_activo === "S";
+const depreciacion = (r: ExistenciaArticulo, pct: number) =>
+  r.total_costo == null || !esBienDeUso(r) ? null : Math.round((r.total_costo * pct) / 100);
+const valorNeto = (r: ExistenciaArticulo, pct: number) =>
+  r.total_costo == null ? null : r.total_costo - (depreciacion(r, pct) ?? 0);
+
 export function ExistenciaArticulosView() {
   const appUser = getSesion()?.app_user ?? "";
   const [busqueda, setBusqueda] = useState("");
@@ -37,6 +46,9 @@ export function ExistenciaArticulosView() {
   const [estadoSel, setEstadoSel] = useState<Set<string>>(new Set([ESTADO_DEFAULT]));
   const [existenciaSel, setExistenciaSel] = useState<FiltroExistencia>("todos");
   const [imgArticulo, setImgArticulo] = useState<ExistenciaArticulo | null>(null);
+  // Texto del input tal cual lo escribe el usuario; el % efectivo se deriva (0..100).
+  const [deprecTxt, setDeprecTxt] = useState("");
+  const deprecPct = Math.min(Math.max(Number(deprecTxt.replace(",", ".")) || 0, 0), 100);
 
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ["existencia", COD_EMPRESA, appUser],
@@ -222,6 +234,37 @@ export function ExistenciaArticulosView() {
           },
         ] as Column<ExistenciaArticulo>[])
       : []),
+    // Depreciación de bienes de uso: solo con costos visibles y un % cargado.
+    ...(veCosto && deprecPct > 0
+      ? ([
+          {
+            key: "depreciacion",
+            header: `Depreciación ${deprecPct}%`,
+            num: true,
+            accessor: (r) => depreciacion(r, deprecPct), // mercadería: "—" y vacío en el Excel
+            render: (r) => <span className="font-mono">{fmtNum(depreciacion(r, deprecPct))}</span>,
+            footer: (rows) => (
+              <span className="font-mono">
+                {fmtNum(rows.reduce((a, r) => a + (depreciacion(r, deprecPct) ?? 0), 0))}
+              </span>
+            ),
+          },
+          {
+            key: "valor_neto",
+            header: "Valor Neto",
+            num: true,
+            accessor: (r) => valorNeto(r, deprecPct),
+            render: (r) => (
+              <span className="font-mono font-semibold">{fmtNum(valorNeto(r, deprecPct))}</span>
+            ),
+            footer: (rows) => (
+              <span className="font-mono">
+                {fmtNum(rows.reduce((a, r) => a + (valorNeto(r, deprecPct) ?? 0), 0))}
+              </span>
+            ),
+          },
+        ] as Column<ExistenciaArticulo>[])
+      : []),
   ];
 
   return (
@@ -288,6 +331,41 @@ export function ExistenciaArticulosView() {
                 ))}
               </div>
             </div>
+            {veCosto && (
+              <div className="space-y-1.5">
+                <label htmlFor="deprec-pct" className="text-sm font-semibold">
+                  Depreciación %
+                </label>
+                <div className="flex gap-2">
+                  <Input
+                    id="deprec-pct"
+                    type="number"
+                    inputMode="decimal"
+                    min={0}
+                    max={100}
+                    step="0.01"
+                    value={deprecTxt}
+                    onChange={(e) => setDeprecTxt(e.target.value)}
+                    placeholder="0"
+                  />
+                  {deprecTxt !== "" && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      className="shrink-0"
+                      onClick={() => setDeprecTxt("")}
+                      aria-label="Quitar depreciación"
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Se aplica solo a los bienes de uso, sobre su Total Costo.
+                </p>
+              </div>
+            )}
             {hayEstado && (
               <Faceta
                 titulo="Estado"

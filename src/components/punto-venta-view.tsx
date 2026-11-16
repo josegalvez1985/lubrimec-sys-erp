@@ -881,6 +881,17 @@ function AgregarCobro({
       ? Math.max(efectivoRecibido - restante, 0)
       : null;
 
+  // Al elegir la forma de cobro, el monto se completa con lo que falta cobrar (con un
+  // solo cobro, el total de la venta). En efectivo se completa lo recibido (vuelto 0).
+  // Si el cajero ya escribió un monto, se respeta; siempre lo puede cambiar.
+  function elegirForma(v: number | null) {
+    setIdForma(v);
+    setErr("");
+    if (v == null || restante <= 0) return;
+    if (v === FORMA_EFECTIVO) setEfectivoRecibido((prev) => prev ?? restante);
+    else setMonto((prev) => prev ?? restante);
+  }
+
   function add() {
     setErr("");
     const totalImputado = esEfectivo ? imputadoEfectivo : monto;
@@ -923,7 +934,7 @@ function AgregarCobro({
             titulo: f.descripcion ?? `Forma ${f.id_forma}`,
           }))}
           value={idForma}
-          onSelect={setIdForma}
+          onSelect={elegirForma}
           vacioLabel="No hay formas de cobro cargadas."
         />
         <InputMonto

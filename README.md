@@ -382,7 +382,11 @@ dinámicamente desde el endpoint `menu/paginas`.
   Rubro aparecen cuando el servidor tiene la versión nueva del reporte. El **costo** es el guardado
   en el artículo o, si no tiene (los bienes de uso nunca reciben precio de venta), el de la última
   compra; sin ninguna compra se ve "—" y no suma al total. **Costo último y total costo solo para
-  JOSEG** (permiso por usuario). Backend: `db/existencia_articulos_sql.sql`.
+  JOSEG** (permiso por usuario). Quien ve costos tiene además un campo **Depreciación %**: con un
+  valor mayor a 0 aparecen las columnas **Depreciación** (Total Costo × %, **solo en bienes de
+  uso**; las mercaderías muestran "—") y **Valor Neto** (Total Costo menos la depreciación; en
+  mercaderías es el mismo Total Costo), con sus totales al pie y en el Excel. Es un cálculo de
+  pantalla: no se guarda y al recargar vuelve vacío. Backend: `db/existencia_articulos_sql.sql`.
 - **Compras Vs Ventas** (page_id 75) — dos grillas (compras `COMPRAS_ARTICULOS` sin `FCR`, ventas
   `VENTAS_ARTICULOS`) del año elegido + KPIs de resumen (Rentabilidad / Compras / **Ganancia** =
   rentabilidad − compras). Filtros Año/Mes (single-select, actuales por defecto) y ¿Activos/Gastos?
@@ -405,7 +409,9 @@ dinámicamente desde el endpoint `menu/paginas`.
   foco va directo a la forma de cobro; vendedor, talonario, forma de cobro y banco se eligen con
   `SelectorModal` (modal de botones, ver `src/GUIA_FRONT.md`) y solo se listan **vendedores activos**. **Efectivo con vuelto:** el cajero ingresa lo recibido; se imputa lo menor entre lo recibido y lo
   restante, y el excedente es el vuelto (se guardan `total`/`efectivo_recibido`/`efectivo_vuelto`).
-  Con una sola forma de cobro no se controla el total (permite vuelto); con varias, la suma debe
+  **Al elegir la forma de cobro, el monto se completa solo con lo que falta cobrar** (el total de
+  la venta en el primer cobro; en efectivo, lo recibido, con vuelto 0); se puede cambiar, y si ya
+  se había escrito un monto se respeta. Con una sola forma de cobro no se controla el total (permite vuelto); con varias, la suma debe
   igualarlo, y nunca superarlo. **Validaciones todas en el front** (cabecera, detalle, cobros). En
   **móvil** el carrito se abre desde un botón flotante (FAB) en un modal. Al facturar, un POST atómico
   (`pos/registrar`) hace los 3 INSERT (`VENTAS_CABECERA/DETALLE/COBROS`) en una transacción con
