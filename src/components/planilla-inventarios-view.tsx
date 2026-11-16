@@ -1,5 +1,5 @@
-import { useMemo, useRef, useState, type FormEvent } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useQuery, useMutation, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Camera, ClipboardPen, Loader2, Plus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -41,6 +41,18 @@ import {
 
 const COD_EMPRESA = 24;
 
+// LOVs del modal Crear Planilla. Sin fecha, el backend usa FECHA_INVENTARIO y la
+// devuelve; esa respuesta se guarda también bajo la clave con esa fecha, así al
+// reflejarla en el input no se repite la misma consulta (antes cargaba 2 veces).
+const PENDIENTES_STALE = 60_000;
+const pendientesKey = (fecha: string) => ["planilla-pendientes", COD_EMPRESA, fecha];
+
+async function cargarPendientes(qc: QueryClient, fecha: string) {
+  const r = await pendientesPlanilla(COD_EMPRESA, fecha || null);
+  if (!fecha && r.fecha) qc.setQueryData(pendientesKey(r.fecha), r);
+  return r;
+}
+
 const fmtNum = (v: number | null | undefined) =>
   v == null ? "—" : new Intl.NumberFormat("es-PY", { maximumFractionDigits: 2 }).format(v);
 
@@ -60,6 +72,17 @@ export function PlanillaInventariosView() {
     queryFn: () => listarPlanillaInventarios(COD_EMPRESA),
     retry: false,
   });
+
+  // Precarga las LOVs de Crear Planilla al entrar a la pantalla: al abrir el
+  // modal ya están listas.
+  useEffect(() => {
+    void qc.prefetchQuery({
+      queryKey: pendientesKey(""),
+      queryFn: () => cargarPendientes(qc, ""),
+      staleTime: PENDIENTES_STALE,
+      retry: false,
+    });
+  }, [qc]);
 
   const filas = data ?? [];
 
@@ -226,9 +249,11 @@ function CrearPlanillaDialog({
   const fechaCompleta = /^\d{2}\/\d{2}\/\d{4}$/.test(fecha.trim());
   const fechaConsulta = fechaCompleta ? fecha.trim() : "";
 
+  const qc = useQueryClient();
   const pendientesQ = useQuery({
-    queryKey: ["planilla-pendientes", COD_EMPRESA, fechaConsulta],
-    queryFn: () => pendientesPlanilla(COD_EMPRESA, fechaConsulta || null),
+    queryKey: pendientesKey(fechaConsulta),
+    queryFn: () => cargarPendientes(qc, fechaConsulta),
+    staleTime: PENDIENTES_STALE,
     // Mientras la fecha está a medio escribir no se consulta: se conserva en
     // pantalla el último resultado en vez de pedir listados que no sirven.
     enabled: open && (fechaCompleta || !fecha.trim()),
