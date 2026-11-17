@@ -258,6 +258,9 @@ dinámicamente desde el endpoint `menu/paginas`.
   mantienen otros procesos). La grilla muestra un **thumbnail** por el endpoint público
   `articulos/:id/imagen` (al tocarlo se **amplía en un modal**); el modal de detalle trae la imagen
   grande vía `articulos/:id` (base64). Backend: `db/articulos_sql.sql`.
+  **Estado y Bienes de uso (`es_activo`) se cambian desde la grilla** con un switch, sin abrir el modal: se guarda al
+  instante con el mismo `PUT articulos/:id`, armado con la fila del listado y la imagen en null
+  (no la toca); si falla, vuelve al valor anterior y avisa. Sin backend nuevo.
   **Stock por artículo:** grilla y detalle lo calculan con `pkg_stock.fn_existencia(id_articulo,
   cod_empresa)` (decisión del usuario: por artículo, no por OEM). La columna guardada
   `ARTICULOS.existencia` queda desactualizada y hacía que el stock no coincidiera con Ventas por

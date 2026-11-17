@@ -5,6 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
+import { toast } from "sonner";
 import {
   Dialog,
   DialogContent,
@@ -75,6 +77,71 @@ export function ArticulosView() {
       qc.invalidateQueries({ queryKey: ["articulos"] });
       setAEliminar(null);
     },
+  });
+
+  // Cambio rápido de Estado / Activo desde la grilla, sin abrir el modal. Usa el
+  // mismo PUT del modal armado con la fila del listado (que trae todos los campos
+  // que el PUT escribe) y la imagen en null, que el backend interpreta como "no
+  // tocar". Se refleja al instante en la grilla y se revierte si falla.
+  const [pendientes, setPendientes] = useState<Set<number>>(new Set());
+  const marcarPendiente = (id: number, on: boolean) =>
+    setPendientes((prev) => {
+      const s = new Set(prev);
+      if (on) s.add(id);
+      else s.delete(id);
+      return s;
+    });
+
+  const cambiarMut = useMutation({
+    mutationFn: async (c: CambioRapido) => {
+      const lista = qc.getQueryData<Articulo[]>(["articulos", COD_EMPRESA]) ?? [];
+      const r = lista.find((a) => a.id_articulo === c.id);
+      if (!r) throw new Error("No se encontró el artículo");
+      await actualizarArticulo(c.id, {
+        descripcion: r.descripcion,
+        cod_iva: r.cod_iva,
+        cod_unidad_medida: r.cod_unidad_medida,
+        id_rubro: r.id_rubro,
+        id_marca: r.id_marca,
+        id_viscosidad: r.id_viscosidad,
+        codigo_oem: r.codigo_oem,
+        valoracion: r.valoracion,
+        // Ya viene con el cambio aplicado (onMutate escribe antes en la caché). El
+        // campo que no se tocó va tal cual, aunque esté vacío en la BD.
+        estado: r.estado,
+        es_activo: r.es_activo,
+        imagen_base64: null,
+        nombre_imagen: null,
+        mime_type: null,
+        cod_empresa: COD_EMPRESA,
+      });
+    },
+    onMutate: async (c) => {
+      marcarPendiente(c.id, true);
+      await qc.cancelQueries({ queryKey: ["articulos", COD_EMPRESA] });
+      const previo = qc.getQueryData<Articulo[]>(["articulos", COD_EMPRESA]);
+      qc.setQueryData<Articulo[]>(["articulos", COD_EMPRESA], (lista) =>
+        (lista ?? []).map((a) =>
+          a.id_articulo === c.id
+            ? {
+                ...a,
+                ...(c.estado ? { estado: c.estado } : {}),
+                ...(c.es_activo ? { es_activo: c.es_activo } : {}),
+              }
+            : a,
+        ),
+      );
+      return { previo };
+    },
+    onError: (e, _c, ctx) => {
+      if (ctx?.previo) qc.setQueryData(["articulos", COD_EMPRESA], ctx.previo);
+      toast.error(e instanceof Error ? e.message : "No se pudo guardar el cambio");
+    },
+    onSuccess: (_d, c) => {
+      // El detalle del modal se vuelve a pedir la próxima vez que se abra.
+      qc.invalidateQueries({ queryKey: ["articulo", c.id] });
+    },
+    onSettled: (_d, _e, c) => marcarPendiente(c.id, false),
   });
 
   const filas = (data ?? []).slice().sort((a, b) => b.id_articulo - a.id_articulo);
@@ -163,29 +230,40 @@ export function ArticulosView() {
       // OJO: `estado` y `es_activo` son columnas DISTINTAS de ARTICULOS, no dos
       // nombres de lo mismo. `estado` ('A'/'I') es el Activo/Inactivo que muestra
       // el APEX y el que usan los filtros de las LOVs; `es_activo` ('S'/'N') es
-      // otra cosa. Por eso van las dos columnas y con etiquetas diferenciadas.
+      // bien de uso. Por eso van las dos columnas y con etiquetas diferenciadas.
+      // Las dos se cambian desde la grilla con el switch, sin abrir el modal.
       key: "estado",
       header: "Estado",
       accessor: (r) => (r.estado ?? "A").toUpperCase(),
-      render: (r) =>
-        (r.estado ?? "A").toUpperCase() === "A" ? (
-          <Badge className="bg-primary/15 text-primary hover:bg-primary/15">Activo</Badge>
-        ) : (
-          <Badge variant="outline" className="text-muted-foreground">
-            Inactivo
-          </Badge>
-        ),
+      render: (r) => {
+        const activo = (r.estado ?? "A").toUpperCase() === "A";
+        return (
+          <SwitchCelda
+            checked={activo}
+            etiqueta={activo ? "Activo" : "Inactivo"}
+            disabled={pendientes.has(r.id_articulo)}
+            ariaLabel={`Estado de ${r.descripcion ?? "artículo"}`}
+            onChange={(v) => cambiarMut.mutate({ id: r.id_articulo, estado: v ? "A" : "I" })}
+          />
+        );
+      },
     },
     {
       key: "es_activo",
-      header: "Activo",
+      header: "Bienes de uso",
       accessor: (r) => r.es_activo ?? "",
-      render: (r) =>
-        r.es_activo === "S" ? (
-          <Badge className="bg-primary/15 text-primary hover:bg-primary/15">Sí</Badge>
-        ) : (
-          <Badge variant="outline" className="text-muted-foreground">No</Badge>
-        ),
+      render: (r) => {
+        const si = r.es_activo === "S";
+        return (
+          <SwitchCelda
+            checked={si}
+            etiqueta={si ? "Sí" : "No"}
+            disabled={pendientes.has(r.id_articulo)}
+            ariaLabel={`Bien de uso: ${r.descripcion ?? "artículo"}`}
+            onChange={(v) => cambiarMut.mutate({ id: r.id_articulo, es_activo: v ? "S" : "N" })}
+          />
+        );
+      },
     },
   ];
 
@@ -311,6 +389,41 @@ export function ArticulosView() {
         </AlertDialogContent>
       </AlertDialog>
     </div>
+  );
+}
+
+// ─── Switch de la grilla (Estado / Activo) ───────────────────────────────────
+
+type CambioRapido = { id: number; estado?: "A" | "I"; es_activo?: "S" | "N" };
+
+function SwitchCelda({
+  checked,
+  etiqueta,
+  disabled,
+  ariaLabel,
+  onChange,
+}: {
+  checked: boolean;
+  etiqueta: string;
+  disabled: boolean;
+  ariaLabel: string;
+  onChange: (v: boolean) => void;
+}) {
+  return (
+    <label className="inline-flex cursor-pointer items-center gap-2 whitespace-nowrap">
+      <Switch
+        checked={checked}
+        onCheckedChange={onChange}
+        disabled={disabled}
+        aria-label={ariaLabel}
+      />
+      <span
+        className={checked ? "text-sm font-medium text-primary" : "text-sm text-muted-foreground"}
+      >
+        {etiqueta}
+      </span>
+      {disabled && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
+    </label>
   );
 }
 
@@ -656,7 +769,7 @@ function ArticuloDialog({
                   className="h-4 w-4 rounded border-input"
                 />
                 <Label htmlFor="es_activo" className="font-normal">
-                  Activo
+                  Bien de uso
                 </Label>
               </div>
             </div>
