@@ -79,4 +79,6 @@ export const VISTAS: Record<number, ComponentType> = {
   79: vista(() => import("@/components/saldos-proveedores-view"), "SaldosProveedoresView"), // Saldos de Proveedores
   80: vista(() => import("@/components/consulta-inventarios-view"), "ConsultaInventariosView"), // Consulta de Inventarios
   39: vista(() => import("@/components/punto-venta-view"), "PuntoVentaView"), // Punto de Venta
+  121: vista(() => import("@/components/agenda-citas-view"), "AgendaCitasView"), // Agenda de Citas (página nueva, no viene del APEX)
+  122: vista(() => import("@/components/paginas-front-view"), "PaginasFrontView"), // Páginas del Menú (página nueva, alta de páginas propias)
 };

@@ -1,7 +1,8 @@
 --------------------------------------------------------------------------------
 -- ROLES DE PAGINAS (paginas APEX 37 grilla + 38 modal Crear Rol) — paquete CRUD
 -- + endpoints ORDS en un archivo. Ejecutar completo como el esquema JOSEGALVEZ.
--- Requiere PKG_AUTH_LUBRIMEC.
+-- Requiere PKG_AUTH_LUBRIMEC y la tabla PAGINAS_FRONT (paginas_front_sql.sql):
+-- la grilla y la LOV de paginas suman las paginas que solo existen en el front.
 --
 -- CRUD sobre ROLES_PAGINAS (PK compuesta app_id + app_page_id + app_user_id;
 -- flags 'S'/'N': puede_insertar/actualizar/borrar/consultar y ver_campos).
@@ -13,7 +14,8 @@
 --
 -- LOVs (lista completa + filtro front):
 --   lov-usuarios: WWV_FLOW_USERS (query de la LOV nombrada USUARIOS del APEX).
---   lov-paginas:  TODAS las paginas de la app (page_id < 9999, sin 0 ni 1);
+--   lov-paginas:  TODAS las paginas de la app (page_id < 9999, sin 0 ni 1)
+--                 + las de PAGINAS_FRONT que no estan en el APEX;
 --                 el front excluye las ya asignadas al usuario al crear.
 --
 -- Rutas:
@@ -132,7 +134,8 @@ CREATE OR REPLACE PACKAGE BODY PKG_ROLES_PAG_LUBRIMEC AS
         SELECT a.app_id,
                a.app_page_id,
                a.app_user_id,
-               b.page_title AS pagina,
+               -- Titulo del APEX; si la pagina no esta ahi, el de PAGINAS_FRONT.
+               NVL(b.page_title, f.page_title) AS pagina,
                NVL(a.puede_insertar, 'N')   AS puede_insertar,
                NVL(a.puede_actualizar, 'N') AS puede_actualizar,
                NVL(a.puede_borrar, 'N')     AS puede_borrar,
@@ -143,6 +146,9 @@ CREATE OR REPLACE PACKAGE BODY PKG_ROLES_PAG_LUBRIMEC AS
                  ON b.application_id = a.app_id
                 AND b.page_id = a.app_page_id
                 AND b.workspace = 'JOSEGALVEZ'
+          LEFT JOIN paginas_front f
+                 ON f.app_id = a.app_id
+                AND f.page_id = a.app_page_id
          WHERE a.app_id = p_app_id
          ORDER BY a.app_user_id, a.app_page_id
     ) LOOP
@@ -419,14 +425,28 @@ CREATE OR REPLACE PACKAGE BODY PKG_ROLES_PAG_LUBRIMEC AS
     APEX_JSON.OPEN_OBJECT;
     APEX_JSON.WRITE('success', TRUE);
     APEX_JSON.OPEN_ARRAY('data');
+    -- Hibrido: las paginas del APEX (como siempre) + las de PAGINAS_FRONT que
+    -- no estan en el APEX (activas). Ver paginas_front_sql.sql.
     FOR r IN (
+      SELECT page_id, page_title FROM (
         SELECT a.page_id, a.page_title
           FROM apex_application_pages a
          WHERE a.workspace = 'JOSEGALVEZ'
            AND a.application_id = p_app_id
            AND a.page_id < 9999
            AND a.page_id NOT IN (0, 1)
-         ORDER BY a.page_title
+        UNION ALL
+        SELECT f.page_id, f.page_title
+          FROM paginas_front f
+         WHERE f.app_id = p_app_id
+           AND f.activa = 'S'
+           AND NOT EXISTS (SELECT 1
+                             FROM apex_application_pages x
+                            WHERE x.workspace = 'JOSEGALVEZ'
+                              AND x.application_id = f.app_id
+                              AND x.page_id = f.page_id)
+      )
+      ORDER BY page_title
     ) LOOP
       APEX_JSON.OPEN_OBJECT;
       APEX_JSON.WRITE('page_id', r.page_id);

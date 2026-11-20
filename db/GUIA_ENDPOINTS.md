@@ -250,6 +250,9 @@ Gotcha de PL/SQL (paquete):
   da `PLS-00231: la función no se puede utilizar en SQL`. Calcularla en una variable local antes del
   SQL y usar la variable. Pasó con `f_fecha` en `PKG_PERSONAS_LUBRIMEC` y de nuevo con `f_flag` en
   `PKG_ROLES_PAG_LUBRIMEC` (fix: `l_x := f_x(...)` en el DECLARE y usar `l_x` en el INSERT/UPDATE).
+  Y otra vez con `f_texto` en `PKG_AGENDA_CITAS_LUBRIMEC` (el body no compiló; fix: `TRIM` directo,
+  que era todo lo que hacía). Antes de ejecutar un paquete nuevo, buscar `f_`/`p_` privados dentro
+  de cada `INSERT`/`UPDATE`/`SELECT`.
 - **`APEX_JSON.WRITE('campo', NULL)` es ambiguo** (`PLS-00307: demasiadas declaraciones de WRITE`):
   el compilador no sabe qué overload usar. No existe `WRITE_NULL` en todas las versiones
   (`PLS-00302`). Fix: usar una **variable tipada** puesta a NULL (ej. `l_b64 CLOB := NULL;`
@@ -292,6 +295,45 @@ IF l_ve_campos IS NULL THEN l_ve_campos := FALSE; END IF;
 - Un endpoint de **resumen/totales** solo para admin devuelve `{ visible:false }` cuando no es JOSEG
   (el front no dibuja el panel). Modelo: `PKG_CONTEO_EFECTIVO_LUBRIMEC.RESUMEN` + endpoint
   `conteo-efectivo/resumen`.
+
+## Menú híbrido: páginas del APEX + `PAGINAS_FRONT`
+
+Las vistas `APEX_APPLICATION_PAGES` / `APEX_APPLICATION_LIST_ENTRIES` son de solo lectura, así que
+una página que existe solo en el front se da de alta en la tabla propia **`PAGINAS_FRONT`**
+(`db/paginas_front_sql.sql`: DDL idempotente, alta sembrada de la 121 y la 122 —la 122 no puede
+crearse a sí misma; las demás se dan de alta desde ella— y el paquete + endpoints de la 122).
+Columnas equivalentes
+a lo que el menú saca del APEX: `app_id`, `page_id`, `page_title`, `entry_text` (NULL = título),
+`categoria`, `seq_categoria`, `seq_pagina`, `activa` ('S'/'N'). El permiso sigue en `ROLES_PAGINAS`.
+
+- **`menu/paginas`** (`ORDS_MENU_PAGINAS.sql`): `WITH apex AS (<query de siempre, intacta>)`,
+  `categorias` (entradas padre de la lista del APEX, con clave de comparación) y `front`
+  (`PAGINAS_FRONT` ⨝ `ROLES_PAGINAS`), luego `apex UNION ALL front` ordenado por
+  `seq_categoria, parent_entry_text, seq_pagina, page_title` (el mismo orden de antes). El JSON no
+  cambia; en las filas de `front`, `list_entry_id`/`list_entry_parent_id` van NULL.
+- **Gana el APEX:** `front` excluye los `page_id` que ya salen por `apex` (`NOT EXISTS`), así que
+  no hay duplicados y lo que andaba no cambia. Si la página luego se crea en el APEX con su
+  entrada de lista, pasa a salir por ahí sola.
+- **Categoría:** se compara sin mayúsculas, espacios ni acentos, con la misma clave en los dos
+  lados: `TRANSLATE(UPPER(TRIM(x)), 'ÁÉÍÓÚÜ', 'AEIOUU')` (así "Informatica" en el APEX y
+  "Informática" en `PAGINAS_FRONT` coinciden). Si coincide con una del APEX toma su nombre exacto
+  y su orden (el sidebar agrupa por texto exacto); si no, sale como grupo propio con
+  `seq_categoria` o al final (9999). El `LISTAR` de la 122 usa la misma clave para
+  `categoria_menu` y para el combo, y el front la replica en `normalizar`.
+- **Roles de Páginas** (`roles_paginas_sql.sql`): la grilla toma `NVL(apex.page_title,
+  front.page_title)` y `lov-paginas` hace `UNION ALL` de las activas que no están en el APEX.
+- **CRUD (pág 122, `PKG_PAGINAS_FRONT_LUBRIMEC`, mismo archivo):** `GET paginas-front?app_id=`
+  devuelve `data` + `categorias` (las del APEX con su orden y las propias, para el combo) +
+  `siguiente_page_id` (mayor usado + 1) + `puede_editar`. `POST paginas-front` (con `permiso`
+  `TODOS`/`YO`: carga los `ROLES_PAGINAS` en el mismo commit), `PUT`/`DELETE paginas-front/:id`
+  (id = page_id, no cambia). Modificar solo JOSEG, con el usuario del **token** → 403. El alta
+  rechaza un número del APEX (400 con su título). La baja borra también los permisos, salvo que
+  el número sea además una página del APEX.
+- **Orden de ejecución la primera vez:** `paginas_front_sql.sql` → `ORDS_MENU_PAGINAS.sql` →
+  `roles_paginas_sql.sql`. Sin la tabla, el menú responde error (vuelve a andar re-ejecutando la
+  versión anterior de `ORDS_MENU_PAGINAS.sql` desde git). Re-ejecutar `paginas_front_sql.sql` es
+  seguro (tabla solo si no existe, altas solo si no existen), pero **no** actualiza una página ya
+  sembrada: un cambio en esos bloques necesita su UPDATE aparte.
 
 ## Sub-ruta fija junto a `/:id` (ej. `/resumen`, `/buscar`)
 
@@ -340,8 +382,23 @@ el bloque `BEGIN ... ORDS.DEFINE_* ... END;`.
   SUBMIT del APEX (nro de comprobante con algoritmo de huecos + INSERT cabecera/detalle + UPDATE
   de cierre) se replica como UN procedimiento con COMMIT único al final (atómico, ROLLBACK en
   el EXCEPTION), en vez de los COMMIT intermedios del APEX.
+- **Tabla + datos iniciales + paquete en un archivo:** `paginas_front_sql.sql` (pág 122) — DDL
+  idempotente (`CREATE TABLE` por `EXECUTE IMMEDIATE` solo si no está en `user_tables`), altas
+  con `INSERT ... WHERE NOT EXISTS` y después el paquete y los endpoints. Modificar solo JOSEG
+  con el usuario del token (403), igual que `conteo_efectivo_sql.sql`; el GET devuelve
+  `puede_editar` para que el front no repita la regla. Ver "Menú híbrido".
 - **Otros:** `parametros_sql.sql` (pág 89/90), `sortear_sql.sql` (pág 108),
   `roles_paginas_sql.sql` (pág 37/38/64, PK compuesta + LOVs de vistas APEX con workspace fix).
+- **CRUD con fecha y rango opcional:** `agenda_citas_sql.sql` (pág 121, tabla nueva sin página
+  APEX previa). `LISTAR` recibe `desde`/`hasta` (`YYYY-MM-DD`, opcionales: sin ellos devuelve
+  todo) leídos con `get_qs` del query string, y compara `fecha >= desde AND fecha < hasta + 1`
+  para no perder las fechas con hora. Devuelve los datos del cliente por `LEFT JOIN personas`
+  (nombre, RUC, CI, teléfono). Validación común de alta y edición en `f_validar`: los errores de
+  datos salen como **400** con un mensaje para el usuario (cliente de otra empresa, fecha o hora
+  inválidas), no como 500. Un texto que no entra en la columna (ORA-12899: las columnas cuentan
+  **bytes** y una letra con tilde ocupa dos) también sale como 400; el front limita los textos
+  largos a 2000 caracteres para no llegar ahí. La LOV de clientes no tiene endpoint propio:
+  reusa `pos/clientes`.
 
 > Los `ORDS_*.sql` en mayúsculas son la convención vieja (quedan `ORDS_MENU_PAGINAS`,
 > `ORDS_VENTAS_DASHBOARD`, `ORDS_POST_VENTA`, `ORDS_SUBA_PRECIOS`, `ORDS_CIERRE_DIA`); al

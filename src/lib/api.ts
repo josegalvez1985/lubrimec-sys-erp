@@ -164,10 +164,11 @@ export type PaginaMenu = {
   application_id: number;
   page_id: number;
   estadistica_user: number;
-  // Jerarquía del menú (APEX_APPLICATION_LIST_ENTRIES):
+  // Jerarquía del menú (APEX_APPLICATION_LIST_ENTRIES, o PAGINAS_FRONT para las páginas
+  // que no existen en el APEX — menú híbrido, ver db/paginas_front_sql.sql):
   entry_text: string | null; // label visible de la página
   parent_entry_text: string | null; // nombre de la categoría padre (nivel 2)
-  list_entry_id: number | null;
+  list_entry_id: number | null; // null en las páginas de PAGINAS_FRONT
   list_entry_parent_id: number | null;
   seq_categoria: number; // orden de la categoría padre
   seq_pagina: number; // orden de la página dentro de su categoría
@@ -3785,4 +3786,156 @@ export async function preguntarAsistente(pedido: PedidoAsistente): Promise<Respu
     usadas_hoy: data.usadas_hoy ?? null,
     limite: data.limite ?? null,
   };
+}
+
+// ─── Agenda de Citas (pág 121) ───────────────────────────────────────────────
+// CRUD de AGENDA_CITAS (db/agenda_citas_sql.sql). id_agenda por IDENTITY. Fecha
+// 'YYYY-MM-DD' y hora 'HH:MM' (opcional) como texto en los dos sentidos. El
+// listado trae nombre, documento y teléfono del cliente por JOIN; la LOV de
+// clientes reusa buscarClientesPOS (pos/clientes). ORDS omite las claves NULL:
+// todo lo opcional llega como `?`.
+
+export type AgendaCita = {
+  id_agenda: number;
+  cod_empresa: number;
+  cod_persona: number;
+  cliente?: string | null;
+  nro_ruc?: string | null;
+  nro_ci?: string | null;
+  nro_telefono?: string | null;
+  fecha: string;
+  hora?: string | null;
+  vehiculo?: string | null;
+  trabajos?: string | null;
+  repuestos?: string | null;
+};
+
+export type AgendaCitaInput = {
+  cod_empresa: number;
+  cod_persona: number;
+  fecha: string;
+  hora: string | null;
+  vehiculo: string | null;
+  trabajos: string | null;
+  repuestos: string | null;
+};
+
+// Sin rango devuelve todas las citas; con `desde`/`hasta` (inclusive) solo esas.
+export async function listarAgendaCitas(
+  codEmpresa: number,
+  rango?: { desde: string; hasta: string },
+): Promise<AgendaCita[]> {
+  const p = new URLSearchParams({ cod_empresa: String(codEmpresa) });
+  if (rango) {
+    p.set("desde", rango.desde);
+    p.set("hasta", rango.hasta);
+  }
+  const data = await authFetch(`agenda-citas?${p}`);
+  return (data.data ?? []) as AgendaCita[];
+}
+
+export async function crearAgendaCita(input: AgendaCitaInput): Promise<number> {
+  const data = await authFetch("agenda-citas", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  return data.id_agenda as number;
+}
+
+export async function actualizarAgendaCita(id: number, input: AgendaCitaInput): Promise<void> {
+  await authFetch(`agenda-citas/${id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+}
+
+export async function eliminarAgendaCita(id: number, codEmpresa: number): Promise<void> {
+  const p = new URLSearchParams({ cod_empresa: String(codEmpresa) });
+  await authFetch(`agenda-citas/${id}?${p}`, { method: "DELETE" });
+}
+
+// ─── Páginas del Menú (pág 122) ──────────────────────────────────────────────
+// CRUD de PAGINAS_FRONT (db/paginas_front_sql.sql): páginas que existen solo en
+// el front y se suman al menú del APEX (menú híbrido). El page_id es la clave y
+// no cambia al editar. El GET trae además las categorías del menú, el primer
+// número libre y si el usuario puede modificar (solo JOSEG; el backend devuelve
+// 403 al resto). ORDS omite las claves NULL: lo opcional llega como `?`.
+
+export type PaginaFront = {
+  app_id: number;
+  page_id: number;
+  page_title: string;
+  entry_text?: string | null;
+  categoria?: string | null;
+  // Nombre exacto de la categoría del APEX que coincide; null = categoría propia.
+  categoria_menu?: string | null;
+  seq_categoria?: number | null;
+  seq_pagina?: number | null;
+  activa: "S" | "N";
+  // Si el número también es una página del APEX, su título (esa gana en el menú).
+  titulo_apex?: string | null;
+  usuarios: number; // usuarios con permiso de consulta
+};
+
+export type CategoriaMenu = {
+  categoria: string;
+  seq?: number | null;
+  origen: "APEX" | "PROPIA";
+};
+
+export type PaginasFrontRespuesta = {
+  paginas: PaginaFront[];
+  categorias: CategoriaMenu[];
+  siguientePageId: number;
+  puedeEditar: boolean;
+};
+
+export type PaginaFrontInput = {
+  page_id: number;
+  page_title: string;
+  entry_text: string | null;
+  categoria: string | null;
+  seq_categoria: number | null;
+  seq_pagina: number | null;
+  activa: "S" | "N";
+};
+
+export async function listarPaginasFront(): Promise<PaginasFrontRespuesta> {
+  const q = new URLSearchParams({ app_id: DEFAULT_APP_ID });
+  const data = await authFetch(`paginas-front?${q}`);
+  return {
+    paginas: (data.data ?? []) as PaginaFront[],
+    categorias: (data.categorias ?? []) as CategoriaMenu[],
+    siguientePageId: Number(data.siguiente_page_id ?? 0),
+    puedeEditar: data.puede_editar === true,
+  };
+}
+
+// permiso: "TODOS" da acceso a todos los usuarios con páginas en la app; "YO",
+// solo a quien la crea. Devuelve cuántos permisos se cargaron.
+export async function crearPaginaFront(
+  input: PaginaFrontInput,
+  permiso: "TODOS" | "YO",
+): Promise<number> {
+  const data = await authFetch("paginas-front", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ...input, app_id: Number(DEFAULT_APP_ID), permiso }),
+  });
+  return Number(data.permisos ?? 0);
+}
+
+export async function actualizarPaginaFront(input: PaginaFrontInput): Promise<void> {
+  await authFetch(`paginas-front/${input.page_id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ...input, app_id: Number(DEFAULT_APP_ID) }),
+  });
+}
+
+export async function eliminarPaginaFront(pageId: number): Promise<void> {
+  const q = new URLSearchParams({ app_id: DEFAULT_APP_ID });
+  await authFetch(`paginas-front/${pageId}?${q}`, { method: "DELETE" });
 }

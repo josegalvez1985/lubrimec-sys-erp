@@ -124,7 +124,10 @@ Detalles del consumo desde el front y gotchas del proxy: **[src/GUIA_FRONT.md](s
 
 Las páginas se mapean por `page_id` de APEX en `src/lib/vistas.tsx` (mapa `VISTAS`), cada una
 cargada con `React.lazy` para que baje solo al abrirse. El menú y los accesos rápidos se arman
-dinámicamente desde el endpoint `menu/paginas`.
+dinámicamente desde el endpoint `menu/paginas`, que es **híbrido**: las páginas del APEX más
+las que existen solo en el front (`PAGINAS_FRONT`, `db/paginas_front_sql.sql`). Las dos usan el
+mismo permiso de Roles de Páginas. Las páginas propias se dan de alta desde **Páginas del Menú**
+(page_id 122), no desde el APEX.
 
 - **Shell (menú y topbar)** — el **sidebar arranca siempre oculto** (la preferencia no se recuerda);
   se muestra con el botón de la topbar. Junto al usuario hay un **botón Home** que vuelve al
@@ -549,9 +552,51 @@ dinámicamente desde el endpoint `menu/paginas`.
   botón "Mostrar Ganador" que revela el número completo. Backend: `db/sortear_sql.sql`.
 - **Roles de Páginas** (page_id 37/38/64) — CRUD de `ROLES_PAGINAS` (PK compuesta
   app_id+página+usuario; 5 permisos S/N). LOVs de usuarios (`WWV_FLOW_USERS`) y páginas
-  (`APEX_APPLICATION_PAGES`, requiere el fix de workspace); al crear se excluyen las páginas ya
-  asignadas al usuario. "Copiar Roles" (pág 64) copia los roles de un usuario a otro (solo los
-  que no tiene). Backend: `db/roles_paginas_sql.sql`.
+  (`APEX_APPLICATION_PAGES` más las de `PAGINAS_FRONT`, requiere el fix de workspace); al crear
+  se excluyen las páginas ya asignadas al usuario. "Copiar Roles" (pág 64) copia los roles de un
+  usuario a otro (solo los que no tiene). Backend: `db/roles_paginas_sql.sql`.
+- **Agenda de Citas** (page_id 121) — citas y visitas a clientes (`AGENDA_CITAS`). Es una página
+  **nueva**, no existe en el APEX: entra al menú por el menú híbrido, en la categoría Ventas, y se
+  administra en **Páginas del Menú** (page_id 122). Su alta inicial, con permiso para todos los
+  usuarios, viene en `db/paginas_front_sql.sql` (ver "Registrar una página nueva en el menú" en
+  [src/GUIA_FRONT.md](src/GUIA_FRONT.md)). Quién la ve se maneja como cualquier otra página, desde
+  Roles de Páginas. Dos pestañas:
+  - **Agenda:** la semana de lunes a domingo. Arriba, una tira con los 7 días: el día elegido va
+    resaltado, hoy lleva el número en naranja y los puntitos indican cuántas citas tiene cada día
+    (con más de tres aparece un `+`). Debajo, las citas del día ordenadas por hora; las que no
+    tienen hora van al final. Si el día es hoy, una línea naranja marca la hora actual, y las
+    citas que ya pasaron se ven más apagadas. Dos citas a la misma hora llevan el aviso **Mismo
+    horario**. Se cambia de semana con las flechas, se vuelve con **Hoy** o se salta a cualquier
+    fecha con el calendario. Tocar una cita abre su detalle (documento, teléfono para llamar,
+    vehículo, trabajos y repuestos) con **Editar** y **Eliminar**.
+  - **Listado:** todas las citas en una grilla con búsqueda, filtros por columna y Excel, con el
+    selector **Próximas** (desde hoy, de la más cercana a la más lejana), **Pasadas** o **Todas**.
+  - **Nueva cita / Editar:** el cliente se elige con el mismo buscador de clientes del Punto de
+    Venta (nombre, RUC o CI); fecha obligatoria, hora opcional (**Quitar hora** la borra) y
+    vehículo, trabajos y repuestos como texto libre. Si a esa hora ya hay otra cita avisa, pero
+    deja guardar igual. La nueva cita arranca en el día que se está mirando y, al guardar, la
+    agenda salta al día de la cita.
+  - Todos los que tienen acceso a la página pueden crear, editar y eliminar. La agenda consulta
+    solo la semana visible (`desde`/`hasta`); el listado trae todo y se consulta recién al
+    abrirlo. Backend: `db/agenda_citas_sql.sql` (a ejecutar a mano).
+- **Páginas del Menú** (page_id 122) — alta de las páginas propias del sistema, las que no
+  existen en el APEX y se suman al menú (`PAGINAS_FRONT`). Página nueva, en la categoría
+  **Informática**; solo la ve y la modifica el administrador (JOSEG); a cualquier otro el
+  servidor le rechaza los cambios y la pantalla le muestra la lista sin botones. Grilla con
+  número, página (y su texto en el menú si es distinto), categoría (**grupo propio** si no es una
+  del menú), posición, cuántos usuarios tienen acceso (**Nadie** en naranja si ninguno),
+  **Pantalla** (**Programada** si ya existe en el sistema, **Pendiente** si al abrirla se vería
+  "en construcción") y el interruptor **En el menú** para esconderla sin borrar nada.
+  - **Nueva página:** propone el primer número libre (no puede repetir uno del APEX ni de la
+    lista), título, texto en el menú (opcional), categoría (se elige de la lista o se escribe una
+    nueva, que aparece como grupo nuevo con su propia posición; para reconocer una existente no
+    importan mayúsculas, espacios ni acentos: "informatica" cae en Informática y se guarda con
+    el nombre del menú), posición dentro de la categoría (999 = al final) y **Quién la ve**:
+    **Solo yo** (para probarla) o **Todos los usuarios** (con alta, cambio y baja). Después se
+    ajusta por usuario en Roles de Páginas.
+  - **Editar** cambia todo menos el número. **Eliminar** la saca del menú y borra sus permisos.
+  - Crear la página solo la pone en el menú: la pantalla se programa aparte. Backend:
+    `db/paginas_front_sql.sql` (a ejecutar a mano).
 
 ## Rendimiento
 

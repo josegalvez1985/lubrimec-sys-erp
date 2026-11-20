@@ -228,19 +228,48 @@ Modelo: `src/components/cargar-articulos-boton.tsx` — botón "Cargar artículo
 
 1. Implementar el componente (ej. `src/components/<tabla>-view.tsx`).
 2. Conocer el `page_id` de esa página en APEX (app 86972).
-3. Agregar el import y una línea al mapa `VISTAS` en `home.tsx`:
+3. Agregar una línea al mapa `VISTAS` en **`src/lib/vistas.tsx`** (lazy, ver arriba):
    ```tsx
-   const VISTAS: Record<number, () => ReactElement> = {
-     6: () => <MarcasView />, // Marcas
-     // <page_id>: () => <NuevaView />,
+   export const VISTAS: Record<number, ComponentType> = {
+     6: vista(() => import("@/components/marcas-view"), "MarcasView"), // Marcas
+     // <page_id>: vista(() => import("@/components/nueva-view"), "NuevaView"),
    };
    ```
    Con eso la entrada del menú y su acceso rápido abren el componente automáticamente.
    No hay que tocar el sidebar ni el endpoint: el menú se arma solo desde la respuesta.
-   Páginas ya con vista propia (referencia de `page_id`): 24 Códigos de Barras, 27
-   Artículos-Proveedores, 2 Personas, 6 Marcas, 117 WhatsApp, etc. (ver el mapa completo).
-4. **Ícono:** antes de agregar el `page_id` a `ICONO_PAGINA`, verificar que no exista ya
-   (muchos están precargados); una key duplicada rompe la compilación (TS1117 — pasó con la 81).
+4. **Ícono:** antes de agregar el `page_id` a `ICONO_PAGINA` (`home.tsx`), verificar que no
+   exista ya (muchos están precargados); una key duplicada rompe la compilación (TS1117 — pasó
+   con la 81).
+
+**Página que no existe en el APEX** (modelo: Agenda de Citas, pág 121). El menú es **híbrido**:
+`menu/paginas` devuelve las páginas del APEX (página + entrada en la lista de navegación + permiso)
+**más** las de la tabla `PAGINAS_FRONT`, con el mismo permiso de `ROLES_PAGINAS`
+(`puede_consultar = 'S'`). Una página nueva **no se crea en el APEX**:
+
+1. Darla de alta en **Páginas del Menú (pág 122)**, solo JOSEG: número (propone el primero
+   libre después del mayor del APEX o de las propias, y rechaza uno del APEX), título, texto en el
+   menú, categoría (combo con las del menú o una nueva; si no coincide sale como grupo propio) y
+   quién la ve (solo yo / todos). Los permisos después se ajustan en Roles de Páginas (pág 37),
+   donde la página ya aparece en el combo.
+2. Implementar el componente y registrarlo en `vistas.tsx` y, si hace falta, en `ICONO_PAGINA`
+   (pasos de arriba). Hasta entonces la página abre el placeholder "en construcción"; la columna
+   "Pantalla" de la 122 lo muestra como **Pendiente** (lee `VISTAS` de `vistas.tsx`).
+
+Las dos primeras (121 Agenda de Citas, categoría Ventas; 122 Páginas del Menú, categoría
+Informática) se siembran en `db/paginas_front_sql.sql`, porque la 122 no puede crearse a sí misma.
+Esos bloques solo insertan si no existen: para cambiarlas después, desde la 122 o con UPDATE.
+
+- **Categoría:** se compara **sin mayúsculas, espacios ni acentos** con las del menú, igual en
+  el backend (`TRANSLATE(UPPER(TRIM(x)), 'ÁÉÍÓÚÜ', 'AEIOUU')`) y en el front (`normalizar` de
+  `paginas-front-view.tsx`: `normalize("NFD")` + quitar `̀-ͯ`). Si coincide, el
+  formulario guarda el nombre exacto del menú. El sidebar agrupa por texto exacto, así que una
+  categoría escrita distinto sin esta normalización abriría un grupo duplicado.
+- **Gana el APEX:** si una página está en las dos fuentes, la fila de `PAGINAS_FRONT` se ignora,
+  así que lo que ya andaba no cambia. Para sacarla del menú sin borrar nada: interruptor "En el
+  menú" (`activa = 'N'`).
+- **Permisos de la 122:** `puede_editar` viene del GET (el backend decide con el usuario del
+  token); el front solo esconde los botones. Detalle del backend en `db/GUIA_ENDPOINTS.md`,
+  sección "Menú híbrido".
 
 ### CRUD con FK: selector con buscador (modelos: `codigos-barras-view`, `articulos-proveedores-view`)
 
@@ -1039,6 +1068,30 @@ Para ver una vista con datos de ejemplo sin ORDS ni login (capturas en claro/osc
 - **Ticks del eje Y en recharts:** con el `tick` por defecto un nombre largo se parte en dos
   renglones y se corta igual; para nombres de artículo usar un `tick` propio con un solo `<text>`
   recortado (mayúsculas ≈ 7 px por letra a 11 px de fuente) y el nombre completo en el tooltip.
+
+## Agenda semanal (modelo: `agenda-citas-view.tsx`, pág 121)
+
+Para datos con fecha que se trabajan **por día** (citas, visitas), en vez de una grilla:
+
+- **Semana de lunes a domingo** derivada del día elegido (`lunesDe`), y la consulta pide solo esa
+  semana (`desde`/`hasta` en la `queryKey`: cambian por clic, no por tecla). El listado completo
+  va en otra pestaña con `DataTable` y se consulta recién al abrirla (`enabled`).
+- **Fechas locales, nunca `toISOString()`**: en Paraguay (UTC-3) después de las 21:00 devuelve el
+  día siguiente. Helpers `aIso` / `deIso` / `sumarDias` arman y leen `YYYY-MM-DD` con la fecha
+  local.
+- **Tira de días** (`grid-cols-7`, entra en 360 px): día elegido con `bg-gradient-primary`, hoy
+  con el número en `text-primary`, puntitos por cantidad (hasta 3 y un `+`) y `aria-pressed`.
+  La cantidad va en el `aria-label`, no en un número visible.
+- **Línea del día:** hora a la izquierda en `font-display tabular-nums`, tarjeta a la derecha
+  (botón entero, abre el detalle). Sin hora al final. Si es hoy, una marca "Ahora" (se refresca
+  cada minuto) separa lo pasado, que se apaga, de lo que viene.
+- **Aviso de choque, sin bloquear:** misma hora el mismo día → etiqueta "Mismo horario" en la
+  tarjeta y un aviso ámbar en el formulario, calculado sobre lo ya cargado (sin consulta extra).
+- **Modal con buscador como primer campo:** `onOpenAutoFocus={(e) => e.preventDefault()}` en el
+  `DialogContent`; si no, Radix enfoca el `BuscadorSelect`, la lista se abre sola y en el celular
+  aparece el teclado tapando el formulario.
+- La LOV de clientes reusa `buscarClientesPOS`, que arma el nombre como `NOMBRE-RUC`; si el
+  documento ya va en la segunda línea, sacar ese sufijo para mostrar (`nombreCliente`).
 
 ## Gotchas de UI
 

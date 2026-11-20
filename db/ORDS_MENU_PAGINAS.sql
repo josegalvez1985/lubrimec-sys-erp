@@ -7,7 +7,9 @@
 --
 --   GET /ords/josegalvez/lubrimec/menu/paginas?app_id=:n&app_user=:u  -> paginas del usuario
 --
--- Ejecutar como el esquema JOSEGALVEZ. Requiere PKG_AUTH_LUBRIMEC.
+-- Ejecutar como el esquema JOSEGALVEZ. Requiere PKG_AUTH_LUBRIMEC y la tabla
+-- PAGINAS_FRONT (paginas_front_sql.sql, ejecutarlo ANTES: sin la tabla el menu
+-- responde error). Menu hibrido: paginas del APEX + paginas de PAGINAS_FRONT.
 --------------------------------------------------------------------------------
 
 BEGIN
@@ -100,7 +102,16 @@ BEGIN
     -- entry_text y oculta categorias por nombre. Una version vieja de este
     -- archivo escribia categoria_text/categoria_seq/pagina_seq; al re-ejecutarla
     -- el front no encontraba parent_entry_text y metia todo en "General".
+    --
+    -- MENU HIBRIDO: "apex" es la query de siempre (sin cambios). "front" suma las
+    -- paginas de PAGINAS_FRONT (paginas que no existen en el APEX; ver
+    -- paginas_front_sql.sql) con el mismo permiso de ROLES_PAGINAS. Si una pagina
+    -- ya sale por "apex", la de PAGINAS_FRONT se ignora. "categorias" son las
+    -- entradas padre de la lista del APEX: si la categoria de PAGINAS_FRONT
+    -- coincide (sin mayusculas, espacios ni acentos) toma su nombre exacto y su orden, asi
+    -- el sidebar la agrupa con las paginas del APEX; si no, va al final.
     FOR r IN (
+      WITH apex AS (
         SELECT b.page_title,
                b.application_id,
                b.page_id,
@@ -132,7 +143,48 @@ BEGIN
                     END) = TO_CHAR(b.page_id)
            AND cat.list_entry_id (+) = c.list_entry_parent_id
            AND NVL(a.puede_consultar, 'N') = 'S'
-         ORDER BY NVL(cat.display_sequence, 0), cat.entry_text, NVL(c.display_sequence, 0), b.page_title
+      ),
+      categorias AS (
+        SELECT TRANSLATE(UPPER(TRIM(k.entry_text)), 'ÁÉÍÓÚÜ', 'AEIOUU')   clave,
+               MIN(k.entry_text)           nombre,
+               MIN(k.display_sequence)     seq
+          FROM APEX_APPLICATION_LIST_ENTRIES k
+         WHERE k.application_id = TO_NUMBER(l_app_id)
+           AND EXISTS (SELECT 1
+                         FROM APEX_APPLICATION_LIST_ENTRIES h
+                        WHERE h.application_id = k.application_id
+                          AND h.list_entry_parent_id = k.list_entry_id)
+         GROUP BY TRANSLATE(UPPER(TRIM(k.entry_text)), 'ÁÉÍÓÚÜ', 'AEIOUU')
+      ),
+      front AS (
+        SELECT f.page_title,
+               f.app_id                                  application_id,
+               f.page_id,
+               NVL(a.estadistica_user, 0)                estadistica_user,
+               NVL(f.entry_text, f.page_title)           entry_text,
+               NVL(k.nombre, f.categoria)                parent_entry_text,
+               CAST(NULL AS NUMBER)                      list_entry_id,
+               CAST(NULL AS NUMBER)                      list_entry_parent_id,
+               COALESCE(k.seq, f.seq_categoria, 9999)    seq_categoria,
+               NVL(f.seq_pagina, 0)                      seq_pagina
+          FROM paginas_front f
+          JOIN roles_paginas a
+            ON a.app_id = f.app_id
+           AND a.app_page_id = f.page_id
+          LEFT JOIN categorias k
+            ON k.clave = TRANSLATE(UPPER(TRIM(f.categoria)), 'ÁÉÍÓÚÜ', 'AEIOUU')
+         WHERE f.app_id = TO_NUMBER(l_app_id)
+           AND a.app_user_id = l_app_user
+           AND NVL(a.puede_consultar, 'N') = 'S'
+           AND f.activa = 'S'
+           AND NOT EXISTS (SELECT 1 FROM apex x WHERE x.page_id = f.page_id)
+      )
+      SELECT * FROM (
+        SELECT * FROM apex
+        UNION ALL
+        SELECT * FROM front
+      )
+      ORDER BY seq_categoria, parent_entry_text, seq_pagina, page_title
     ) LOOP
         APEX_JSON.OPEN_OBJECT;
         APEX_JSON.WRITE('page_title', r.page_title);

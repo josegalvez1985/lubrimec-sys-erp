@@ -35,6 +35,8 @@ import {
   Store,
   ShoppingBag,
   CalendarCheck,
+  CalendarClock,
+  LayoutList,
   ArrowDownUp,
   ListChecks,
   PackageSearch,
@@ -182,6 +184,8 @@ const ICONO_PAGINA: Record<number, LucideIcon> = {
   120: ScrollText, // Logs de Mensajes
   117: MessageSquare, // Mensajes a Whatsapp
   50: Building2, // Bancos
+  121: CalendarClock, // Agenda de Citas
+  122: LayoutList, // Páginas del Menú
 };
 
 // Match por palabra clave del título (fallback cuando el page_id no está en el mapa).
