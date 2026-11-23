@@ -3043,6 +3043,10 @@ export type PlanillaInventario = {
   cod_barra: string | null;
   fecha_ultima_compra: string | null; // YYYY-MM-DD
   tiene_foto: number; // 1 | 0
+  // Marca del artículo (filtro por botones). Opcionales: ORDS omite las claves
+  // NULL y una BD sin la versión nueva del paquete no las manda.
+  id_marca?: number | null;
+  marca?: string | null;
 };
 
 export async function listarPlanillaInventarios(

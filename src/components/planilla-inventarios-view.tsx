@@ -84,7 +84,23 @@ export function PlanillaInventariosView() {
     });
   }, [qc]);
 
-  const filas = data ?? [];
+  const filas = useMemo(() => data ?? [], [data]);
+
+  // Filtro Marca en botones (single-select: reclic vuelve a "todas"). Las marcas
+  // salen de los conteos abiertos; si la BD todavía no manda `marca`, la lista
+  // queda vacía y el filtro no se muestra (la grilla sigue como antes).
+  const [marcaSel, setMarcaSel] = useState<string | null>(null);
+  const marcas = useMemo(() => {
+    const s = new Set<string>();
+    for (const r of filas) if (r.marca) s.add(r.marca);
+    return [...s].sort((a, b) => a.localeCompare(b));
+  }, [filas]);
+  // Si la marca elegida ya no está entre los conteos abiertos, no filtra.
+  const marcaActiva = marcaSel && marcas.includes(marcaSel) ? marcaSel : null;
+  const filasFiltradas = useMemo(
+    () => (marcaActiva ? filas.filter((r) => r.marca === marcaActiva) : filas),
+    [filas, marcaActiva],
+  );
 
   const COLUMNAS: Column<PlanillaInventario>[] = [
     {
@@ -146,6 +162,7 @@ export function PlanillaInventariosView() {
         <div>
           <h2 className="font-display text-xl font-bold">Planilla para inventarios</h2>
           <p className="text-sm text-muted-foreground">
+            {marcaActiva && `${filasFiltradas.length} de `}
             {filas.length} {filas.length === 1 ? "conteo abierto" : "conteos abiertos"}
           </p>
         </div>
@@ -173,10 +190,43 @@ export function PlanillaInventariosView() {
           </p>
         </div>
       ) : (
-        <div className="p-4 sm:p-5">
+        <div className="space-y-4 p-4 sm:p-5">
+          {marcas.length > 0 && (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-sm font-semibold">Marca</p>
+                {marcaActiva && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 text-muted-foreground"
+                    onClick={() => setMarcaSel(null)}
+                  >
+                    <X className="mr-1 h-4 w-4" />
+                    Limpiar
+                  </Button>
+                )}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {marcas.map((m) => (
+                  <Button
+                    key={m}
+                    type="button"
+                    size="sm"
+                    variant={marcaActiva === m ? "default" : "outline"}
+                    aria-pressed={marcaActiva === m}
+                    onClick={() => setMarcaSel(marcaActiva === m ? null : m)}
+                  >
+                    {m}
+                  </Button>
+                ))}
+              </div>
+            </div>
+          )}
           <DataTable
             columns={COLUMNAS}
-            rows={filas}
+            rows={filasFiltradas}
             getRowId={(r) => r.id_inventario}
             initialSort={{ key: "cantidad_fisica", dir: "asc" }}
             exportName="planilla-inventarios"

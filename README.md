@@ -541,7 +541,8 @@ mismo permiso de Roles de Páginas. Las páginas propias se dan de alta desde **
       **PDF** con KPIs, los gráficos y la tabla. Si hay conteos en más de una moneda aparece un
       selector (no se suman monedas distintas).
 - **Planilla para inventarios** (page_id 112/113/115) — conteos **abiertos** de `INVENTARIO`.
-  "Crear Planilla" (pág 113) genera conteos masivos por Rubro/Marca/Viscosidad (LOVs en cascada
+  Filtro **Marca en botones** sobre la grilla (uno a la vez; reclic o "Limpiar" vuelve a todas);
+  si la BD todavía no manda la marca, el filtro no aparece. "Crear Planilla" (pág 113) genera conteos masivos por Rubro/Marca/Viscosidad (LOVs en cascada
   derivadas de los artículos pendientes según la fecha del parámetro `FECHA_INVENTARIO`). El modal
   Cantidad (pág 115) edita la cantidad física y permite **tomar una foto** (cámara trasera,
   compresión a 600px JPEG ≤100KB) que se sube como **binario crudo** (`PUT

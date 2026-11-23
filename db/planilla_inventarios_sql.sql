@@ -5,7 +5,8 @@
 -- PKG_COMPRAS (fn_fecha_ultima_compra) y fn_parametro.
 --
 -- LISTAR: conteos ABIERTOS de INVENTARIO (NVL(cerrado,'N') <> 'S') con la fecha
--- de ultima compra; el filtrado es 100% en el front.
+-- de ultima compra y la marca del articulo (filtro por botones de Marca); el
+-- filtrado es 100% en el front.
 --
 -- PENDIENTES (LOVs del modal 113): artículos con estado 'A' y sin inventario o
 -- con fecha_ultimo_inventario < fecha de referencia; devuelve las ternas
@@ -114,11 +115,16 @@ CREATE OR REPLACE PACKAGE BODY PKG_PLANILLA_INV_LUBRIMEC AS
                i.cod_barra,
                TO_CHAR(pkg_compras.fn_fecha_ultima_compra(i.id_articulo, i.cod_empresa),
                        'YYYY-MM-DD') AS fecha_ultima_compra,
-               CASE WHEN DBMS_LOB.GETLENGTH(i.foto) > 0 THEN 1 ELSE 0 END AS tiene_foto
+               CASE WHEN DBMS_LOB.GETLENGTH(i.foto) > 0 THEN 1 ELSE 0 END AS tiene_foto,
+               a.id_marca,
+               ma.descripcion AS marca
           FROM inventario i
           LEFT JOIN articulos a
                  ON a.cod_empresa = i.cod_empresa
                 AND a.id_articulo = i.id_articulo
+          LEFT JOIN marcas ma
+                 ON ma.cod_empresa = a.cod_empresa
+                AND ma.id_marca = a.id_marca
          WHERE i.cod_empresa = p_cod_empresa
            AND NVL(i.cerrado, 'N') <> 'S'
          ORDER BY i.cantidad_fisica, pkg_compras.fn_fecha_ultima_compra(i.id_articulo, i.cod_empresa) DESC
@@ -133,6 +139,8 @@ CREATE OR REPLACE PACKAGE BODY PKG_PLANILLA_INV_LUBRIMEC AS
       APEX_JSON.WRITE('cod_barra', r.cod_barra);
       APEX_JSON.WRITE('fecha_ultima_compra', r.fecha_ultima_compra);
       APEX_JSON.WRITE('tiene_foto', r.tiene_foto);
+      APEX_JSON.WRITE('id_marca', r.id_marca);
+      APEX_JSON.WRITE('marca', r.marca);
       APEX_JSON.CLOSE_OBJECT;
     END LOOP;
     APEX_JSON.CLOSE_ARRAY;
