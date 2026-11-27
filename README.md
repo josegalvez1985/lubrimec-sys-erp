@@ -502,9 +502,16 @@ mismo permiso de Roles de Páginas. Las páginas propias se dan de alta desde **
 - **Ajustar Inventarios** (page_id 87/88) — último conteo por artículo con costo último y
   diferencia; facetas Cerrado/Diferencia/Rubro/Marca + Total Costo. El modal Aplicar (pág 88)
   genera un **comprobante de ajuste AJS-E** (`COMPRAS_CABECERA`+`DETALLE`) en una transacción
-  atómica, cierra el conteo y marca `fecha_ultimo_inventario`; botón "Ajustar Diferencias 0"
-  cierra en lote los conteos sin diferencia. Muestra la foto del conteo (endpoint público
-  `inventario/:id/foto`). Backend: `db/ajustar_inventarios_sql.sql`.
+  atómica, cierra el conteo y marca `fecha_ultimo_inventario`; el modal muestra antes físico,
+  sistema, diferencia y el efecto ("se descuentan N u. · ₲ X"). Botón secundario "Cerrar
+  conteos sin diferencia (N)" cierra en lote los conteos **contados** sin diferencia. Un
+  conteo de planilla **todavía sin contar** (campo `contado = 'N'`) se ve "Pendiente", no se
+  puede ajustar (409) ni suma en los totales: su diferencia sería todo el stock. Un conteo
+  **cerrado no se puede volver a ajustar**
+  (ya movió el stock; el modal lo avisa y el backend responde 409): para corregir, cargar un
+  conteo nuevo. Muestra la foto del conteo (endpoint público `inventario/:id/foto`). Backend:
+  `db/ajustar_inventarios_sql.sql`; el trigger que congela la diferencia al cerrar está en
+  `db/trg_existencia_inventario_sql.sql`.
 - **Parámetros** (page_id 89/90) — CRUD de `PARAMETROS` (parámetro/valor/observación);
   parámetro y valor se guardan en MAYÚSCULAS. Backend: `db/parametros_sql.sql`.
 - **Conteo de Efectivo** (page_id 85/86) — CRUD de `CONTEO_EFECTIVO` (`total = valor × cantidad`).
@@ -546,7 +553,12 @@ mismo permiso de Roles de Páginas. Las páginas propias se dan de alta desde **
   derivadas de los artículos pendientes según la fecha del parámetro `FECHA_INVENTARIO`). El modal
   Cantidad (pág 115) edita la cantidad física y permite **tomar una foto** (cámara trasera,
   compresión a 600px JPEG ≤100KB) que se sube como **binario crudo** (`PUT
-  planilla-inventarios/:id/foto`); muestra además la imagen del artículo.
+  planilla-inventarios/:id/foto`); muestra además la imagen del artículo. Al guardar se
+  actualiza solo esa fila (no se vuelve a pedir toda la planilla); la planilla se consulta
+  entera al entrar o volver a la pestaña. Para contar se toca el **nombre del artículo**, y
+  "Guardar y siguiente" pasa al próximo pendiente. Crear Planilla deja la cantidad **vacía
+  (pendiente)** en vez de 0, así "no contado" no se confunde con "contado 0": la grilla marca
+  "Pendiente" y muestra "X de Y contados" (con la base anterior, que insertaba 0, no aparece).
   Backend: `db/planilla_inventarios_sql.sql`.
 - **Sortear** (page_id 108) — sorteo de teléfonos de `VENTAS_CABECERA` en un rango de fechas
   (cada venta = una participación). Animación de 10 s con números enmascarados (`••••9999`) y

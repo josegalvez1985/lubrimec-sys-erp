@@ -1,3 +1,4 @@
+import { coincide as coincideTexto, tokensBusqueda } from "@/lib/busqueda";
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { CircleDollarSign, Search, X } from "lucide-react";
@@ -71,11 +72,11 @@ export function CostoInventariosView() {
   const filas = useMemo(() => data?.data ?? [], [data]);
 
   const filasFiltradas = useMemo(() => {
-    const q = busqueda.trim().toLowerCase();
+    const q = tokensBusqueda(busqueda);
     return filas.filter((r) => {
-      if (q) {
-        const txt = `${r.descripcion ?? ""} ${r.codigo_oem ?? ""}`.toLowerCase();
-        if (!txt.includes(q)) return false;
+      if (q.length > 0) {
+        const txt = `${r.descripcion ?? ""} ${r.codigo_oem ?? ""}`;
+        if (!coincideTexto(txt, q)) return false;
       }
       if (cerradoSel != null && (r.cerrado ?? "N") !== cerradoSel) return false;
       if (difSel != null && (r.con_diferencia ?? "No") !== difSel) return false;
@@ -237,6 +238,7 @@ export function CostoInventariosView() {
               <DataTable
                 columns={COLUMNAS}
                 rows={filasFiltradas}
+                globalSearch={false}
                 getRowId={(r) => r.id_inventario}
                 exportName="costo-inventarios"
                 initialSort={{ key: "fecha", dir: "desc" }}

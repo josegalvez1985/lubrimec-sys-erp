@@ -1,3 +1,4 @@
+import { coincide as coincideTexto, tokensBusqueda } from "@/lib/busqueda";
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Banknote, Search, X } from "lucide-react";
@@ -44,12 +45,10 @@ export function ComisionesBancoView() {
   type Fila = (typeof filas)[number];
 
   const coincide = (r: Fila, ignora: "anio" | "mes" | "forma" | null) => {
-    const q = busqueda.trim().toLowerCase();
+    const q = tokensBusqueda(busqueda);
     if (
-      q &&
-      !`${r.forma_pago ?? ""} ${r.nro_transaccion ?? ""} ${r.observacion ?? ""}`
-        .toLowerCase()
-        .includes(q)
+      q.length > 0 &&
+      !coincideTexto(`${r.forma_pago ?? ""} ${r.nro_transaccion ?? ""} ${r.observacion ?? ""}`, q)
     )
       return false;
     if (ignora !== "anio" && anioSel.size > 0 && !anioSel.has(r.anio ?? "")) return false;
@@ -205,6 +204,7 @@ export function ComisionesBancoView() {
             <DataTable
               columns={COLUMNAS}
               rows={filasFiltradas}
+              globalSearch={false}
               getRowId={(r) => r.id_cobro}
               exportName="comisiones-banco"
               initialSort={{ key: "fecha", dir: "desc" }}

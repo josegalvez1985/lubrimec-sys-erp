@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useQuery, useMutation, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Camera, ClipboardPen, Loader2, Plus, X } from "lucide-react";
+import { Camera, ClipboardPen, Loader2, Plus, Search, X } from "lucide-react";
+import { tokensBusqueda, coincide } from "@/lib/busqueda";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -97,41 +98,83 @@ export function PlanillaInventariosView() {
   }, [filas]);
   // Si la marca elegida ya no está entre los conteos abiertos, no filtra.
   const marcaActiva = marcaSel && marcas.includes(marcaSel) ? marcaSel : null;
-  const filasFiltradas = useMemo(
-    () => (marcaActiva ? filas.filter((r) => r.marca === marcaActiva) : filas),
-    [filas, marcaActiva],
+  const [busqueda, setBusqueda] = useState("");
+  const tokens = useMemo(() => tokensBusqueda(busqueda), [busqueda]);
+
+  // Pendiente (cantidad_fisica null) vs contado: con la base vieja no hay nulls y
+  // no se muestra nada nuevo.
+  const hayPendientes = useMemo(() => filas.some((r) => r.cantidad_fisica == null), [filas]);
+  const contados = useMemo(
+    () => filas.filter((r) => r.cantidad_fisica != null).length,
+    [filas],
   );
+
+  // Orden inicial: los pendientes primero y después por cantidad ascendente. Es el
+  // orden en que "Guardar y siguiente" recorre la lista.
+  const filasFiltradas = useMemo(() => {
+    const base = filas.filter(
+      (r) =>
+        (!marcaActiva || r.marca === marcaActiva) &&
+        coincide(
+          `${r.id_inventario} ${r.id_articulo} ${r.articulo ?? ""} ${r.marca ?? ""}`,
+          tokens,
+        ),
+    );
+    return base.slice().sort((a, b) => {
+      const pa = a.cantidad_fisica == null ? 0 : 1;
+      const pb = b.cantidad_fisica == null ? 0 : 1;
+      if (pa !== pb) return pa - pb;
+      return (a.cantidad_fisica ?? 0) - (b.cantidad_fisica ?? 0);
+    });
+  }, [filas, marcaActiva, tokens]);
+
+  // Siguiente artículo de la lista visible; si hay pendientes, el próximo pendiente.
+  const siguienteDe = (id: number): PlanillaInventario | null => {
+    const i = filasFiltradas.findIndex((r) => r.id_inventario === id);
+    if (i < 0) return null;
+    for (let j = i + 1; j < filasFiltradas.length; j++) {
+      if (!hayPendientes || filasFiltradas[j].cantidad_fisica == null) return filasFiltradas[j];
+    }
+    return null;
+  };
 
   const COLUMNAS: Column<PlanillaInventario>[] = [
     {
       key: "id_inventario",
-      header: "ID",
+      header: "Conteo",
       num: true,
       accessor: (r) => r.id_inventario,
-      render: (r) => (
-        <button
-          type="button"
-          onClick={() => setAEditar(r)}
-          className="font-mono text-primary hover:underline"
-        >
-          {r.id_inventario}
-        </button>
-      ),
+      render: (r) => <span className="font-mono">{r.id_inventario}</span>,
       className: "w-24",
     },
     {
       key: "articulo",
       header: "Artículo",
       accessor: (r) => r.articulo ?? "",
-      render: (r) => r.articulo || "—",
+      render: (r) => (
+        <button
+          type="button"
+          onClick={() => setAEditar(r)}
+          className="min-h-11 text-left font-medium text-primary hover:underline md:min-h-0"
+        >
+          {r.articulo || "—"}
+        </button>
+      ),
       hideable: false,
     },
     {
       key: "cantidad_fisica",
       header: "Cantidad",
       num: true,
-      accessor: (r) => r.cantidad_fisica ?? 0,
-      render: (r) => fmtNum(r.cantidad_fisica),
+      accessor: (r) => r.cantidad_fisica,
+      render: (r) =>
+        r.cantidad_fisica == null ? (
+          <Badge variant="outline" className="text-muted-foreground">
+            Pendiente
+          </Badge>
+        ) : (
+          fmtNum(r.cantidad_fisica)
+        ),
       className: "w-28",
     },
     {
@@ -162,8 +205,9 @@ export function PlanillaInventariosView() {
         <div>
           <h2 className="font-display text-xl font-bold">Planilla para inventarios</h2>
           <p className="text-sm text-muted-foreground">
-            {marcaActiva && `${filasFiltradas.length} de `}
+            {(marcaActiva || tokens.length > 0) && `${filasFiltradas.length} de `}
             {filas.length} {filas.length === 1 ? "conteo abierto" : "conteos abiertos"}
+            {hayPendientes && ` · ${contados} de ${filas.length} contados`}
           </p>
         </div>
         <Button
@@ -224,11 +268,22 @@ export function PlanillaInventariosView() {
               </div>
             </div>
           )}
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={busqueda}
+              onChange={(e) => setBusqueda(e.target.value)}
+              placeholder="Buscar artículo, código o marca..."
+              aria-label="Buscar en la planilla"
+              className="pl-10"
+            />
+          </div>
           <DataTable
             columns={COLUMNAS}
             rows={filasFiltradas}
             getRowId={(r) => r.id_inventario}
-            initialSort={{ key: "cantidad_fisica", dir: "asc" }}
+            globalSearch={false}
+            cargando={isLoading}
             exportName="planilla-inventarios"
           />
         </div>
@@ -245,10 +300,28 @@ export function PlanillaInventariosView() {
 
       <CantidadDialog
         item={aEditar}
+        haySiguiente={aEditar ? siguienteDe(aEditar.id_inventario) !== null : false}
         onClose={() => setAEditar(null)}
-        onSaved={() => {
-          qc.invalidateQueries({ queryKey: ["planilla-inventarios"] });
-          setAEditar(null);
+        onSaved={(id, cantidad, conFoto, irAlSiguiente) => {
+          const siguiente = irAlSiguiente ? siguienteDe(id) : null;
+          // Solo cambia esa fila: se corrige en memoria con lo que se acaba de
+          // guardar en vez de volver a pedir toda la planilla (contar es tocar
+          // fila tras fila). La fecha la pone el trigger con SYSDATE. Al volver a
+          // la pantalla o a la pestaña la planilla se consulta entera como siempre.
+          const hoy = new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD local
+          qc.setQueryData<PlanillaInventario[]>(["planilla-inventarios", COD_EMPRESA], (old) =>
+            old?.map((r) =>
+              r.id_inventario === id
+                ? {
+                    ...r,
+                    cantidad_fisica: cantidad,
+                    fecha: hoy,
+                    tiene_foto: conFoto ? 1 : r.tiene_foto,
+                  }
+                : r,
+            ),
+          );
+          setAEditar(siguiente);
         }}
       />
     </div>
@@ -534,12 +607,19 @@ function CrearPlanillaDialog({
 
 function CantidadDialog({
   item,
+  haySiguiente,
   onClose,
   onSaved,
 }: {
   item: PlanillaInventario | null;
+  haySiguiente: boolean;
   onClose: () => void;
-  onSaved: () => void;
+  onSaved: (
+    idInventario: number,
+    cantidad: number,
+    conFoto: boolean,
+    irAlSiguiente: boolean,
+  ) => void;
 }) {
   const open = item !== null;
   const [cantidad, setCantidad] = useState<number | null>(null);
@@ -593,8 +673,12 @@ function CantidadDialog({
     reader.readAsDataURL(file);
   }
 
-  async function onSubmit(e: FormEvent) {
+  function onSubmit(e: FormEvent) {
     e.preventDefault();
+    void guardar(false);
+  }
+
+  async function guardar(irAlSiguiente: boolean) {
     if (!item) return;
     setError("");
     if (cantidad == null) {
@@ -608,7 +692,7 @@ function CantidadDialog({
         await subirFotoInventario(item.id_inventario, COD_EMPRESA, fotoNueva);
       }
       toast.success("Conteo guardado");
-      onSaved();
+      onSaved(item.id_inventario, cantidad, fotoNueva !== null, irAlSiguiente);
     } catch (err) {
       setError(err instanceof Error ? err.message : "No se pudo guardar");
     } finally {
@@ -712,13 +796,33 @@ function CantidadDialog({
               Cancelar
             </Button>
             <Button
-              type="submit"
+              type={haySiguiente ? "button" : "submit"}
+              variant={haySiguiente ? "outline" : "default"}
               disabled={saving}
-              className="bg-gradient-primary font-semibold text-primary-foreground shadow-glow hover:opacity-95"
+              onClick={haySiguiente ? () => void guardar(false) : undefined}
+              className={
+                haySiguiente
+                  ? undefined
+                  : "bg-gradient-primary font-semibold text-primary-foreground shadow-glow hover:opacity-95"
+              }
             >
               {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Guardar
             </Button>
+            {haySiguiente && (
+              <Button
+                type="submit"
+                disabled={saving}
+                className="bg-gradient-primary font-semibold text-primary-foreground shadow-glow hover:opacity-95"
+                onClick={(e) => {
+                  e.preventDefault();
+                  void guardar(true);
+                }}
+              >
+                {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Guardar y siguiente
+              </Button>
+            )}
           </DialogFooter>
         </form>
       </DialogContent>

@@ -1,4 +1,5 @@
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
+import { toast } from "sonner";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Plus, Eye, Pencil, Trash2, Loader2, Boxes, Barcode, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -88,7 +89,7 @@ export function InventarioView() {
   const COLUMNAS: Column<InventarioRow>[] = [
     {
       key: "id_inventario",
-      header: "ID Inventario",
+      header: "N° de conteo",
       num: true,
       accessor: (r) => r.id_inventario,
       render: (r) => (
@@ -100,7 +101,7 @@ export function InventarioView() {
     },
     {
       key: "id_articulo",
-      header: "ID",
+      header: "Código",
       num: true,
       accessor: (r) => r.id_articulo,
       className: "w-20",
@@ -123,8 +124,13 @@ export function InventarioView() {
       key: "cantidad_fisica",
       header: "Cantidad Física",
       num: true,
-      accessor: (r) => r.cantidad_fisica ?? 0,
-      render: (r) => fmtNum(r.cantidad_fisica),
+      accessor: (r) => r.cantidad_fisica,
+      render: (r) =>
+        r.cantidad_fisica == null ? (
+          <span className="text-muted-foreground">Pendiente</span>
+        ) : (
+          fmtNum(r.cantidad_fisica)
+        ),
     },
     {
       key: "cantidad_sistema",
@@ -193,6 +199,7 @@ export function InventarioView() {
             rows={filas}
             getRowId={(r) => r.id_inventario}
             initialSort={{ key: "id_inventario", dir: "desc" }}
+            cargando={isLoading}
             exportName="inventario"
             actions={(r) => (
               <div className="flex items-center justify-end gap-1">
@@ -232,9 +239,9 @@ export function InventarioView() {
       <InventarioDialog
         state={modal}
         onClose={() => setModal({ mode: "closed" })}
-        onSaved={() => {
+        onSaved={(cerrar) => {
           qc.invalidateQueries({ queryKey: ["inventario"] });
-          setModal({ mode: "closed" });
+          if (cerrar) setModal({ mode: "closed" });
         }}
       />
 
@@ -278,7 +285,7 @@ function InventarioDialog({
 }: {
   state: ModalState;
   onClose: () => void;
-  onSaved: () => void;
+  onSaved: (cerrar: boolean) => void;
 }) {
   const open = state.mode !== "closed";
   const isView = state.mode === "view";
@@ -297,6 +304,7 @@ function InventarioDialog({
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [buscandoBarra, setBuscandoBarra] = useState(false);
+  const ultimaBarra = useRef("");
 
   // Sincroniza el form al abrir según el ítem seleccionado.
   const [lastKey, setLastKey] = useState("");
@@ -309,6 +317,7 @@ function InventarioDialog({
     setIdArticulo(item?.id_articulo ?? null);
     setArticuloLabel(item?.articulo ?? "");
     setCodBarra(item?.cod_barra ?? "");
+    ultimaBarra.current = "";
     setFecha(item?.fecha ?? hoyISO());
     setCantidadFisica(item?.cantidad_fisica ?? null);
     setError("");
@@ -316,22 +325,30 @@ function InventarioDialog({
 
   // Lector de barras: resuelve el código a su artículo (DA de la pág 59).
   async function resolverBarra() {
-    if (!codBarra.trim()) return;
+    const cod = codBarra.trim();
+    if (!cod || cod === ultimaBarra.current) return;
+    ultimaBarra.current = cod;
     setBuscandoBarra(true);
     setError("");
     try {
       const a = await articuloPorBarra(COD_EMPRESA, codBarra);
       setIdArticulo(a.id_articulo);
       setArticuloLabel(a.descripcion ?? "");
+      setTimeout(() => document.getElementById("cantidad_fisica")?.focus(), 0);
     } catch (err) {
+      ultimaBarra.current = "";
       setError(err instanceof Error ? err.message : "Código de barras no registrado");
     } finally {
       setBuscandoBarra(false);
     }
   }
 
-  async function onSubmit(e: FormEvent) {
+  function onSubmit(e: FormEvent) {
     e.preventDefault();
+    void guardar(false);
+  }
+
+  async function guardar(otro: boolean) {
     setError("");
     if (!idArticulo) {
       setError("Selecciona un artículo");
@@ -359,7 +376,21 @@ function InventarioDialog({
       } else {
         await crearInventario(input);
       }
-      onSaved();
+      toast.success(
+        state.mode === "edit"
+          ? "Conteo actualizado"
+          : `Conteo creado: ${articuloLabel || `artículo ${idArticulo}`}`,
+      );
+      if (otro) {
+        // Deja el modal abierto y limpio para el siguiente artículo.
+        setIdArticulo(null);
+        setArticuloLabel("");
+        setCodBarra("");
+        ultimaBarra.current = "";
+        setCantidadFisica(null);
+        setTimeout(() => document.getElementById("cod_barra")?.focus(), 0);
+      }
+      onSaved(!otro);
     } catch (err) {
       setError(err instanceof Error ? err.message : "No se pudo guardar");
     } finally {
@@ -396,7 +427,32 @@ function InventarioDialog({
         <form onSubmit={onSubmit} className="space-y-4">
           {isView && item && (
             <div className="text-sm text-muted-foreground">
-              ID Inventario: <span className="font-mono text-foreground">{item.id_inventario}</span>
+              N° de conteo: <span className="font-mono text-foreground">{item.id_inventario}</span>
+            </div>
+          )}
+
+          {!isView && (
+            <div className="space-y-2">
+              <Label htmlFor="cod_barra">Código de barras</Label>
+              <div className="relative">
+                <Barcode className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  id="cod_barra"
+                  autoFocus
+                  value={codBarra}
+                  onChange={(e) => setCodBarra(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      void resolverBarra();
+                    }
+                  }}
+                  onBlur={() => void resolverBarra()}
+                  placeholder="Escaneá o escribí el código y presioná Enter"
+                  disabled={saving || buscandoBarra}
+                  className="pl-10 font-mono"
+                />
+              </div>
             </div>
           )}
 
@@ -405,7 +461,7 @@ function InventarioDialog({
               <p className="text-sm font-semibold">Filtros del artículo</p>
 
               <div className="space-y-2">
-                <Label>¿El artículo es un Activo?</Label>
+                <Label>¿Bien de uso?</Label>
                 <div className="flex gap-2">
                   {(
                     [
@@ -430,13 +486,13 @@ function InventarioDialog({
 
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="space-y-2">
-                  <Label>Categoría</Label>
+                  <Label>Rubro</Label>
                   <div className="flex items-center gap-1">
                     <div className="min-w-0 flex-1">
                       <BuscadorSelect
                         value={rubro?.id_rubro ?? null}
                         label={rubro?.descripcion ?? ""}
-                        placeholder="Todas"
+                        placeholder="Todos"
                         emptyLabel="Sin resultados"
                         buscar={async (q) =>
                           filtrarLov(
@@ -459,7 +515,7 @@ function InventarioDialog({
                         size="icon"
                         className="h-8 w-8 shrink-0 text-muted-foreground"
                         onClick={() => setRubro(null)}
-                        aria-label="Quitar categoría"
+                        aria-label="Quitar rubro"
                       >
                         <X className="h-4 w-4" />
                       </Button>
@@ -505,28 +561,6 @@ function InventarioDialog({
                   </div>
                 </div>
               </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="cod_barra">Código de barras</Label>
-                <div className="relative">
-                  <Barcode className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                  <Input
-                    id="cod_barra"
-                    value={codBarra}
-                    onChange={(e) => setCodBarra(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault();
-                        void resolverBarra();
-                      }
-                    }}
-                    onBlur={() => void resolverBarra()}
-                    placeholder="Escanea o escribe y presiona Enter"
-                    disabled={saving || buscandoBarra}
-                    className="pl-10 font-mono"
-                  />
-                </div>
-              </div>
             </div>
           )}
 
@@ -544,8 +578,8 @@ function InventarioDialog({
                 titulo="Elegir artículo"
                 descripcion={
                   [
-                    esActivo ? `Activo: ${esActivo === "S" ? "Sí" : "No"}` : null,
-                    rubro ? `Categoría: ${rubro.descripcion ?? rubro.id_rubro}` : null,
+                    esActivo ? `Bien de uso: ${esActivo === "S" ? "Sí" : "No"}` : null,
+                    rubro ? `Rubro: ${rubro.descripcion ?? rubro.id_rubro}` : null,
                     marca ? `Marca: ${marca.descripcion ?? marca.id_marca}` : null,
                   ]
                     .filter(Boolean)
@@ -638,6 +672,16 @@ function InventarioDialog({
                   {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                   {state.mode === "edit" ? "Aplicar Cambios" : "Crear"}
                 </Button>
+                {state.mode === "create" && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={saving}
+                    onClick={() => void guardar(true)}
+                  >
+                    Guardar y otro
+                  </Button>
+                )}
               </>
             )}
           </DialogFooter>

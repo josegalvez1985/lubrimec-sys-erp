@@ -2978,6 +2978,9 @@ export type InventarioAjuste = {
   cantidad_sistema: number;
   cant_diferencia: number;
   cerrado: string; // 'S' | 'N'
+  // 'N' = conteo de planilla sin contar. Falta si la base no tiene la versión nueva
+  // de db/ajustar_inventarios_sql.sql: tratarlo como contado.
+  contado?: string;
   rubro: string | null;
   marca: string | null;
   es_activo: string | null;

@@ -10,6 +10,7 @@ import {
   ImageIcon,
   Loader2,
   Search,
+  Share2,
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -33,8 +34,10 @@ import {
 } from "@/components/ui/dialog";
 import { listarPedidosArticulos, type PedidoArticulo } from "@/lib/api";
 import { ArticuloImgModal } from "@/components/articulo-img-modal";
+import { coincide, tokensBusqueda } from "@/lib/busqueda";
 
 const COD_EMPRESA = 24;
+const PASO_FILAS = 50; // OEMs que se dibujan por tanda (mismo paso que el DataTable)
 
 const fmtN = (n: number | null | undefined) =>
   n == null ? "" : Math.round(n).toLocaleString("es-PY");
@@ -302,9 +305,9 @@ export function PedidosArticulosView() {
   // La búsqueda incluye las descripciones de los artículos del grupo: la columna
   // Artículo ya no está en la grilla, pero se tiene que poder buscar por nombre.
   const pasaTexto = useMemo(() => {
-    const q = searchInput.trim().toLowerCase();
+    const tokens = tokensBusqueda(searchInput);
     return (g: GrupoOem) => {
-      if (!q) return true;
+      if (tokens.length === 0) return true;
       // Incluye el código del proveedor y la descripción aunque no sean columnas
       // de la grilla: si no, se vuelven inencontrables desde el buscador.
       const texto = `${g.codigo_oem} ${g.rubro ?? ""} ${g.filas
@@ -312,8 +315,8 @@ export function PedidosArticulosView() {
           (f) =>
             `${f.articulo ?? ""} ${f.proveedor ?? ""} ${f.cod_proveedor ?? ""} ${f.marca ?? ""}`,
         )
-        .join(" ")}`.toLowerCase();
-      return texto.includes(q);
+        .join(" ")}`;
+      return coincide(texto, tokens);
     };
   }, [searchInput]);
 
@@ -377,6 +380,19 @@ export function PedidosArticulosView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [todos, facetas, pasaTexto, orden]);
 
+  // Se dibujan de a 50 OEMs ("Mostrar más"): dibujar todos de una trababa la
+  // pantalla. Facetas, búsqueda, orden y el pedido usan siempre TODOS los grupos.
+  // Cambiar filtros/búsqueda/orden vuelve a los primeros 50; un refetch no.
+  const [limite, setLimite] = useState(PASO_FILAS);
+  const claveLimite = `${searchInput}|${JSON.stringify(facetas)}|${orden.key}:${orden.dir}`;
+  const [claveAnterior, setClaveAnterior] = useState(claveLimite);
+  if (claveAnterior !== claveLimite) {
+    setClaveAnterior(claveLimite);
+    setLimite(PASO_FILAS);
+  }
+  const gruposDibujados = grupos.slice(0, limite);
+  const restantes = grupos.length - gruposDibujados.length;
+
   function toggleFaceta(clave: string, valor: string) {
     setFacetas((prev) => {
       const actuales = prev[clave] ?? [];
@@ -403,18 +419,30 @@ export function PedidosArticulosView() {
     });
   }
 
+  // Mientras se escribe se permite el campo vacío (se guarda como 0 y se muestra
+  // en blanco); el mínimo de 1 se aplica al salir del campo (normalizarCantidades).
   function setCantidad(f: PedidoArticulo, valor: string) {
-    const n = Math.max(1, Math.floor(Number(valor) || 1));
+    const n = valor === "" ? 0 : Math.max(0, Math.floor(Number(valor) || 0));
     setPedido((prev) => ({ ...prev, [filaKey(f)]: n }));
+  }
+
+  function normalizarCantidades() {
+    setPedido((prev) => {
+      if (!Object.values(prev).some((n) => n < 1)) return prev;
+      return Object.fromEntries(Object.entries(prev).map(([k, n]) => [k, Math.max(1, n)]));
+    });
   }
 
   const seleccionados = Object.keys(pedido).length;
 
   function limpiarPedido() {
-    // El toast avisa que pasó algo: el botón desaparece al vaciarse el pedido y
-    // sin aviso el clic se siente como que no hizo nada.
+    // El toast avisa que pasó algo y permite deshacerlo: el botón desaparece al
+    // vaciarse el pedido y un clic sin querer no tiene que perder la carga.
+    const previo = pedido;
     setPedido({});
-    toast.success(`Pedido vaciado (${seleccionados} línea${seleccionados === 1 ? "" : "s"})`);
+    toast.success(`Pedido vaciado (${seleccionados} línea${seleccionados === 1 ? "" : "s"})`, {
+      action: { label: "Deshacer", onClick: () => setPedido(previo) },
+    });
   }
 
   // Unidades pedidas de un OEM, sumando sus líneas. Con la faceta de proveedor o
@@ -422,7 +450,7 @@ export function PedidosArticulosView() {
   const unidadesPedidas = (g: GrupoOem) =>
     g.filas.reduce((a, f) => a + (pedido[filaKey(f)] ?? 0), 0);
 
-  async function copiarPedido() {
+  function armarTextoPedido(): { texto: string; cantidad: number } | null {
     // Se recorre `todos` (sin acotar por facetas): lo cargado sigue en el pedido
     // aunque después se cambie el filtro de la pantalla.
     const items = todos
@@ -434,7 +462,7 @@ export function PedidosArticulosView() {
     let total = 0;
     let sinCosto = 0;
     const lineas = items.map((f) => {
-      const cant = pedido[filaKey(f)];
+      const cant = Math.max(1, pedido[filaKey(f)]);
       const costo = f.costo_ultimo;
       let monto = "";
       if (costo == null) {
@@ -456,13 +484,34 @@ export function PedidosArticulosView() {
         .join(" ")
         .trim();
     });
-    if (lineas.length === 0) return;
+    if (lineas.length === 0) return null;
     const pie = `Total: ₲ ${fmtN(total)}${sinCosto > 0 ? ` (${sinCosto} sin costo)` : ""}`;
-    const texto = `Pedido:\n${lineas.join("\n")}\n\n${pie}`;
-    if (await copiarTexto(texto)) {
-      toast.success(`Pedido copiado (${lineas.length} artículo${lineas.length === 1 ? "" : "s"})`);
+    return { texto: `Pedido:\n${lineas.join("\n")}\n\n${pie}`, cantidad: lineas.length };
+  }
+
+  async function copiarPedido() {
+    const p = armarTextoPedido();
+    if (!p) return;
+    if (await copiarTexto(p.texto)) {
+      toast.success(`Pedido copiado (${p.cantidad} artículo${p.cantidad === 1 ? "" : "s"})`);
     } else {
       toast.error("No se pudo copiar");
+    }
+  }
+
+  // Solo en celulares/navegadores que lo soportan (el botón no se muestra si no).
+  const puedeCompartir = typeof navigator !== "undefined" && typeof navigator.share === "function";
+
+  async function compartirPedido() {
+    const p = armarTextoPedido();
+    if (!p) return;
+    try {
+      await navigator.share({ title: "Pedido", text: p.texto });
+    } catch (e) {
+      // Cancelar el diálogo del sistema no es un error.
+      if (!(e instanceof DOMException && e.name === "AbortError")) {
+        toast.error("No se pudo compartir");
+      }
     }
   }
 
@@ -523,7 +572,7 @@ export function PedidosArticulosView() {
 
       {/* Grilla */}
       <div className="min-w-0 flex-1 overflow-x-auto rounded-2xl border border-border bg-card shadow-elegant">
-        <div className="flex items-center gap-3 border-b border-border p-4">
+        <div className="flex flex-wrap items-center gap-3 border-b border-border p-4">
           <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary">
             <ClipboardList className="h-5 w-5" />
           </div>
@@ -548,6 +597,18 @@ export function PedidosArticulosView() {
             <Copy className="h-4 w-4" />
             Copiar pedido{seleccionados > 0 ? ` (${seleccionados})` : ""}
           </Button>
+          {puedeCompartir && (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={compartirPedido}
+              disabled={seleccionados === 0}
+              className="shrink-0 gap-2 sm:hidden"
+            >
+              <Share2 className="h-4 w-4" />
+              Compartir
+            </Button>
+          )}
           {/* Solo aparece si hay algo que limpiar, como el resto de los
               "Limpiar" del proyecto. */}
           {seleccionados > 0 && (
@@ -603,7 +664,7 @@ export function PedidosArticulosView() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {grupos.map((g) => (
+              {gruposDibujados.map((g) => (
                 <TableRow key={g.codigo_oem}>
                   {COLUMNAS.map((c) => (
                     <TableCell key={c.key} className={c.num ? "text-right tabular-nums" : ""}>
@@ -663,6 +724,20 @@ export function PedidosArticulosView() {
             </TableBody>
           </Table>
         )}
+        {restantes > 0 && (
+          <div className="flex flex-wrap items-center justify-center gap-2 p-3">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setLimite((l) => l + PASO_FILAS)}
+            >
+              Mostrar {Math.min(PASO_FILAS, restantes)} más
+            </Button>
+            <Button type="button" variant="ghost" onClick={() => setLimite(grupos.length)}>
+              Mostrar todos ({grupos.length})
+            </Button>
+          </div>
+        )}
         {query.isFetching && !query.isLoading && (
           <p className="flex items-center gap-2 p-2 text-xs text-muted-foreground">
             <Loader2 className="h-3 w-3 animate-spin" /> Actualizando...
@@ -675,7 +750,11 @@ export function PedidosArticulosView() {
         pedido={pedido}
         onPedir={toggleItem}
         onCantidad={setCantidad}
-        onClose={() => setDetalle(null)}
+        onCantidadListo={normalizarCantidades}
+        onClose={() => {
+          normalizarCantidades();
+          setDetalle(null);
+        }}
         onVerImagen={(id, titulo) => setImgArticulo({ id, titulo })}
       />
 
@@ -734,6 +813,7 @@ function DetalleOemModal({
   pedido,
   onPedir,
   onCantidad,
+  onCantidadListo,
   onClose,
   onVerImagen,
 }: {
@@ -741,6 +821,7 @@ function DetalleOemModal({
   pedido: Record<string, number>;
   onPedir: (f: PedidoArticulo, checked: boolean) => void;
   onCantidad: (f: PedidoArticulo, valor: string) => void;
+  onCantidadListo: () => void;
   onClose: () => void;
   onVerImagen: (id: string | null, titulo?: string) => void;
 }) {
@@ -859,8 +940,9 @@ function DetalleOemModal({
                           <Input
                             type="number"
                             min={1}
-                            value={pedido[filaKey(f)]}
+                            value={pedido[filaKey(f)] || ""}
                             onChange={(e) => onCantidad(f, e.target.value)}
+                            onBlur={onCantidadListo}
                             aria-label="Cantidad a pedir"
                             className="h-8 w-16 px-2"
                           />

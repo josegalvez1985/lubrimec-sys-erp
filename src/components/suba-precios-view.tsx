@@ -446,6 +446,7 @@ export function SubaPreciosView() {
             <DataTable
               columns={columnas}
               rows={filasFiltradas}
+              globalSearch={false}
               getRowId={(r) => claveFila.get(r) ?? r.id_precio}
               exportName="suba-precios"
               initialSort={{ key: "fecha", dir: "desc" }}

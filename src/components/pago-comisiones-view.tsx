@@ -1,3 +1,4 @@
+import { coincide as coincideTexto, tokensBusqueda } from "@/lib/busqueda";
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { HandCoins, Search, X } from "lucide-react";
@@ -36,12 +37,10 @@ export function PagoComisionesView() {
   const filas = useMemo(() => data?.comisiones ?? [], [data]);
 
   const coincide = (r: Comision, ignora: "semana" | "rubro" | "vendedor" | null) => {
-    const q = busqueda.trim().toLowerCase();
+    const q = tokensBusqueda(busqueda);
     if (
-      q &&
-      !`${r.descripcion ?? ""} ${r.mes_anio ?? ""} ${r.fec_comprobante_filtro ?? ""}`
-        .toLowerCase()
-        .includes(q)
+      q.length > 0 &&
+      !coincideTexto(`${r.descripcion ?? ""} ${r.mes_anio ?? ""} ${r.fec_comprobante_filtro ?? ""}`, q)
     )
       return false;
     if (ignora !== "semana" && semanaSel.size > 0 && !semanaSel.has(r.semana)) return false;
@@ -243,6 +242,7 @@ export function PagoComisionesView() {
             <DataTable
               columns={COLUMNAS}
               rows={filasFiltradas}
+              globalSearch={false}
               getRowId={(r) => `${r.fec_comprobante}-${r.descripcion}-${r.vendedor}`}
               exportName="pago-comisiones"
               initialSort={{ key: "fec_comprobante", dir: "desc" }}

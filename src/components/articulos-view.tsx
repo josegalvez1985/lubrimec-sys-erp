@@ -164,7 +164,6 @@ export function ArticulosView() {
       header: "",
       sortable: false,
       filterable: false,
-      hideable: false,
       className: "w-20",
       render: (r) =>
         r.tiene_imagen ? (
@@ -308,6 +307,7 @@ export function ArticulosView() {
             getRowId={(r) => r.id_articulo}
             initialSearch={consumirBusquedaInicial(4) ?? undefined}
             initialSort={{ key: "id_articulo", dir: "desc" }}
+            cargando={isLoading}
             exportName="articulos"
             actions={(r) => (
               <div className="flex items-center justify-end gap-1">

@@ -10,6 +10,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { InputMonto } from "@/components/ui/input-monto";
 import { DataTable, type Column } from "@/components/ui/data-table";
 import { Faceta } from "@/components/ui/faceta";
+import { tokensBusqueda, coincide as coincideTexto } from "@/lib/busqueda";
 import {
   Dialog,
   DialogContent,
@@ -80,14 +81,20 @@ export function AjustarInventariosView() {
   const filas = useMemo(() => data ?? [], [data]);
 
   const dif = (r: InventarioAjuste) => (r.cant_diferencia !== 0 ? "Si" : "No");
+  const tokens = useMemo(() => tokensBusqueda(busqueda), [busqueda]);
+  const sinDiferencia = useMemo(
+    () =>
+      filas.filter((r) => r.cerrado !== "S" && r.contado !== "N" && r.cant_diferencia === 0).length,
+    [filas],
+  );
 
   const coincide = (r: InventarioAjuste, ignora: "rubro" | "marca" | null) => {
-    const q = busqueda.trim().toLowerCase();
     if (
-      q &&
-      !`${r.id_articulo} ${r.descripcion ?? ""} ${r.codigo_oem ?? ""} ${r.rubro ?? ""} ${r.marca ?? ""} ${fmtFecha(r.fecha)}`
-        .toLowerCase()
-        .includes(q)
+      tokens.length > 0 &&
+      !coincideTexto(
+        `${r.id_articulo} ${r.descripcion ?? ""} ${r.codigo_oem ?? ""} ${r.rubro ?? ""} ${r.marca ?? ""} ${fmtFecha(r.fecha)}`,
+        tokens,
+      )
     )
       return false;
     if (cerradoSel !== null && r.cerrado !== cerradoSel) return false;
@@ -139,15 +146,14 @@ export function AjustarInventariosView() {
     rubroSel.size > 0 ||
     marcaSel.size > 0;
 
-  const totalCosto = filasFiltradas.reduce(
-    (acc, r) => acc + r.costo_ultimo * r.cant_diferencia,
-    0,
-  );
+  // Los pendientes de contar no suman: su diferencia (-sistema) no es un faltante real.
+  const difReal = (r: InventarioAjuste) => (r.contado === "N" ? 0 : (r.cant_diferencia ?? 0));
+  const totalCosto = filasFiltradas.reduce((acc, r) => acc + r.costo_ultimo * difReal(r), 0);
 
   const COLUMNAS: Column<InventarioAjuste>[] = [
     {
       key: "fec_ultima_compra",
-      header: "Fec Última Compra",
+      header: "Fecha Última Compra",
       accessor: (r) => r.fec_ultima_compra ?? "",
       render: (r) => fmtFecha(r.fec_ultima_compra),
       className: "w-32",
@@ -187,7 +193,12 @@ export function AjustarInventariosView() {
       header: "Cantidad Física",
       num: true,
       accessor: (r) => r.cantidad_fisica,
-      render: (r) => fmtNum(r.cantidad_fisica),
+      render: (r) =>
+        r.contado === "N" ? (
+          <span className="text-muted-foreground">Pendiente</span>
+        ) : (
+          fmtNum(r.cantidad_fisica)
+        ),
       footer: (rows) => fmtNum(rows.reduce((a, r) => a + (r.cantidad_fisica ?? 0), 0)),
     },
     {
@@ -200,7 +211,7 @@ export function AjustarInventariosView() {
     },
     {
       key: "cant_diferencia",
-      header: "Cant. Diferencia",
+      header: "Diferencia",
       num: true,
       accessor: (r) => r.cant_diferencia,
       render: (r) => (
@@ -208,7 +219,7 @@ export function AjustarInventariosView() {
           {fmtNum(r.cant_diferencia)}
         </span>
       ),
-      footer: (rows) => fmtNum(rows.reduce((a, r) => a + (r.cant_diferencia ?? 0), 0)),
+      footer: (rows) => fmtNum(rows.reduce((a, r) => a + difReal(r), 0)),
     },
     {
       key: "costo_ultimo",
@@ -223,8 +234,7 @@ export function AjustarInventariosView() {
       num: true,
       accessor: (r) => r.costo_ultimo * r.cant_diferencia,
       render: (r) => fmtMiles(r.costo_ultimo * r.cant_diferencia),
-      footer: (rows) =>
-        fmtMiles(rows.reduce((a, r) => a + r.costo_ultimo * r.cant_diferencia, 0)),
+      footer: (rows) => fmtMiles(rows.reduce((a, r) => a + r.costo_ultimo * difReal(r), 0)),
     },
     {
       key: "cerrado",
@@ -255,16 +265,16 @@ export function AjustarInventariosView() {
           )}
           <Button
             size="sm"
+            variant="outline"
             onClick={() => setConfirmDif0(true)}
-            disabled={dif0Mut.isPending}
-            className="bg-gradient-primary font-semibold text-primary-foreground shadow-glow hover:opacity-95"
+            disabled={dif0Mut.isPending || sinDiferencia === 0}
           >
             {dif0Mut.isPending ? (
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
             ) : (
               <ArrowDownUp className="mr-2 h-4 w-4" />
             )}
-            Ajustar Diferencias 0
+            Cerrar conteos sin diferencia ({sinDiferencia})
           </Button>
         </div>
       </div>
@@ -362,6 +372,7 @@ export function AjustarInventariosView() {
               columns={COLUMNAS}
               rows={filasFiltradas}
               getRowId={(r) => r.id_inventario}
+              globalSearch={false}
               exportName="ajustar-inventarios"
               initialSort={{ key: "descripcion", dir: "asc" }}
             />
@@ -381,10 +392,10 @@ export function AjustarInventariosView() {
       <AlertDialog open={confirmDif0} onOpenChange={(o) => !o && setConfirmDif0(false)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>¿Ajustar los artículos con diferencia 0?</AlertDialogTitle>
+            <AlertDialogTitle>¿Cerrar los conteos sin diferencia?</AlertDialogTitle>
             <AlertDialogDescription>
-              Se cerrarán todos los conteos con diferencia 0 y se marcará su fecha de último
-              inventario. Esta acción no se puede deshacer.
+              Se van a cerrar {sinDiferencia} conteo{sinDiferencia === 1 ? "" : "s"} sin diferencia
+              y se marcará su fecha de último inventario. Esta acción no se puede deshacer.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -397,7 +408,7 @@ export function AjustarInventariosView() {
               disabled={dif0Mut.isPending}
             >
               {dif0Mut.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Ajustar
+              Cerrar conteos
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -436,6 +447,16 @@ function AjustarDialog({
     e.preventDefault();
     if (!item) return;
     setError("");
+    // Un conteo cerrado ya movió el stock: ajustarlo de nuevo lo movería dos veces.
+    if (item.cerrado === "S") {
+      setError("Este conteo ya fue ajustado (cerrado).");
+      return;
+    }
+    // Sin contar, la diferencia es -sistema: ajustarlo descontaría todo el stock.
+    if (item.contado === "N") {
+      setError("Este conteo todavía no se contó.");
+      return;
+    }
     if (cantidad == null) {
       setError("La cantidad es obligatoria");
       return;
@@ -475,9 +496,42 @@ function AjustarDialog({
         </DialogHeader>
 
         <form onSubmit={onSubmit} className="space-y-4">
+          {item && (
+            <div className="space-y-2 rounded-lg border border-border bg-muted/40 p-3">
+              <div className="grid grid-cols-3 gap-2 text-center">
+                <div>
+                  <p className="text-xs text-muted-foreground">Físico</p>
+                  <p className="font-mono font-semibold">{fmtNum(item.cantidad_fisica)}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Sistema</p>
+                  <p className="font-mono font-semibold">{fmtNum(item.cantidad_sistema)}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Diferencia</p>
+                  <p
+                    className={`font-mono font-semibold ${item.cant_diferencia !== 0 ? "text-destructive" : ""}`}
+                  >
+                    {fmtNum(item.cant_diferencia)}
+                  </p>
+                </div>
+              </div>
+              {cantidad != null && precio != null && cantidad !== 0 ? (
+                <p className="text-center text-sm">
+                  Se {cantidad > 0 ? "suman" : "descuentan"} {fmtNum(Math.abs(cantidad))} u. · ₲{" "}
+                  {fmtMiles(Math.abs(cantidad) * precio)}
+                </p>
+              ) : (
+                <p className="text-center text-sm text-muted-foreground">
+                  Sin movimiento de stock con esta cantidad.
+                </p>
+              )}
+            </div>
+          )}
+
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-2">
-              <Label htmlFor="aj_cantidad">Cantidad</Label>
+              <Label htmlFor="aj_cantidad">Cantidad a ajustar</Label>
               <InputMonto
                 id="aj_cantidad"
                 value={cantidad}
@@ -511,6 +565,17 @@ function AjustarDialog({
             </div>
           )}
 
+          {item?.cerrado === "S" && (
+            <p className="rounded-md bg-muted px-3 py-2 text-sm text-muted-foreground">
+              Este conteo ya fue ajustado (cerrado); no se puede volver a aplicar.
+            </p>
+          )}
+          {item?.cerrado !== "S" && item?.contado === "N" && (
+            <p className="rounded-md bg-muted px-3 py-2 text-sm text-muted-foreground">
+              Este artículo todavía no se contó en la planilla; contalo antes de ajustar.
+            </p>
+          )}
+
           {error && (
             <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
               {error}
@@ -523,7 +588,7 @@ function AjustarDialog({
             </Button>
             <Button
               type="submit"
-              disabled={saving}
+              disabled={saving || item?.cerrado === "S" || item?.contado === "N"}
               className="bg-gradient-primary font-semibold text-primary-foreground shadow-glow hover:opacity-95"
             >
               {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}

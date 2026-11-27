@@ -323,6 +323,13 @@ la búsqueda al cerrar. Modelo vivo: el código OEM de `vehiculos-repuestos-view
 **Los tres respetan la regla de LOVs:** lista completa del backend + filtro en el front. Ninguno
 recorta el catálogo. **No dupliques** ninguno por vista; importá el de `ui/`.
 
+`BuscadorSelect` y `BuscadorModal` consultan el catálogo **una vez por apertura** (`buscar("")`)
+y el texto filtra en memoria sobre `itemTitle` + `itemSub` (por eso esas etiquetas tienen que
+incluir todo lo buscable: descripción, OEM, ID). En `BuscadorModal` el texto iba en la
+`queryKey` y cada término re-descargaba el catálogo entero de Oracle. Los dos **dibujan de a 50
+resultados** con "Mostrar más" (dibujar 1.100 artículos por tecla trababa); el filtro y el
+contador siguen sobre todos.
+
 ### LOV corta en modal de botones (`ui/selector-modal.tsx`)
 
 Para catálogos **cortos** (monedas, billetes, vendedores, talonarios, formas de cobro, bancos) el
@@ -603,7 +610,23 @@ Notas de `Column<T>`:
   filas visibles ya filtradas/ordenadas. Si **ninguna** columna define `footer`, no se muestra el pie.
   Sumar sobre las filas: `footer: (rows) => fmtNum(rows.reduce((a, r) => a + (r.total ?? 0), 0))`.
   Poner `footer: () => "Total"` en la primera columna como etiqueta. Modelo: `conteo-efectivo-view.tsx`.
-- El componente **no** hace fetch ni pagina: recibe el array ya traído (regla "sin caché" intacta).
+- El componente **no** hace fetch: recibe el array ya traído (regla "sin caché" intacta).
+- **Dibuja de a 50 filas** (`PASO_FILAS`) con botones "Mostrar 50 más" / "Mostrar todos": con
+  miles de filas (Inventario: 3.400) dibujarlas todas trababa la pantalla. Es solo de dibujo:
+  search, filtros, orden, totales del pie y Excel usan **todas** las filas, y los endpoints no
+  cambian. Cambiar búsqueda/filtro/orden vuelve a las primeras 50; un refetch no. Además dibuja
+  **solo** la tabla (escritorio) **o** las tarjetas (móvil `< md`), no las dos ocultando una.
+- **Búsqueda flexible** (`src/lib/busqueda.ts`: `tokensBusqueda` + `coincide`): palabras en
+  cualquier orden, sin tildes ni mayúsculas, con o sin separadores. Es la misma regla para el
+  search del DataTable, los buscadores de `ui/` y los buscadores propios de las vistas: usarla
+  siempre en vez de `includes`. Si la vista ya tiene buscador propio, `globalSearch={false}`
+  (nunca dos buscadores en la misma pantalla).
+- `cargando`: pasar `isLoading` de la query; muestra esqueleto en vez de "Sin registros"
+  mientras no hay datos. Sin filas por la búsqueda/filtros muestra "Nada coincide" + Limpiar.
+- `principal`: key de la columna título de la tarjeta móvil (default: primera
+  `hideable: false`). En móvil hay un selector "Ordenar por".
+- Errores: `src/router.tsx` tiene un `MutationCache` que avisa con toast si una mutación
+  **no** tiene `onError` propio (red de seguridad; la regla de `onError` sigue valiendo).
 - El search/filtro reemplaza al `<Input>` manual: quitar el estado `filtro` local de la vista.
 - **Export Excel** (`exportName`): exporta las columnas **visibles** con `accessor` y las filas
   **ya filtradas/ordenadas** (lo que se ve en pantalla), reusando `exportarExcel` de

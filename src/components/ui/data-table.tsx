@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
 import {
   ArrowDown,
   ArrowUp,
@@ -10,6 +10,8 @@ import {
   X,
 } from "lucide-react";
 import { exportarExcel } from "@/lib/export";
+import { coincide, tokensBusqueda } from "@/lib/busqueda";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -52,6 +54,26 @@ export type Column<T> = {
 
 type Orden = { key: string; dir: "asc" | "desc" } | null;
 
+// Filas que se dibujan de entrada y por cada "Mostrar más". Dibujar miles de filas
+// de una (Inventario: 3.400) traba la pantalla; filtros, orden, totales y Excel
+// siguen trabajando sobre TODAS las filas, esto solo limita lo que se dibuja.
+const PASO_FILAS = 50;
+
+// `< md`: el mismo corte que las clases md:hidden / md:block de abajo. Se dibuja
+// solo la vista que corresponde (tabla o tarjetas), no las dos ocultando una.
+const MQ_MOVIL = "(max-width: 767.98px)";
+function useEsMovil() {
+  return useSyncExternalStore(
+    (f) => {
+      const mq = window.matchMedia(MQ_MOVIL);
+      mq.addEventListener("change", f);
+      return () => mq.removeEventListener("change", f);
+    },
+    () => window.matchMedia(MQ_MOVIL).matches,
+    () => false,
+  );
+}
+
 export function DataTable<T>({
   columns,
   rows,
@@ -66,6 +88,8 @@ export function DataTable<T>({
   initialSort,
   dense: denseProp,
   exportName,
+  cargando = false,
+  principal: principalKey,
 }: {
   columns: Column<T>[];
   rows: T[];
@@ -82,6 +106,12 @@ export function DataTable<T>({
   dense?: boolean;
   // Nombre base del archivo Excel. Si se omite, no se muestra el botón de export.
   exportName?: string;
+  // true mientras la consulta no trajo datos: muestra filas esqueleto en vez de
+  // "Sin registros" (que antes aparecía durante la carga).
+  cargando?: boolean;
+  // Key de la columna que hace de título en las tarjetas móviles. Si se omite, la
+  // primera columna `hideable: false` (o la primera visible).
+  principal?: string;
 }) {
   const [search, setSearch] = useState(initialSearch ?? "");
   const [orden, setOrden] = useState<Orden>(initialSort ?? null);
@@ -96,18 +126,19 @@ export function DataTable<T>({
   const visibles = columns.filter((c) => !ocultas.has(c.key));
 
   const procesadas = useMemo(() => {
-    const q = search.trim().toLowerCase();
+    // Búsqueda flexible (src/lib/busqueda.ts): palabras en cualquier orden, sin
+    // tildes ni separadores, igual que las LOVs.
+    const tokens = tokensBusqueda(search);
     const filtroCols = Object.entries(filtros).filter(([, v]) => v.trim() !== "");
 
     let out = rows.filter((row) => {
       // Search global sobre todas las columnas con accessor.
-      if (q) {
+      if (tokens.length > 0) {
         const texto = columns
           .map((c) => val(row, c))
           .filter((v) => v != null)
-          .join(" ")
-          .toLowerCase();
-        if (!texto.includes(q)) return false;
+          .join(" ");
+        if (!coincide(texto, tokens)) return false;
       }
       // Filtro por columna (contiene, case-insensitive).
       for (const [key, fv] of filtroCols) {
@@ -150,7 +181,47 @@ export function DataTable<T>({
     );
   }
 
+  // Al cambiar búsqueda, filtros u orden se vuelve a las primeras filas. Un refetch
+  // (rows nuevas) NO reinicia: si el usuario ya pidió más, se mantienen.
+  const esMovil = useEsMovil();
+  const [limite, setLimite] = useState(PASO_FILAS);
+  const claveLimite = `${search}|${JSON.stringify(filtros)}|${orden?.key}:${orden?.dir}`;
+  const [claveAnterior, setClaveAnterior] = useState(claveLimite);
+  if (claveAnterior !== claveLimite) {
+    setClaveAnterior(claveLimite);
+    setLimite(PASO_FILAS);
+  }
+  const dibujadas = procesadas.length > limite ? procesadas.slice(0, limite) : procesadas;
+  const restantes = procesadas.length - dibujadas.length;
+
   const hayFiltros = search !== "" || Object.values(filtros).some((v) => v.trim() !== "");
+
+  // Sin filas que dibujar: cargando (esqueleto), nada coincide con la búsqueda o
+  // filtros de la grilla (con Limpiar), o realmente no hay datos (emptyText).
+  const cuerpoVacio: ReactNode =
+    cargando && rows.length === 0 ? (
+      <div className="space-y-2">
+        {Array.from({ length: 6 }).map((_, i) => (
+          <Skeleton key={i} className="h-8 w-full" />
+        ))}
+      </div>
+    ) : rows.length > 0 ? (
+      <span>
+        Nada coincide con la búsqueda o los filtros.{" "}
+        <button
+          type="button"
+          onClick={() => {
+            setSearch("");
+            setFiltros({});
+          }}
+          className="font-medium text-primary hover:underline"
+        >
+          Limpiar
+        </button>
+      </span>
+    ) : (
+      emptyText
+    );
   const cellPad = dense ? "py-1.5" : "";
 
   // Contenido de una celda (compartido por la tabla de escritorio y las tarjetas
@@ -165,7 +236,10 @@ export function DataTable<T>({
   // y el resto van como pares etiqueta/valor. Se toma la primera columna marcada
   // `hideable: false` (la que la vista considera identificatoria) o, si no hay,
   // la primera visible.
-  const principal = visibles.find((c) => c.hideable === false) ?? visibles[0];
+  const principal =
+    (principalKey ? visibles.find((c) => c.key === principalKey) : undefined) ??
+    visibles.find((c) => c.hideable === false) ??
+    visibles[0];
   const secundarias = visibles.filter((c) => c.key !== principal?.key);
   const hayFooter = visibles.some((c) => c.footer);
 
@@ -204,6 +278,45 @@ export function DataTable<T>({
           </div>
         )}
         {toolbarExtra}
+
+        {/* Móvil: las tarjetas no tienen encabezados clicables, se ordena desde acá. */}
+        {esMovil && columns.some((c) => c.sortable !== false && c.accessor) && (
+          <div className="flex basis-full items-center gap-2">
+            <select
+              aria-label="Ordenar por"
+              value={orden?.key ?? ""}
+              onChange={(e) =>
+                setOrden(e.target.value ? { key: e.target.value, dir: orden?.dir ?? "asc" } : null)
+              }
+              className="h-[var(--control-h-lg)] min-w-0 flex-1 rounded-md border border-input bg-background px-3 text-base"
+            >
+              <option value="">Ordenar por...</option>
+              {columns
+                .filter((c) => c.sortable !== false && c.accessor)
+                .map((c) => (
+                  <option key={c.key} value={c.key}>
+                    {c.header}
+                  </option>
+                ))}
+            </select>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={!orden}
+              aria-label={orden?.dir === "desc" ? "Orden descendente" : "Orden ascendente"}
+              onClick={() =>
+                setOrden((o) => (o ? { key: o.key, dir: o.dir === "asc" ? "desc" : "asc" } : o))
+              }
+              className="h-[var(--control-h-lg)] w-[var(--control-h-lg)] shrink-0 p-0"
+            >
+              {orden?.dir === "desc" ? (
+                <ArrowDown className="h-4 w-4" />
+              ) : (
+                <ArrowUp className="h-4 w-4" />
+              )}
+            </Button>
+          </div>
+        )}
 
         {exportName && (
           <Button
@@ -277,212 +390,234 @@ export function DataTable<T>({
       </div>
 
       {/* Tabla (escritorio/tablet). En móvil se usan las tarjetas de abajo. */}
-      <div className="hidden overflow-x-auto md:block">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              {visibles.map((c) => {
-                const activa = orden?.key === c.key;
-                const Icono = !activa ? ArrowUpDown : orden!.dir === "asc" ? ArrowUp : ArrowDown;
-                const puedeOrden = c.sortable !== false && c.accessor;
-                const puedeFiltrar = c.filterable !== false && c.accessor;
-                const filtrada = (filtros[c.key] ?? "").trim() !== "";
-                return (
-                  <TableHead key={c.key} className={c.num ? "text-right" : ""}>
-                    <div
-                      className={cn(
-                        "flex items-center gap-1",
-                        c.num ? "justify-end" : "justify-between",
-                      )}
-                    >
-                      {puedeOrden ? (
-                        <button
-                          type="button"
-                          onClick={() => ordenarPor(c.key)}
-                          className={cn(
-                            "inline-flex items-center gap-1 hover:text-foreground",
-                            c.num && "flex-row-reverse",
-                            activa && "text-foreground",
-                          )}
-                        >
-                          {c.header}
-                          <Icono className="h-3.5 w-3.5 opacity-60" />
-                        </button>
-                      ) : (
-                        <span>{c.header}</span>
-                      )}
-                      {puedeFiltrar && (
-                        <DropdownMenu
-                          open={filtroAbierto === c.key}
-                          onOpenChange={(o) => setFiltroAbierto(o ? c.key : null)}
-                        >
-                          <DropdownMenuTrigger asChild>
-                            <button
-                              type="button"
-                              className={cn(
-                                "shrink-0 rounded p-0.5 hover:text-foreground",
-                                filtrada ? "text-primary" : "text-muted-foreground/50",
-                              )}
-                              aria-label={`Filtrar ${c.header}`}
-                            >
-                              <Filter className="h-3.5 w-3.5" />
-                            </button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="start" className="w-48 p-2">
-                            <Input
-                              autoFocus
-                              placeholder={`Filtrar ${c.header}...`}
-                              value={filtros[c.key] ?? ""}
-                              onChange={(e) =>
-                                setFiltros((prev) => ({ ...prev, [c.key]: e.target.value }))
-                              }
-                              onKeyDown={(e) => {
-                                if (e.key === "Enter") setFiltroAbierto(null);
-                              }}
-                              className="h-8"
-                            />
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      )}
-                    </div>
-                  </TableHead>
-                );
-              })}
-              {actions && <TableHead className="w-32 text-right">{actionsHeader}</TableHead>}
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {procesadas.length === 0 ? (
+      {!esMovil && (
+        <div className="hidden overflow-x-auto md:block">
+          <Table>
+            <TableHeader>
               <TableRow>
-                <TableCell
-                  colSpan={visibles.length + (actions ? 1 : 0)}
-                  className="py-10 text-center text-sm text-muted-foreground"
-                >
-                  {emptyText}
-                </TableCell>
+                {visibles.map((c) => {
+                  const activa = orden?.key === c.key;
+                  const Icono = !activa ? ArrowUpDown : orden!.dir === "asc" ? ArrowUp : ArrowDown;
+                  const puedeOrden = c.sortable !== false && c.accessor;
+                  const puedeFiltrar = c.filterable !== false && c.accessor;
+                  const filtrada = (filtros[c.key] ?? "").trim() !== "";
+                  return (
+                    <TableHead key={c.key} className={c.num ? "text-right" : ""}>
+                      <div
+                        className={cn(
+                          "flex items-center gap-1",
+                          c.num ? "justify-end" : "justify-between",
+                        )}
+                      >
+                        {puedeOrden ? (
+                          <button
+                            type="button"
+                            onClick={() => ordenarPor(c.key)}
+                            className={cn(
+                              "inline-flex items-center gap-1 hover:text-foreground",
+                              c.num && "flex-row-reverse",
+                              activa && "text-foreground",
+                            )}
+                          >
+                            {c.header}
+                            <Icono className="h-3.5 w-3.5 opacity-60" />
+                          </button>
+                        ) : (
+                          <span>{c.header}</span>
+                        )}
+                        {puedeFiltrar && (
+                          <DropdownMenu
+                            open={filtroAbierto === c.key}
+                            onOpenChange={(o) => setFiltroAbierto(o ? c.key : null)}
+                          >
+                            <DropdownMenuTrigger asChild>
+                              <button
+                                type="button"
+                                className={cn(
+                                  "shrink-0 rounded p-0.5 hover:text-foreground",
+                                  filtrada ? "text-primary" : "text-muted-foreground/50",
+                                )}
+                                aria-label={`Filtrar ${c.header}`}
+                              >
+                                <Filter className="h-3.5 w-3.5" />
+                              </button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="start" className="w-48 p-2">
+                              <Input
+                                autoFocus
+                                placeholder={`Filtrar ${c.header}...`}
+                                value={filtros[c.key] ?? ""}
+                                onChange={(e) =>
+                                  setFiltros((prev) => ({ ...prev, [c.key]: e.target.value }))
+                                }
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") setFiltroAbierto(null);
+                                }}
+                                className="h-8"
+                              />
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        )}
+                      </div>
+                    </TableHead>
+                  );
+                })}
+                {actions && <TableHead className="w-32 text-right">{actionsHeader}</TableHead>}
               </TableRow>
-            ) : (
-              procesadas.map((row, i) => (
-                <TableRow key={getRowId(row, i)} className="group">
+            </TableHeader>
+            <TableBody>
+              {procesadas.length === 0 ? (
+                <TableRow>
+                  <TableCell
+                    colSpan={visibles.length + (actions ? 1 : 0)}
+                    className="py-10 text-center text-sm text-muted-foreground"
+                  >
+                    {cuerpoVacio}
+                  </TableCell>
+                </TableRow>
+              ) : (
+                dibujadas.map((row, i) => (
+                  <TableRow key={getRowId(row, i)} className="group">
+                    {visibles.map((c) => (
+                      <TableCell
+                        key={c.key}
+                        className={cn(c.num && "text-right tabular-nums", cellPad, c.className)}
+                      >
+                        {c.render
+                          ? c.render(row)
+                          : (() => {
+                              const v = val(row, c);
+                              return v == null || v === "" ? (
+                                <span className="text-muted-foreground">—</span>
+                              ) : (
+                                String(v)
+                              );
+                            })()}
+                      </TableCell>
+                    ))}
+                    {actions && (
+                      <TableCell className={cn("text-right", cellPad)}>{actions(row)}</TableCell>
+                    )}
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+            {hayFooter && procesadas.length > 0 && (
+              <TableFooter>
+                <TableRow>
                   {visibles.map((c) => (
                     <TableCell
                       key={c.key}
-                      className={cn(c.num && "text-right tabular-nums", cellPad, c.className)}
+                      className={cn(
+                        c.num && "text-right tabular-nums",
+                        "font-semibold",
+                        c.className,
+                      )}
                     >
-                      {c.render
-                        ? c.render(row)
-                        : (() => {
-                            const v = val(row, c);
-                            return v == null || v === "" ? (
-                              <span className="text-muted-foreground">—</span>
-                            ) : (
-                              String(v)
-                            );
-                          })()}
+                      {c.footer ? c.footer(procesadas) : null}
                     </TableCell>
                   ))}
-                  {actions && (
-                    <TableCell className={cn("text-right", cellPad)}>{actions(row)}</TableCell>
-                  )}
+                  {actions && <TableCell />}
                 </TableRow>
-              ))
+              </TableFooter>
             )}
-          </TableBody>
-          {hayFooter && procesadas.length > 0 && (
-            <TableFooter>
-              <TableRow>
-                {visibles.map((c) => (
-                  <TableCell
-                    key={c.key}
-                    className={cn(c.num && "text-right tabular-nums", "font-semibold", c.className)}
-                  >
-                    {c.footer ? c.footer(procesadas) : null}
-                  </TableCell>
-                ))}
-                {actions && <TableCell />}
-              </TableRow>
-            </TableFooter>
-          )}
-        </Table>
-      </div>
+          </Table>
+        </div>
+      )}
 
       {/* Tarjetas (móvil): una fila por tarjeta, sin scroll horizontal. */}
-      <div className="space-y-2 md:hidden">
-        {procesadas.length === 0 ? (
-          <p className="py-10 text-center text-[length:var(--ui-font)] text-muted-foreground">
-            {emptyText}
-          </p>
-        ) : (
-          procesadas.map((row, i) => (
-            <div
-              key={getRowId(row, i)}
-              className="rounded-xl border border-border bg-card p-[var(--panel-p)] shadow-sm"
-            >
-              <div className="flex items-start justify-between gap-3">
-                {principal && (
-                  <div
-                    className={cn(
-                      "min-w-0 flex-1 font-medium",
-                      principal.num && "tabular-nums",
-                      principal.className,
-                    )}
-                  >
-                    {celda(row, principal)}
-                  </div>
-                )}
-                {/* Las vistas dibujan sus acciones con botones de 32px (cómodos con
+      {esMovil && (
+        <div className="space-y-2 md:hidden">
+          {procesadas.length === 0 ? (
+            <div className="py-10 text-center text-[length:var(--ui-font)] text-muted-foreground">
+              {cuerpoVacio}
+            </div>
+          ) : (
+            dibujadas.map((row, i) => (
+              <div
+                key={getRowId(row, i)}
+                className="rounded-xl border border-border bg-card p-[var(--panel-p)] shadow-sm"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  {principal && (
+                    <div
+                      className={cn(
+                        "min-w-0 flex-1 font-medium",
+                        principal.num && "tabular-nums",
+                        principal.className,
+                      )}
+                    >
+                      {celda(row, principal)}
+                    </div>
+                  )}
+                  {/* Las vistas dibujan sus acciones con botones de 32px (cómodos con
                     mouse, chicos para el dedo): en la tarjeta móvil se agrandan a
                     40px sin que cada vista tenga que saberlo. */}
-                {actions && (
-                  <div className="shrink-0 [&_button]:h-10 [&_button]:w-10">{actions(row)}</div>
+                  {actions && (
+                    <div className="shrink-0 [&_button]:h-10 [&_button]:w-10">{actions(row)}</div>
+                  )}
+                </div>
+
+                {secundarias.length > 0 && (
+                  <dl className="mt-3 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1.5 border-t border-border pt-3">
+                    {secundarias.map((c) => (
+                      <div key={c.key} className="contents">
+                        <dt className="text-[length:var(--ui-font-sm)] text-muted-foreground">
+                          {c.header}
+                        </dt>
+                        <dd
+                          className={cn(
+                            "min-w-0 break-words text-right text-[length:var(--ui-font)]",
+                            c.num && "tabular-nums",
+                          )}
+                        >
+                          {celda(row, c)}
+                        </dd>
+                      </div>
+                    ))}
+                  </dl>
                 )}
               </div>
+            ))
+          )}
 
-              {secundarias.length > 0 && (
-                <dl className="mt-3 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1.5 border-t border-border pt-3">
-                  {secundarias.map((c) => (
+          {/* Totales al pie, con el mismo cálculo que la fila de la tabla. */}
+          {hayFooter && procesadas.length > 0 && (
+            <div className="rounded-xl border border-border bg-muted/50 p-[var(--panel-p)]">
+              <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1.5">
+                {visibles
+                  .filter((c) => c.footer)
+                  .map((c) => (
                     <div key={c.key} className="contents">
                       <dt className="text-[length:var(--ui-font-sm)] text-muted-foreground">
                         {c.header}
                       </dt>
                       <dd
-                        className={cn(
-                          "min-w-0 break-words text-right text-[length:var(--ui-font)]",
-                          c.num && "tabular-nums",
-                        )}
+                        className={cn("min-w-0 text-right font-semibold", c.num && "tabular-nums")}
                       >
-                        {celda(row, c)}
+                        {c.footer!(procesadas)}
                       </dd>
                     </div>
                   ))}
-                </dl>
-              )}
+              </dl>
             </div>
-          ))
-        )}
+          )}
+        </div>
+      )}
 
-        {/* Totales al pie, con el mismo cálculo que la fila de la tabla. */}
-        {hayFooter && procesadas.length > 0 && (
-          <div className="rounded-xl border border-border bg-muted/50 p-[var(--panel-p)]">
-            <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1.5">
-              {visibles
-                .filter((c) => c.footer)
-                .map((c) => (
-                  <div key={c.key} className="contents">
-                    <dt className="text-[length:var(--ui-font-sm)] text-muted-foreground">
-                      {c.header}
-                    </dt>
-                    <dd className={cn("min-w-0 text-right font-semibold", c.num && "tabular-nums")}>
-                      {c.footer!(procesadas)}
-                    </dd>
-                  </div>
-                ))}
-            </dl>
-          </div>
-        )}
-      </div>
+      {restantes > 0 && (
+        <div className="flex flex-wrap items-center justify-center gap-2">
+          <Button type="button" variant="outline" onClick={() => setLimite((l) => l + PASO_FILAS)}>
+            Mostrar {Math.min(PASO_FILAS, restantes)} más
+          </Button>
+          <Button type="button" variant="ghost" onClick={() => setLimite(procesadas.length)}>
+            Mostrar todos ({procesadas.length})
+          </Button>
+        </div>
+      )}
 
       <p className="text-[length:var(--ui-font-sm)] text-muted-foreground">
+        {restantes > 0 && `Mostrando ${dibujadas.length} · `}
         {procesadas.length} de {rows.length} {rows.length === 1 ? "registro" : "registros"}
       </p>
     </div>

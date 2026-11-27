@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronDown, Loader2, Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
@@ -21,7 +21,15 @@ import { cn } from "@/lib/utils";
 //
 // Sigue la regla de LOVs del proyecto: la prop `buscar` recibe el catálogo COMPLETO
 // del endpoint y filtra en el front (multi-palabra en cualquier orden, ID/OEM
-// parcial, sin tope). Acá NO se recorta nada.
+// parcial, sin tope). El filtro no recorta nada; solo se DIBUJAN de a 50
+// resultados (con "Mostrar más"), porque dibujar el catálogo entero (1.100
+// artículos) en cada tecla trababa el modal.
+//
+// Igual que `buscador-select`: el catálogo se consulta UNA vez por apertura
+// (`buscar("")`) y el texto filtra en memoria. Antes el texto iba en la queryKey y
+// cada término re-descargaba el catálogo completo de Oracle.
+const PASO_ITEMS = 50;
+
 export function BuscadorModal<T>({
   id,
   titulo,
@@ -68,17 +76,38 @@ export function BuscadorModal<T>({
     }
   }, [abierto]);
 
+  // `descripcion` en la clave: en Inventario resume los filtros (activo/categoría/
+  // marca) con los que `buscar` arma el catálogo.
   const { data, isFetching } = useQuery({
-    queryKey: ["buscador-modal", titulo, qDebounced],
-    queryFn: () => buscar(qDebounced),
+    queryKey: ["buscador-modal", titulo, descripcion ?? ""],
+    queryFn: () => buscar(""),
     enabled: abierto,
     retry: false,
-    // El filtrado es en el front: mientras llega el resultado del texto nuevo se
-    // sigue mostrando el anterior, en vez de parpadear el estado vacío en cada tecla.
-    placeholderData: (prev) => prev,
   });
 
-  const items = data ?? [];
+  // Filtro local, mismo criterio que buscador-select (multi-palabra en cualquier
+  // orden, con y sin separadores) sobre lo que el modal muestra de cada ítem.
+  const catalogo = useMemo(() => data ?? [], [data]);
+  const items = useMemo(() => {
+    const tokens = qDebounced.trim().toUpperCase().split(/\s+/).filter(Boolean);
+    if (tokens.length === 0) return catalogo;
+    const sinSep = (s: string) => s.replace(/[-/.\s]/g, "");
+    return catalogo.filter((it) => {
+      const texto = `${itemTitle(it)} ${itemSub(it)}`.toUpperCase();
+      const textoSinSep = sinSep(texto);
+      return tokens.every((t) => texto.includes(t) || textoSinSep.includes(sinSep(t)));
+    });
+  }, [catalogo, qDebounced, itemTitle, itemSub]);
+
+  // Cada búsqueda nueva vuelve a los primeros resultados.
+  const [limite, setLimite] = useState(PASO_ITEMS);
+  const [qLimite, setQLimite] = useState(qDebounced);
+  if (qLimite !== qDebounced) {
+    setQLimite(qDebounced);
+    setLimite(PASO_ITEMS);
+  }
+  const dibujados = items.slice(0, limite);
+  const restantes = items.length - dibujados.length;
 
   return (
     <>
@@ -116,14 +145,14 @@ export function BuscadorModal<T>({
 
           {/* Alto fijo: la lista scrollea dentro del modal y el buscador queda siempre visible. */}
           <div className="max-h-[50vh] min-h-[12rem] overflow-y-auto rounded-md border border-border">
-            {isFetching && items.length === 0 ? (
+            {isFetching && catalogo.length === 0 ? (
               <div className="flex items-center justify-center gap-2 p-6 text-sm text-muted-foreground">
                 <Loader2 className="h-4 w-4 animate-spin" /> Buscando...
               </div>
             ) : items.length === 0 ? (
               <p className="p-6 text-center text-sm text-muted-foreground">{emptyLabel}</p>
             ) : (
-              items.map((it) => (
+              dibujados.map((it) => (
                 <button
                   key={itemKey(it)}
                   type="button"
@@ -138,10 +167,20 @@ export function BuscadorModal<T>({
                 </button>
               ))
             )}
+            {restantes > 0 && (
+              <button
+                type="button"
+                onClick={() => setLimite((l) => l + PASO_ITEMS)}
+                className="w-full px-3 py-2.5 text-center text-sm font-medium text-primary hover:bg-accent"
+              >
+                Mostrar {Math.min(PASO_ITEMS, restantes)} más (quedan {restantes})
+              </button>
+            )}
           </div>
 
           <p className="text-xs text-muted-foreground">
             {items.length} {items.length === 1 ? "resultado" : "resultados"}
+            {restantes > 0 && ` · mostrando ${dibujados.length}; escribí para afinar`}
           </p>
         </DialogContent>
       </Dialog>

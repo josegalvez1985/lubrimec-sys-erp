@@ -1,3 +1,4 @@
+import { coincide as coincideTexto, tokensBusqueda } from "@/lib/busqueda";
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ShoppingBag, Search, X, ImageIcon } from "lucide-react";
@@ -63,10 +64,10 @@ export function ComprasArticulosView() {
   );
 
   const coincide = (r: CompraArticulo, ignora: "prov" | "fecha" | "ref" | null) => {
-    const q = busqueda.trim().toLowerCase();
-    if (q) {
-      const txt = `${r.descripcion ?? ""} ${r.codigo_oem ?? ""} ${r.referencia ?? ""} ${r.proveedor ?? ""} ${r.id_cod_proveedor ?? ""}`.toLowerCase();
-      if (!txt.includes(q)) return false;
+    const q = tokensBusqueda(busqueda);
+    if (q.length > 0) {
+      const txt = `${r.descripcion ?? ""} ${r.codigo_oem ?? ""} ${r.referencia ?? ""} ${r.proveedor ?? ""} ${r.id_cod_proveedor ?? ""}`;
+      if (!coincideTexto(txt, q)) return false;
     }
     if (ignora !== "prov" && provSel.size > 0 && !provSel.has(r.proveedor ?? "")) return false;
     if (ignora !== "fecha" && fechaSel.size > 0 && !fechaSel.has(r.fec_comprobante ?? "")) return false;
@@ -276,6 +277,7 @@ export function ComprasArticulosView() {
             <DataTable
               columns={COLUMNAS}
               rows={filasFiltradas}
+              globalSearch={false}
               getRowId={(r, i) => `${r.id_factura}|${r.nro_linea}|${i}`}
               exportName="compras-articulos"
               initialSort={{ key: "fec_comprobante", dir: "desc" }}

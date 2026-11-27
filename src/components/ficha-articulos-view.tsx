@@ -1,3 +1,4 @@
+import { coincide as coincideTexto, tokensBusqueda } from "@/lib/busqueda";
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { FileText, Search, X, ImageIcon } from "lucide-react";
@@ -61,10 +62,10 @@ export function FichaArticulosView() {
   );
 
   const coincide = (r: FichaExistencia, ignora: FacetKey | null) => {
-    const q = busqueda.trim().toLowerCase();
-    if (q) {
-      const txt = `${r.desc_articulo ?? ""} ${r.codigo_oem ?? ""} ${r.tipo ?? ""} ${r.desc_rubro ?? ""} ${r.nro_comprobante ?? ""}`.toLowerCase();
-      if (!txt.includes(q)) return false;
+    const q = tokensBusqueda(busqueda);
+    if (q.length > 0) {
+      const txt = `${r.desc_articulo ?? ""} ${r.codigo_oem ?? ""} ${r.tipo ?? ""} ${r.desc_rubro ?? ""} ${r.nro_comprobante ?? ""}`;
+      if (!coincideTexto(txt, q)) return false;
     }
     if (ignora !== "rubro" && rubroSel.size > 0 && !rubroSel.has(r.desc_rubro ?? "")) return false;
     if (ignora !== "activo" && activoSel.size > 0 && !activoSel.has(r.es_activo ?? "")) return false;
@@ -272,6 +273,7 @@ export function FichaArticulosView() {
             <DataTable
               columns={COLUMNAS}
               rows={filasFiltradas}
+              globalSearch={false}
               getRowId={(r, i) => `${r.id_articulo}|${r.nro_comprobante}|${r.fec_comprobante}|${i}`}
               exportName="ficha-articulos"
               initialSort={{ key: "fecha", dir: "desc" }}

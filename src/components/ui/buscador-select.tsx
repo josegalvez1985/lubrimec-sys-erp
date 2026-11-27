@@ -15,6 +15,11 @@ import { Input } from "@/components/ui/input";
 // completo en cada tecla—. Ahora se consulta UNA vez por apertura (`buscar("")`)
 // y el texto solo filtra en memoria. Pesaba sobre todo en LOVs con subconsultas
 // caras, como la de facturas de Precios de Ventas.
+//
+// El filtro no recorta nada, pero se DIBUJAN de a 50 resultados ("Mostrar más"):
+// dibujar el catálogo entero (1.100 artículos) en cada tecla trababa el desplegable.
+const PASO_ITEMS = 50;
+
 export function BuscadorSelect<T>({
   value,
   label,
@@ -85,6 +90,16 @@ export function BuscadorSelect<T>({
   }, [catalogo, qDebounced, filtraEnServidor, itemTitle, itemSub]);
   const tieneValor = value !== null && value !== "";
 
+  // Cada búsqueda nueva vuelve a los primeros resultados.
+  const [limite, setLimite] = useState(PASO_ITEMS);
+  const [qLimite, setQLimite] = useState(qDebounced);
+  if (qLimite !== qDebounced) {
+    setQLimite(qDebounced);
+    setLimite(PASO_ITEMS);
+  }
+  const dibujados = items.slice(0, limite);
+  const restantes = items.length - dibujados.length;
+
   return (
     <div className="relative">
       <div className="relative">
@@ -113,7 +128,7 @@ export function BuscadorSelect<T>({
           ) : items.length === 0 ? (
             <p className="p-3 text-sm text-muted-foreground">{emptyLabel}</p>
           ) : (
-            items.map((it) => (
+            dibujados.map((it) => (
               <button
                 key={itemKey(it)}
                 type="button"
@@ -129,6 +144,20 @@ export function BuscadorSelect<T>({
                 <span className="text-xs text-muted-foreground">{itemSub(it)}</span>
               </button>
             ))
+          )}
+          {restantes > 0 && (
+            <button
+              type="button"
+              // onMouseDown + preventDefault: el input no pierde el foco y el
+              // desplegable no se cierra (lo cierra el onBlur).
+              onMouseDown={(e) => {
+                e.preventDefault();
+                setLimite((l) => l + PASO_ITEMS);
+              }}
+              className="w-full px-3 py-2 text-center text-sm font-medium text-primary hover:bg-accent"
+            >
+              Mostrar {Math.min(PASO_ITEMS, restantes)} más (quedan {restantes})
+            </button>
           )}
         </div>
       )}

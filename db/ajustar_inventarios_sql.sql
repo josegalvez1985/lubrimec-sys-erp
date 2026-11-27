@@ -5,10 +5,13 @@
 -- PKG_COMPRAS (fn_costo_ultimo, fn_fecha_ultima_compra).
 --
 -- LISTAR: ultimo conteo de INVENTARIO por articulo (MAX(id_inventario)), con
--- costo ultimo y fecha de ultima compra; el filtrado (facetas + busqueda) es
--- 100% en el front. total_costo = costo_ultimo * diferencia se calcula en el front.
+-- costo ultimo y fecha de ultima compra (calculada para todos los articulos en
+-- una pasada, misma regla que fn_fecha_ultima_compra); el filtrado (facetas +
+-- busqueda) es 100% en el front. total_costo = costo_ultimo * diferencia se
+-- calcula en el front.
 --
--- AJUSTAR (modal 88): replica el proceso APEX en UNA transaccion atomica:
+-- AJUSTAR (modal 88): rechaza (409) un conteo ya cerrado; si esta abierto
+-- replica el proceso APEX en UNA transaccion atomica:
 --   1) siguiente nro_comprobante para AJS/E (algoritmo de huecos del APEX)
 --   2) INSERT COMPRAS_CABECERA (valores fijos del APEX: persona 1982, moneda 1,
 --      tip_cambio 1, nro_timbrado 1, id_condicion 1, id_comprador 81)
@@ -103,18 +106,37 @@ CREATE OR REPLACE PACKAGE BODY PKG_AJUSTAR_INV_LUBRIMEC AS
                NVL(m.cantidad_sistema, 0) AS cantidad_sistema,
                NVL(m.cantidad_fisica, 0) - NVL(m.cantidad_sistema, 0) AS cant_diferencia,
                NVL(m.cerrado, 'N') AS cerrado,
+               -- 'N' = conteo de planilla todavia sin contar (cantidad_fisica NULL).
+               CASE WHEN m.cantidad_fisica IS NULL THEN 'N' ELSE 'S' END AS contado,
                r2.descripcion AS rubro,
                ma.descripcion AS marca,
                a.es_activo,
                NVL(a.cod_iva, 1) AS cod_iva,
                pkg_compras.fn_costo_ultimo(a.id_articulo, a.cod_empresa) AS costo_ultimo,
-               TO_CHAR(pkg_compras.fn_fecha_ultima_compra(a.id_articulo, a.cod_empresa),
-                       'YYYY-MM-DD') AS fec_ultima_compra,
+               TO_CHAR(uc.fec_comprobante, 'YYYY-MM-DD') AS fec_ultima_compra,
                CASE WHEN DBMS_LOB.GETLENGTH(m.foto) > 0 THEN 1 ELSE 0 END AS tiene_foto
           FROM inventario m
           JOIN articulos a
                 ON a.cod_empresa = m.cod_empresa
                AND a.id_articulo = m.id_articulo
+          -- Fecha de ultima compra de TODOS los articulos en una sola pasada, con
+          -- la misma regla que pkg_compras.fn_fecha_ultima_compra (que corria una
+          -- vez por fila): la factura de mayor id_factura que tenga el articulo, y
+          -- solo si en esa factura su precio <> 0 (si no, NULL).
+          LEFT JOIN (
+              SELECT x.id_articulo, c.fec_comprobante
+                FROM (SELECT d.id_articulo, MAX(c2.id_factura) AS id_factura
+                        FROM compras_cabecera c2
+                        JOIN compras_detalle d ON d.id_factura = c2.id_factura
+                       WHERE c2.cod_empresa = p_cod_empresa
+                       GROUP BY d.id_articulo) x
+                JOIN compras_cabecera c ON c.id_factura = x.id_factura
+               WHERE EXISTS (SELECT 1
+                               FROM compras_detalle b
+                              WHERE b.id_factura = x.id_factura
+                                AND b.id_articulo = x.id_articulo
+                                AND b.precio <> 0)
+          ) uc ON uc.id_articulo = m.id_articulo
           LEFT JOIN rubros r2
                 ON r2.cod_empresa = a.cod_empresa
                AND r2.id_rubro = a.id_rubro
@@ -138,6 +160,7 @@ CREATE OR REPLACE PACKAGE BODY PKG_AJUSTAR_INV_LUBRIMEC AS
       APEX_JSON.WRITE('cantidad_sistema', r.cantidad_sistema);
       APEX_JSON.WRITE('cant_diferencia', r.cant_diferencia);
       APEX_JSON.WRITE('cerrado', r.cerrado);
+      APEX_JSON.WRITE('contado', r.contado);
       APEX_JSON.WRITE('rubro', r.rubro);
       APEX_JSON.WRITE('marca', r.marca);
       APEX_JSON.WRITE('es_activo', r.es_activo);
@@ -168,6 +191,8 @@ CREATE OR REPLACE PACKAGE BODY PKG_AJUSTAR_INV_LUBRIMEC AS
     l_usuario    VARCHAR2(255);
     l_nro        NUMBER;
     l_id_factura NUMBER;
+    l_cerrado    inventario.cerrado%TYPE;
+    l_contado    VARCHAR2(1);
   BEGIN
     l_usuario := f_usuario(p_token);
     IF l_usuario IS NULL THEN
@@ -182,17 +207,50 @@ CREATE OR REPLACE PACKAGE BODY PKG_AJUSTAR_INV_LUBRIMEC AS
       RETURN;
     END IF;
 
+    -- 0) El conteo tiene que estar abierto: uno cerrado ya movio el stock y
+    --    ajustarlo otra vez lo moveria dos veces. FOR UPDATE bloquea la fila, asi
+    --    un doble clic no genera dos comprobantes. WAIT 10: si otra sesion la
+    --    tiene bloqueada, error a los 10 s en vez de colgar la llamada.
+    BEGIN
+      SELECT NVL(cerrado, 'N'),
+             CASE WHEN cantidad_fisica IS NULL THEN 'N' ELSE 'S' END
+        INTO l_cerrado, l_contado
+        FROM inventario
+       WHERE cod_empresa = p_cod_empresa
+         AND id_inventario = p_id_inventario
+         FOR UPDATE WAIT 10;
+    EXCEPTION
+      WHEN NO_DATA_FOUND THEN
+        p_error(404, 'Not Found', 'Registro de inventario no encontrado');
+        RETURN;
+    END;
+    IF l_cerrado = 'S' THEN
+      ROLLBACK;
+      p_error(409, 'Conflict', 'Este conteo ya fue ajustado (cerrado)');
+      RETURN;
+    END IF;
+    -- Un conteo de planilla sin contar (NULL) daria diferencia = -sistema y el
+    -- ajuste descontaria todo el stock.
+    IF l_contado = 'N' THEN
+      ROLLBACK;
+      p_error(409, 'Conflict', 'Este conteo todavia no se conto');
+      RETURN;
+    END IF;
+
     -- 1) Siguiente numero de comprobante AJS/E (algoritmo de huecos del APEX).
+    --    NOT EXISTS en vez de NOT IN: mismo resultado, y un nro_comprobante NULL
+    --    ya no anula la busqueda (con NOT IN devolvia siempre 1).
     BEGIN
       SELECT MIN(p.nro_comprobante)
         INTO l_nro
         FROM compras_cabecera p
-       WHERE (NVL(p.nro_comprobante, 0) + 1) NOT IN
-             (SELECT p1.nro_comprobante
+       WHERE NOT EXISTS
+             (SELECT 1
                 FROM compras_cabecera p1
                WHERE p1.cod_empresa = p.cod_empresa
                  AND p1.tip_comprobante = p.tip_comprobante
-                 AND p1.ser_timbrado = p.ser_timbrado)
+                 AND p1.ser_timbrado = p.ser_timbrado
+                 AND p1.nro_comprobante = NVL(p.nro_comprobante, 0) + 1)
          AND p.cod_empresa = p_cod_empresa
          AND p.tip_comprobante = 'AJS'
          AND p.ser_timbrado = 'E';
@@ -276,6 +334,9 @@ CREATE OR REPLACE PACKAGE BODY PKG_AJUSTAR_INV_LUBRIMEC AS
                                     FROM inventario b
                                    WHERE b.cod_empresa = m.cod_empresa
                                      AND b.id_articulo = m.id_articulo)
+           -- Un conteo de planilla sin contar (NULL) no es "sin diferencia": queda
+           -- abierto hasta que se cuente.
+           AND m.cantidad_fisica IS NOT NULL
            AND NVL(m.cantidad_fisica, 0) - NVL(m.cantidad_sistema, 0) = 0
            AND NVL(m.cerrado, 'N') = 'N'
     ) LOOP

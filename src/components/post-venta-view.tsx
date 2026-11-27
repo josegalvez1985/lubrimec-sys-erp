@@ -1,3 +1,4 @@
+import { coincide as coincideTexto, tokensBusqueda } from "@/lib/busqueda";
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Phone, Search, X } from "lucide-react";
@@ -53,10 +54,10 @@ export function PostVentaView() {
   }, [filas]);
 
   const filasFiltradas = useMemo(() => {
-    const q = busqueda.trim().toLowerCase();
+    const q = tokensBusqueda(busqueda);
     return filas.filter((f) => {
       if (fechasSel.size > 0 && !fechasSel.has(f.fecha)) return false;
-      if (q && !`${f.nro_telefono} ${f.fecha}`.toLowerCase().includes(q)) return false;
+      if (q.length > 0 && !coincideTexto(`${f.nro_telefono} ${f.fecha}`, q)) return false;
       return true;
     });
   }, [filas, busqueda, fechasSel]);
@@ -152,6 +153,7 @@ export function PostVentaView() {
             <DataTable
               columns={COLUMNAS}
               rows={filasFiltradas}
+              globalSearch={false}
               getRowId={(r) => `${r.nro_telefono}|${r.fecha}`}
               exportName="post-venta"
               initialSort={{ key: "fecha", dir: "desc" }}

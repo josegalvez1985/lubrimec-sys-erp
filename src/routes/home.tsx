@@ -14,7 +14,6 @@ import {
   LogOut,
   Menu,
   Search,
-  Bell,
   Droplet,
   TrendingUp,
   DollarSign,
@@ -100,6 +99,7 @@ import { BusquedaGlobal } from "@/components/busqueda-global";
 import { Asistente, type PantallaAsistente } from "@/components/asistente";
 import { abrirAsistente, useAsistente } from "@/lib/asistente";
 import { VISTAS } from "@/lib/vistas";
+import { coincide, tokensBusqueda } from "@/lib/busqueda";
 
 // Gráficos del dashboard: se cargan aparte porque son los únicos que usan recharts.
 const VentasDashboardChart = lazy(() =>
@@ -340,7 +340,11 @@ function HomePage() {
     let quitarNativo: (() => void) | undefined;
     App.addListener("backButton", () => {
       const e = estadoRef.current;
-      if (e.cotizadorOpen) {
+      // Cualquier diálogo de Radix abierto (de una vista o del shell) se cierra con
+      // Escape, igual que con el teclado: el atrás no navega mientras haya uno.
+      if (document.querySelector('[role="dialog"]')) {
+        document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      } else if (e.cotizadorOpen) {
         setCotizadorOpen(false);
       } else if (e.asistenteAbierto) {
         abrirAsistente(false);
@@ -433,15 +437,11 @@ function HomePage() {
             )}
           </Button>
 
-          <BusquedaGlobal onNavigate={handleNav} />
+          <BusquedaGlobal onNavigate={handleNav} paginas={paginas} />
 
           <div className="flex-1 sm:hidden" />
 
           <div className="flex items-center gap-1">
-            <Button variant="ghost" size="icon" aria-label="Notificaciones" className="relative">
-              <Bell className="h-5 w-5" />
-              <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-primary" />
-            </Button>
             <ThemeToggle />
             {/* Volver al inicio: solo cuando se está en otra página. */}
             {active !== "dashboard" && (
@@ -570,14 +570,14 @@ function SidebarContent({
             Lubrimesys
           </div>
           <div className="mt-1 text-[10px] uppercase tracking-widest text-sidebar-foreground/50">
-            Admin Panel
+            Panel de administración
           </div>
         </div>
       </div>
 
       {/* Nav */}
       <nav className="flex-1 space-y-1 overflow-y-auto p-3">
-        {/* Dashboard fijo */}
+        {/* Inicio fijo */}
         <Link
           to="/home"
           search={{}}
@@ -590,7 +590,7 @@ function SidebarContent({
           )}
         >
           <LayoutDashboard className="h-[18px] w-[18px] shrink-0" />
-          <span className="truncate">Dashboard</span>
+          <span className="truncate">Inicio</span>
         </Link>
 
         {loading && (
@@ -745,9 +745,7 @@ function DashboardView({
           <h1 className="truncate font-display text-2xl font-bold tracking-tight sm:text-3xl">
             Buenos días, {usuario}
           </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Aquí tienes el resumen de tu negocio.
-          </p>
+          <p className="mt-1 text-sm text-muted-foreground">Acá tenés el resumen de tu negocio.</p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
           {/* Solo visible para el usuario admin (el propio componente lo decide) */}
@@ -761,6 +759,12 @@ function DashboardView({
             <span className="sm:hidden">Venta</span>
           </Button>
         </div>
+      </div>
+
+      {/* Quick actions */}
+      <div className="rounded-2xl border border-border bg-card p-5 shadow-elegant">
+        <h2 className="font-display text-lg font-bold">Accesos rápidos</h2>
+        <QuickActions paginas={paginas} onNavigate={onNavigate} />
       </div>
 
       {/* Cobros pendientes de acreditar (link al modal de la página 111) */}
@@ -778,15 +782,12 @@ function DashboardView({
       <Suspense fallback={<CargandoGrafico />}>
         <VentasDashboardChart />
       </Suspense>
-
-      {/* Quick actions */}
-      <div className="rounded-2xl border border-border bg-card p-5 shadow-elegant">
-        <h2 className="font-display text-lg font-bold">Accesos rápidos</h2>
-        <QuickActions paginas={paginas} onNavigate={onNavigate} />
-      </div>
     </div>
   );
 }
+
+// Cantidad de accesos rápidos visibles antes de "Ver todos".
+const MAX_ACCESOS = 8;
 
 function QuickActions({
   paginas,
@@ -796,6 +797,7 @@ function QuickActions({
   onNavigate: (k: NavKey) => void;
 }) {
   const [filtro, setFiltro] = useState("");
+  const [verTodos, setVerTodos] = useState(false);
   // Conteo LOCAL de uso por página (localStorage). Se lee una vez al montar; el
   // clic lo incrementa y persiste. Ordena los accesos por más usados en ESTE
   // dispositivo, con la estadística del backend como desempate.
@@ -820,26 +822,31 @@ function QuickActions({
       b.estadistica_user - a.estadistica_user ||
       a.page_title.localeCompare(b.page_title),
   );
-  const q = filtro.trim().toLowerCase();
-  const filtradas = q ? ordenadas.filter((p) => p.page_title.toLowerCase().includes(q)) : ordenadas;
+  const tokens = tokensBusqueda(filtro);
+  const filtradas =
+    tokens.length > 0 ? ordenadas.filter((p) => coincide(p.page_title, tokens)) : ordenadas;
+  // Por defecto solo los 8 más usados; "Ver todos" muestra el resto (y el buscador).
+  const visibles = verTodos ? filtradas : filtradas.slice(0, MAX_ACCESOS);
 
   return (
     <>
-      <div className="relative mt-4">
-        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          placeholder="Buscar acceso..."
-          value={filtro}
-          onChange={(e) => setFiltro(e.target.value)}
-          className="h-10 pl-10"
-        />
-      </div>
+      {verTodos && (
+        <div className="relative mt-4">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            placeholder="Buscar acceso..."
+            value={filtro}
+            onChange={(e) => setFiltro(e.target.value)}
+            className="h-10 pl-10"
+          />
+        </div>
+      )}
 
       {filtradas.length === 0 ? (
         <p className="mt-4 text-sm text-muted-foreground">Sin resultados para “{filtro}”.</p>
       ) : (
         <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-          {filtradas.map((p) => {
+          {visibles.map((p) => {
             const I = iconoParaPagina(p);
             return (
               <EnlacePagina
@@ -856,6 +863,22 @@ function QuickActions({
               </EnlacePagina>
             );
           })}
+        </div>
+      )}
+
+      {ordenadas.length > MAX_ACCESOS && (
+        <div className="mt-4 flex justify-center">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              setVerTodos((v) => !v);
+              setFiltro("");
+            }}
+          >
+            {verTodos ? "Ver menos" : `Ver todos (${ordenadas.length})`}
+          </Button>
         </div>
       )}
     </>
@@ -890,7 +913,7 @@ function PlaceholderView({ label }: { label: string }) {
         </div>
         <h2 className="mt-6 font-display text-2xl font-bold">{label}</h2>
         <p className="mt-2 max-w-sm text-sm text-muted-foreground">
-          Esta sección está lista para conectar con tu backend cuando lo decidas.
+          Esta pantalla todavía no está disponible en el sistema nuevo.
         </p>
       </div>
     </div>

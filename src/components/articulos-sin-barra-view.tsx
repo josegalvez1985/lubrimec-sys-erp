@@ -1,3 +1,4 @@
+import { coincide as coincideTexto, tokensBusqueda } from "@/lib/busqueda";
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Barcode, Search, X, ImageIcon } from "lucide-react";
@@ -25,8 +26,8 @@ export function ArticulosSinBarraView() {
   const filas = useMemo(() => data ?? [], [data]);
 
   const coincide = (r: ArticuloSinBarra, ignora: "rubro" | null) => {
-    const q = busqueda.trim().toLowerCase();
-    if (q && !(r.descripcion ?? "").toLowerCase().includes(q)) return false;
+    const q = tokensBusqueda(busqueda);
+    if (q.length > 0 && !coincideTexto(r.descripcion ?? "", q)) return false;
     if (ignora !== "rubro" && rubroSel.size > 0 && !rubroSel.has(r.desc_rubro ?? "")) return false;
     return true;
   };
@@ -156,6 +157,7 @@ export function ArticulosSinBarraView() {
             <DataTable
               columns={COLUMNAS}
               rows={filasFiltradas}
+              globalSearch={false}
               getRowId={(r) => r.id_articulo}
               exportName="articulos-sin-barra"
               initialSort={{ key: "id_articulo", dir: "desc" }}

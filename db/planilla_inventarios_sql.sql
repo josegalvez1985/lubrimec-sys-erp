@@ -16,9 +16,21 @@
 -- respuesta incluye la fecha usada (dd/mm/yyyy, como se guarda el parametro).
 --
 -- CREAR (proceso CREAR_PLANILLA del APEX, tal cual): inserta en INVENTARIO un
--- conteo (cantidad_fisica=0, cantidad_sistema=0, fecha=SYSDATE) por cada
+-- conteo (cantidad_fisica=NULL = pendiente de contar, cantidad_sistema=0,
+-- fecha=SYSDATE) por cada
 -- articulo con ES_ACTIVO='N' y ESTADO='A' que matchee rubro/marca/viscosidad
 -- (opcionales). NO excluye ya inventariados (decision: replicar APEX).
+-- (Antes insertaba cantidad_fisica=0; el APEX 113 sigue insertando 0.)
+--
+-- VERIFICACION PREVIA (solo lectura; correr ANTES de ejecutar este archivo):
+--   SELECT table_name, nullable FROM user_tab_columns
+--    WHERE table_name IN ('INVENTARIO', 'INVENTARIO_JN')
+--      AND column_name = 'CANTIDAD_FISICA';
+--   (INVENTARIO_JN: la auditoria copia la fila; si alli es NOT NULL, CREAR falla igual.)
+--   'Y' en las dos -> se puede ejecutar el archivo tal cual.
+--   'N' -> NO ejecutar con este cambio: CREAR fallaria (ORA-01400) y devolveria
+--          500. Dejar el INSERT con 0 (linea "Rollback" en CREAR) y avisar; no
+--          se propone ALTER sin aprobacion explicita del dueno.
 --
 -- ACT_CANTIDAD (modal 115): actualiza cantidad_fisica del conteo.
 -- SUBIR_FOTO (modal 115, boton Tomar Foto): guarda el JPEG comprimido (el front
@@ -127,7 +139,7 @@ CREATE OR REPLACE PACKAGE BODY PKG_PLANILLA_INV_LUBRIMEC AS
                 AND ma.id_marca = a.id_marca
          WHERE i.cod_empresa = p_cod_empresa
            AND NVL(i.cerrado, 'N') <> 'S'
-         ORDER BY i.cantidad_fisica, pkg_compras.fn_fecha_ultima_compra(i.id_articulo, i.cod_empresa) DESC
+         ORDER BY i.cantidad_fisica NULLS FIRST, pkg_compras.fn_fecha_ultima_compra(i.id_articulo, i.cod_empresa) DESC
     ) LOOP
       APEX_JSON.OPEN_OBJECT;
       APEX_JSON.WRITE('id_inventario', r.id_inventario);
@@ -254,7 +266,9 @@ CREATE OR REPLACE PACKAGE BODY PKG_PLANILLA_INV_LUBRIMEC AS
     END IF;
 
     INSERT INTO inventario (cantidad_fisica, fecha, id_articulo, cod_empresa, cantidad_sistema)
-    SELECT 0, SYSDATE, a.id_articulo, a.cod_empresa, 0
+    -- cantidad_fisica NULL = pendiente de contar (0 = contado con 0).
+    -- Rollback: SELECT 0, SYSDATE, a.id_articulo, a.cod_empresa, 0
+    SELECT NULL, SYSDATE, a.id_articulo, a.cod_empresa, 0
       FROM articulos a
      WHERE a.cod_empresa = p_cod_empresa
        AND NVL(a.es_activo, 'N') = 'N'

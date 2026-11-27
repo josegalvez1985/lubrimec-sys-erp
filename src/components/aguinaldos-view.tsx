@@ -1,3 +1,4 @@
+import { coincide as coincideTexto, tokensBusqueda } from "@/lib/busqueda";
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Gift, Search, X } from "lucide-react";
@@ -29,12 +30,10 @@ export function AguinaldosView() {
   const filas = useMemo(() => data ?? [], [data]);
 
   const coincide = (r: Aguinaldo, ignora: "anio" | "nombre" | "concepto" | null) => {
-    const q = busqueda.trim().toLowerCase();
+    const q = tokensBusqueda(busqueda);
     if (
-      q &&
-      !`${r.nombre ?? ""} ${r.fec_comprobante ?? ""} ${r.descripcion ?? ""}`
-        .toLowerCase()
-        .includes(q)
+      q.length > 0 &&
+      !coincideTexto(`${r.nombre ?? ""} ${r.fec_comprobante ?? ""} ${r.descripcion ?? ""}`, q)
     )
       return false;
     if (ignora !== "anio" && anioSel.size > 0 && !anioSel.has(r.anio ?? "")) return false;
@@ -178,6 +177,7 @@ export function AguinaldosView() {
             <DataTable
               columns={COLUMNAS}
               rows={filasFiltradas}
+              globalSearch={false}
               getRowId={(r) => `${r.nombre}-${r.fec_comprobante}-${r.descripcion}`}
               exportName="aguinaldos"
               initialSort={{ key: "fec_comprobante", dir: "desc" }}

@@ -241,6 +241,7 @@ export function VentasView() {
             rows={filas}
             getRowId={(r) => r.id_factura}
             initialSort={{ key: "id_factura", dir: "desc" }}
+            cargando={isLoading}
             exportName="ventas"
             actions={(r) => (
               <div className="flex items-center justify-end gap-1">

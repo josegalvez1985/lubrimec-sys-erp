@@ -1,3 +1,4 @@
+import { coincide as coincideTexto, tokensBusqueda } from "@/lib/busqueda";
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Wallet, Search, X } from "lucide-react";
@@ -38,10 +39,10 @@ export function SaldosProveedoresView() {
   const filas = useMemo(() => data ?? [], [data]);
 
   const coincide = (r: SaldoProveedor, ignora: FacetKey | null) => {
-    const q = busqueda.trim().toLowerCase();
-    if (q) {
-      const txt = `${r.nro_factura ?? ""} ${r.nombre ?? ""}`.toLowerCase();
-      if (!txt.includes(q)) return false;
+    const q = tokensBusqueda(busqueda);
+    if (q.length > 0) {
+      const txt = `${r.nro_factura ?? ""} ${r.nombre ?? ""}`;
+      if (!coincideTexto(txt, q)) return false;
     }
     if (ignora !== "nombre" && nombreSel.size > 0 && !nombreSel.has(r.nombre ?? "")) return false;
     if (ignora !== "factura" && facturaSel.size > 0 && !facturaSel.has(r.nro_factura ?? "")) return false;
@@ -271,6 +272,7 @@ export function SaldosProveedoresView() {
             <DataTable
               columns={COLUMNAS}
               rows={filasFiltradas}
+              globalSearch={false}
               getRowId={(r, i) => `${r.id_factura}|${r.fec_pago ?? ""}|${i}`}
               exportName="saldos-proveedores"
               initialSort={{ key: "fec_comprobante", dir: "asc" }}

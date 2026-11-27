@@ -1,3 +1,4 @@
+import { coincide as coincideTexto, tokensBusqueda } from "@/lib/busqueda";
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Wallet, Search, X } from "lucide-react";
@@ -120,10 +121,10 @@ export function CierreDiaView() {
   }
 
   const coincide = (r: CierreDiaFila, ignora: "fecha" | "forma" | "vend" | null) => {
-    const q = busqueda.trim().toLowerCase();
-    if (q) {
-      const txt = `${r.fecha ?? ""} ${r.desc_forma ?? ""} ${r.nombre_banco ?? ""} ${r.nro_transaccion ?? ""} ${r.nombre_vendedor ?? ""}`.toLowerCase();
-      if (!txt.includes(q)) return false;
+    const q = tokensBusqueda(busqueda);
+    if (q.length > 0) {
+      const txt = `${r.fecha ?? ""} ${r.desc_forma ?? ""} ${r.nombre_banco ?? ""} ${r.nro_transaccion ?? ""} ${r.nombre_vendedor ?? ""}`;
+      if (!coincideTexto(txt, q)) return false;
     }
     if (ignora !== "fecha" && fechasSel.size > 0 && !fechasSel.has(r.fecha ?? "")) return false;
     if (ignora !== "forma" && formasSel.size > 0 && !formasSel.has(r.desc_forma ?? "")) return false;
@@ -245,6 +246,7 @@ export function CierreDiaView() {
             <DataTable
               columns={COLUMNAS}
               rows={filasFiltradas}
+              globalSearch={false}
               getRowId={(r, i) =>
                 `${r.fecha}|${r.id_forma}|${r.id_banco}|${r.nro_transaccion}|${r.nombre_vendedor}|${i}`
               }

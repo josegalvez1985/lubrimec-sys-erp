@@ -40,7 +40,7 @@ export function Faceta({
         visibles.map(({ valor, n }) => (
           <label
             key={valor}
-            className="flex cursor-pointer items-center gap-2 text-sm text-muted-foreground hover:text-foreground"
+            className="flex min-h-11 cursor-pointer items-center gap-2 text-sm text-muted-foreground hover:text-foreground sm:min-h-0"
           >
             <Checkbox checked={seleccion.has(valor)} onCheckedChange={() => onToggle(valor)} />
             <span className="min-w-0 flex-1 truncate">{etiqueta ? etiqueta(valor) : valor}</span>
@@ -52,7 +52,7 @@ export function Faceta({
         <button
           type="button"
           onClick={() => setAbierta((a) => !a)}
-          className="text-xs font-medium text-primary hover:underline"
+          className="min-h-11 text-xs font-medium text-primary hover:underline sm:min-h-0"
         >
           {abierta ? "Mostrar menos" : "Mostrar todo"}
         </button>

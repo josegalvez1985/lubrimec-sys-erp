@@ -1,6 +1,18 @@
-import { useMemo, useRef, useState, type FormEvent, type Ref } from "react";
-import { useQuery } from "@tanstack/react-query";
 import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type FormEvent,
+  type MutableRefObject,
+  type Ref,
+} from "react";
+import { useBlocker } from "@tanstack/react-router";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import {
+  SlidersHorizontal,
+  UserPlus,
   ScanBarcode,
   Search,
   ShoppingCart,
@@ -28,6 +40,7 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { BuscadorSelect } from "@/components/ui/buscador-select";
 import { SelectorModal } from "@/components/ui/selector-modal";
 import { InputMonto } from "@/components/ui/input-monto";
@@ -40,20 +53,38 @@ import {
   siguienteNroComprobante,
   registrarVentaPOS,
   buscarClientesPOS,
+  crearPersona,
   listarVendedores,
   listarTalonarios,
   listarFormasCobroPago,
   listarBancos,
   type ArticuloPOS,
+  type PersonaInput,
   type VentaPOSInput,
 } from "@/lib/api";
+import { tokensBusqueda, coincide as coincideTexto } from "@/lib/busqueda";
 
 const COD_EMPRESA = 24;
+const PASO_ARTICULOS = 50; // artículos que se dibujan por tanda (mismo paso que el DataTable)
 const FORMA_EFECTIVO = 1; // id_forma efectivo (muestra moneda/vuelto en el APEX)
 const COD_PERSONA_SIN_CLIENTE = 1; // cliente por defecto: venta sin identificar
 
 const fmtGs = (n: number | null) =>
   n == null ? "0" : new Intl.NumberFormat("es-PY", { maximumFractionDigits: 0 }).format(n);
+
+// Celular (< 640px, el breakpoint `sm`).
+const MQ_CELULAR = "(max-width: 639.98px)";
+function useEsCelular() {
+  return useSyncExternalStore(
+    (f) => {
+      const mq = window.matchMedia(MQ_CELULAR);
+      mq.addEventListener("change", f);
+      return () => mq.removeEventListener("change", f);
+    },
+    () => window.matchMedia(MQ_CELULAR).matches,
+    () => false,
+  );
+}
 
 // Línea del carrito (estado React, reemplaza la colección CARRITO del APEX).
 type ItemCarrito = {
@@ -90,6 +121,43 @@ export function PuntoVentaView() {
   const [verCarrito, setVerCarrito] = useState(false);
   // Artículo cuya imagen se está viendo ampliada (click en la miniatura).
   const [imgArticulo, setImgArticulo] = useState<ArticuloPOS | null>(null);
+  // Celular: panel con las facetas Marca y Rubro.
+  const [verFiltros, setVerFiltros] = useState(false);
+  const esCelular = useEsCelular();
+  const barraRef = useRef<HTMLInputElement>(null);
+
+  // Autofoco para escanear directo (en celular no: abriría el teclado al entrar).
+  useEffect(() => {
+    if (!window.matchMedia(MQ_CELULAR).matches) barraRef.current?.focus();
+  }, []);
+
+  // Salir de la pantalla con el carrito cargado (botón atrás del APK, menú) pide
+  // confirmación; con un diálogo abierto, el atrás primero lo cierra.
+  const hayDialogo = verCarrito || modal === "cobro" || imgArticulo != null || verFiltros;
+  const estadoRef = useRef({ items: 0, hayDialogo: false });
+  estadoRef.current = { items: carrito.length, hayDialogo };
+  const paginaDe = (l: { pathname: string; search: unknown }) =>
+    `${l.pathname}?${(l.search as { p?: string } | undefined)?.p ?? ""}`;
+  const bloqueo = useBlocker({
+    shouldBlockFn: ({ current, next, action }) => {
+      const e = estadoRef.current;
+      if (action === "BACK" && e.hayDialogo) return true;
+      if (e.items === 0) return false;
+      return paginaDe(current) !== paginaDe(next);
+    },
+    enableBeforeUnload: () => estadoRef.current.items > 0,
+    withResolver: true,
+  });
+  const atrasCierraDialogo =
+    bloqueo.status === "blocked" && bloqueo.action === "BACK" && hayDialogo;
+  useEffect(() => {
+    if (!atrasCierraDialogo) return;
+    bloqueo.reset?.();
+    setVerCarrito(false);
+    setModal("cerrado");
+    setImgArticulo(null);
+    setVerFiltros(false);
+  }, [atrasCierraDialogo, bloqueo]);
 
   // Se trae todo el dataset; rubro, marca y búsqueda se filtran en el front
   // (facetas dependientes).
@@ -99,7 +167,11 @@ export function PuntoVentaView() {
   // y ventas (~12 s en frío), y tipear el descuento disparaba esa consulta de nuevo
   // en cada tecla. Se pide siempre el dataset base y el descuento manual se aplica
   // acá, que es aritmética pura sobre precio_venta.
-  const { data: todos, isLoading } = useQuery({
+  const {
+    data: todos,
+    isLoading,
+    error: errorArticulos,
+  } = useQuery({
     queryKey: ["pos-articulos", COD_EMPRESA],
     queryFn: () => listarArticulosPOS(COD_EMPRESA),
     retry: false,
@@ -120,11 +192,12 @@ export function PuntoVentaView() {
     }));
   }, [todos, descuento]);
 
+  const tokens = useMemo(() => tokensBusqueda(busqueda), [busqueda]);
+
   const coincide = (a: ArticuloPOS, ignora: "rubro" | "marca" | null) => {
-    const q = busqueda.trim().toLowerCase();
-    if (q) {
-      const txt = `${a.descripcion ?? ""} ${a.codigo_oem ?? ""} ${a.marca ?? ""}`.toLowerCase();
-      if (!txt.includes(q)) return false;
+    if (tokens.length > 0) {
+      const txt = `${a.descripcion ?? ""} ${a.codigo_oem ?? ""} ${a.marca ?? ""}`;
+      if (!coincideTexto(txt, tokens)) return false;
     }
     if (ignora !== "rubro" && rubroSel.size > 0 && !rubroSel.has(a.rubro ?? "")) return false;
     if (ignora !== "marca" && marcaSel.size > 0 && !marcaSel.has(a.marca ?? "")) return false;
@@ -152,6 +225,18 @@ export function PuntoVentaView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [filas, busqueda, rubroSel, marcaSel],
   );
+
+  // Se dibujan de a 50 artículos ("Mostrar más"): dibujar los ~450 en cada tecla
+  // trababa el listado. El filtro sigue sobre todos; cambiarlo vuelve a los 50.
+  const [limite, setLimite] = useState(PASO_ARTICULOS);
+  const claveLimite = `${busqueda}|${[...rubroSel].join(",")}|${[...marcaSel].join(",")}`;
+  const [claveAnterior, setClaveAnterior] = useState(claveLimite);
+  if (claveAnterior !== claveLimite) {
+    setClaveAnterior(claveLimite);
+    setLimite(PASO_ARTICULOS);
+  }
+  const articulosDibujados = articulos.slice(0, limite);
+  const restantes = articulos.length - articulosDibujados.length;
 
   const hayFiltros = busqueda.trim() !== "" || marcaSel.size > 0 || rubroSel.size > 0;
   function limpiarFiltros() {
@@ -192,16 +277,29 @@ export function PuntoVentaView() {
     });
   }
 
-  function cambiarCantidad(id: number, delta: number) {
-    setCarrito((prev) =>
-      prev
-        .map((i) => (i.id_articulo === id ? { ...i, cantidad: i.cantidad + delta } : i))
-        .filter((i) => i.cantidad > 0),
-    );
+  // Mínimo 1: para sacar una línea se usa la papelera.
+  function fijarCantidad(id: number, cantidad: number) {
+    const c = Math.max(1, Math.floor(cantidad) || 1);
+    setCarrito((prev) => prev.map((i) => (i.id_articulo === id ? { ...i, cantidad: c } : i)));
   }
 
   function quitar(id: number) {
+    const ix = carrito.findIndex((i) => i.id_articulo === id);
+    if (ix < 0) return;
+    const item = carrito[ix];
     setCarrito((prev) => prev.filter((i) => i.id_articulo !== id));
+    toast(`Quitaste ${item.descripcion}`, {
+      action: {
+        label: "Deshacer",
+        onClick: () =>
+          setCarrito((prev) => {
+            if (prev.some((i) => i.id_articulo === id)) return prev;
+            const next = [...prev];
+            next.splice(Math.min(ix, next.length), 0, item);
+            return next;
+          }),
+      },
+    });
   }
 
   // Precio unitario editable por línea (como P40 del APEX).
@@ -215,27 +313,36 @@ export function PuntoVentaView() {
     e.preventDefault();
     const cb = codBarra.trim();
     if (!cb) return;
+    // Se limpia y se reenfoca de entrada: el próximo escaneo nunca se pega al anterior.
+    setCodBarra("");
+    barraRef.current?.focus();
     try {
       const art = await buscarArticuloPorBarra(COD_EMPRESA, cb);
       if (art) {
-        agregar({
-          id_articulo: art.id_articulo,
-          descripcion: art.descripcion,
-          id_rubro: null,
-          id_marca: null,
-          rubro: null,
-          marca: null,
-          codigo_oem: null,
-          precio_venta: art.precio_venta,
-          precio_con_descuento: art.precio_venta,
-        });
-        setCodBarra("");
+        // El listado trae el precio con descuento (el mismo que al tocar el artículo);
+        // el endpoint por código solo resuelve el id y sirve de respaldo si el
+        // artículo no está en el listado.
+        const delListado = filas.find((a) => a.id_articulo === art.id_articulo);
+        agregar(
+          delListado ?? {
+            id_articulo: art.id_articulo,
+            descripcion: art.descripcion,
+            id_rubro: null,
+            id_marca: null,
+            rubro: null,
+            marca: null,
+            codigo_oem: null,
+            precio_venta: art.precio_venta,
+            precio_con_descuento: art.precio_venta,
+          },
+        );
       } else {
-        toast.error("Código de barra no encontrado");
+        toast.error(`Código de barra ${cb} no encontrado`);
       }
-    } catch {
-      toast.error("Error al buscar el código");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Error al buscar el código");
     }
+    barraRef.current?.focus();
   }
 
   // Contenido del carrito (lista + total + Facturar). Se reutiliza en la columna
@@ -262,28 +369,42 @@ export function PuntoVentaView() {
                   <button
                     type="button"
                     onClick={() => quitar(i.id_articulo)}
-                    className="text-muted-foreground hover:text-destructive"
+                    className="grid h-11 w-11 shrink-0 place-items-center rounded-md text-muted-foreground hover:text-destructive max-sm:-my-1.5 sm:h-8 sm:w-8"
                     aria-label="Quitar"
                   >
                     <Trash2 className="h-4 w-4" />
                   </button>
                 </div>
+                {(i.descuento > 0 || i.precio < i.precio_lista) && (
+                  <p className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <Badge variant="outline" className="text-emerald-600">
+                      {i.descuento > 0 ? `${i.descuento}% desc.` : "Con descuento"}
+                    </Badge>
+                    <span className="line-through">₲ {fmtGs(i.precio_lista)}</span>
+                  </p>
+                )}
                 <div className="mt-1.5 flex items-center justify-between gap-2">
                   <div className="flex items-center gap-1">
                     <Button
                       variant="outline"
                       size="icon"
-                      className="h-8 w-8"
-                      onClick={() => cambiarCantidad(i.id_articulo, -1)}
+                      className="h-11 w-11 sm:h-8 sm:w-8"
+                      disabled={i.cantidad <= 1}
+                      aria-label="Menos"
+                      onClick={() => fijarCantidad(i.id_articulo, i.cantidad - 1)}
                     >
                       <Minus className="h-3.5 w-3.5" />
                     </Button>
-                    <span className="w-8 text-center font-mono text-sm">{i.cantidad}</span>
+                    <CantidadInput
+                      value={i.cantidad}
+                      onChange={(n) => fijarCantidad(i.id_articulo, n)}
+                    />
                     <Button
                       variant="outline"
                       size="icon"
-                      className="h-8 w-8"
-                      onClick={() => cambiarCantidad(i.id_articulo, 1)}
+                      className="h-11 w-11 sm:h-8 sm:w-8"
+                      aria-label="Más"
+                      onClick={() => fijarCantidad(i.id_articulo, i.cantidad + 1)}
                     >
                       <Plus className="h-3.5 w-3.5" />
                     </Button>
@@ -293,7 +414,7 @@ export function PuntoVentaView() {
                     value={i.precio}
                     onValueChange={(v) => cambiarPrecio(i.id_articulo, v)}
                     maxDecimals={0}
-                    className="h-8 w-24 font-mono text-xs"
+                    className="h-11 w-28 font-mono text-base sm:h-8 sm:w-24 sm:text-xs"
                   />
                 </div>
                 <div className="mt-1 text-right font-mono text-sm font-semibold">
@@ -325,8 +446,28 @@ export function PuntoVentaView() {
     </>
   );
 
+  const facetas = (
+    <>
+      <Faceta
+        titulo="Marca"
+        valores={facetMarca.map((f) => ({ valor: f.valor, n: 0 }))}
+        seleccion={marcaSel}
+        onToggle={(v) => toggle(marcaSel, setMarcaSel, v)}
+      />
+      <Faceta
+        titulo="Rubro"
+        valores={facetRubro.map((f) => ({ valor: f.valor, n: 0 }))}
+        seleccion={rubroSel}
+        onToggle={(v) => toggle(rubroSel, setRubroSel, v)}
+      />
+    </>
+  );
+
   return (
-    <div className="grid gap-4 lg:grid-cols-[1fr_360px]">
+    // Con carrito, en celular se deja lugar al final para que la barra inferior no tape el último artículo.
+    <div
+      className={`grid gap-4 lg:grid-cols-[1fr_360px] ${carrito.length > 0 ? "max-sm:pb-20" : ""}`}
+    >
       {/* Panel de artículos: facetas + lista */}
       <div className="rounded-2xl border border-border bg-card shadow-elegant">
         <div className="space-y-3 border-b border-border p-4 sm:p-5">
@@ -335,10 +476,13 @@ export function PuntoVentaView() {
             <form onSubmit={onBarra} className="relative min-w-0 flex-1">
               <ScanBarcode className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
               <Input
+                ref={barraRef}
                 value={codBarra}
                 onChange={(e) => setCodBarra(e.target.value)}
                 placeholder="Escaneá un código de barra..."
                 className="h-11 pl-11"
+                autoComplete="off"
+                aria-label="Código de barra"
               />
             </form>
             <div className="w-28 space-y-1">
@@ -352,6 +496,9 @@ export function PuntoVentaView() {
               />
             </div>
           </div>
+          <p className="text-xs text-muted-foreground">
+            El % de descuento se aplica a los artículos que agregues a partir de ahora.
+          </p>
         </div>
 
         <div className="grid gap-4 p-4 sm:p-5 md:grid-cols-[220px_1fr]">
@@ -373,18 +520,20 @@ export function PuntoVentaView() {
                 Limpiar
               </Button>
             )}
-            <Faceta
-              titulo="Marca"
-              valores={facetMarca.map((f) => ({ valor: f.valor, n: 0 }))}
-              seleccion={marcaSel}
-              onToggle={(v) => toggle(marcaSel, setMarcaSel, v)}
-            />
-            <Faceta
-              titulo="Rubro"
-              valores={facetRubro.map((f) => ({ valor: f.valor, n: 0 }))}
-              seleccion={rubroSel}
-              onToggle={(v) => toggle(rubroSel, setRubroSel, v)}
-            />
+            {esCelular ? (
+              <Button
+                type="button"
+                variant="outline"
+                className="h-11 w-full"
+                onClick={() => setVerFiltros(true)}
+              >
+                <SlidersHorizontal className="mr-2 h-4 w-4" />
+                Filtros
+                {marcaSel.size + rubroSel.size > 0 ? ` (${marcaSel.size + rubroSel.size})` : ""}
+              </Button>
+            ) : (
+              facetas
+            )}
           </aside>
 
           {/* Lista de artículos con imagen */}
@@ -393,15 +542,33 @@ export function PuntoVentaView() {
               <div className="grid place-items-center py-16 text-muted-foreground">
                 <Loader2 className="h-6 w-6 animate-spin" />
               </div>
-            ) : articulos.length === 0 ? (
-              <p className="py-16 text-center text-sm text-muted-foreground">
-                Sin artículos con stock
+            ) : errorArticulos ? (
+              <p className="py-16 text-center text-sm text-destructive">
+                {errorArticulos instanceof Error
+                  ? errorArticulos.message
+                  : "No se pudieron cargar los artículos"}
               </p>
+            ) : articulos.length === 0 ? (
+              <div className="grid place-items-center gap-3 py-16 text-center">
+                <p className="text-sm text-muted-foreground">
+                  {!hayFiltros
+                    ? "No hay artículos con stock."
+                    : busqueda.trim()
+                      ? `Nada coincide con “${busqueda.trim()}”.`
+                      : "Ningún artículo coincide con los filtros."}
+                </p>
+                {hayFiltros && (
+                  <Button variant="outline" size="sm" onClick={limpiarFiltros}>
+                    <X className="mr-2 h-4 w-4" />
+                    Limpiar
+                  </Button>
+                )}
+              </div>
             ) : (
               // Alto del listado: el doble del original (60vh) para ver más artículos
               // de una. Al pasar de la pantalla, la página scrollea (el carrito es sticky).
               <ul className="max-h-[120vh] divide-y divide-border overflow-auto rounded-xl border border-border">
-                {articulos.map((a) => (
+                {articulosDibujados.map((a) => (
                   // La miniatura es su propio botón (abre la imagen ampliada), por eso la
                   // fila no puede ser un único <button>: el resto es el botón "agregar".
                   <li
@@ -436,6 +603,24 @@ export function PuntoVentaView() {
                     </button>
                   </li>
                 ))}
+                {restantes > 0 && (
+                  <li className="flex flex-wrap items-center justify-center gap-2 p-3">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setLimite((l) => l + PASO_ARTICULOS)}
+                    >
+                      Mostrar {Math.min(PASO_ARTICULOS, restantes)} más
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      onClick={() => setLimite(articulos.length)}
+                    >
+                      Mostrar todos ({articulos.length})
+                    </Button>
+                  </li>
+                )}
               </ul>
             )}
           </div>
@@ -447,12 +632,28 @@ export function PuntoVentaView() {
         {carritoContenido}
       </div>
 
-      {/* Botón flotante (móvil): abre el carrito. */}
+      {/* Celular: barra inferior a lo ancho con total e ítems; abre el carrito. */}
+      {carrito.length > 0 && (
+        <button
+          type="button"
+          onClick={() => setVerCarrito(true)}
+          className="fixed inset-x-0 bottom-0 z-40 flex h-14 items-center gap-3 bg-gradient-primary px-4 font-semibold text-primary-foreground shadow-glow sm:hidden"
+        >
+          <ShoppingCart className="h-5 w-5" />
+          <span>Ver carrito</span>
+          <Badge className="bg-primary-foreground/20 text-primary-foreground">
+            {carrito.reduce((a, i) => a + i.cantidad, 0)} ítems
+          </Badge>
+          <span className="ml-auto tabular-nums">₲ {fmtGs(total)}</span>
+        </button>
+      )}
+
+      {/* Tablet: botón flotante que abre el carrito. */}
       {carrito.length > 0 && (
         <Button
           type="button"
           onClick={() => setVerCarrito(true)}
-          className="fixed bottom-5 right-5 z-40 h-14 rounded-full bg-gradient-primary px-5 font-semibold text-primary-foreground shadow-glow lg:hidden"
+          className="fixed bottom-5 right-5 z-40 hidden h-14 rounded-full bg-gradient-primary px-5 font-semibold text-primary-foreground shadow-glow sm:flex lg:hidden"
         >
           <ShoppingCart className="mr-2 h-5 w-5" />
           <span className="tabular-nums">₲ {fmtGs(total)}</span>
@@ -460,6 +661,51 @@ export function PuntoVentaView() {
             {carrito.length}
           </Badge>
         </Button>
+      )}
+
+      {/* Celular: facetas Marca y Rubro en una hoja. */}
+      {esCelular && (
+        <Sheet open={verFiltros} onOpenChange={setVerFiltros}>
+          <SheetContent side="bottom" className="max-h-[85vh] space-y-4 overflow-auto">
+            <SheetHeader>
+              <SheetTitle>Filtros</SheetTitle>
+            </SheetHeader>
+            {facetas}
+            <div className="flex gap-2">
+              {hayFiltros && (
+                <Button variant="outline" className="h-11 flex-1" onClick={limpiarFiltros}>
+                  Limpiar
+                </Button>
+              )}
+              <Button className="h-11 flex-1" onClick={() => setVerFiltros(false)}>
+                Ver {articulos.length} artículos
+              </Button>
+            </div>
+          </SheetContent>
+        </Sheet>
+      )}
+
+      {/* Confirmación al salir con el carrito cargado. */}
+      {bloqueo.status === "blocked" && !atrasCierraDialogo && (
+        <Dialog open onOpenChange={(o) => !o && bloqueo.reset()}>
+          <DialogContent className="sm:max-w-sm">
+            <DialogHeader>
+              <DialogTitle>¿Salir del Punto de Venta?</DialogTitle>
+              <DialogDescription>
+                Tenés {carrito.length} {carrito.length === 1 ? "artículo" : "artículos"} en el
+                carrito. Si salís, se pierden.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => bloqueo.reset()}>
+                Seguir vendiendo
+              </Button>
+              <Button variant="destructive" onClick={() => bloqueo.proceed()}>
+                Salir
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       )}
 
       {/* Carrito en modal (móvil). */}
@@ -490,15 +736,43 @@ export function PuntoVentaView() {
           detalle={carrito}
           vendedorDefault={sesion?.app_user ?? ""}
           onClose={() => setModal("cerrado")}
-          onDone={(idFactura) => {
-            toast.success(`Venta registrada · Factura ${idFactura}`);
+          onDone={(idFactura, vuelto) => {
+            toast.success(
+              `Venta registrada · Factura ${idFactura}` +
+                (vuelto > 0 ? ` · Vuelto ₲ ${fmtGs(vuelto)}` : ""),
+              { duration: vuelto > 0 ? 10000 : undefined },
+            );
             setCarrito([]);
             setVerCarrito(false);
             setModal("cerrado");
+            // Tras cerrar el diálogo, el foco vuelve al campo para el próximo escaneo.
+            setTimeout(() => barraRef.current?.focus(), 150);
           }}
         />
       )}
     </div>
+  );
+}
+
+// Cantidad editable de una línea del carrito: se puede tipear; vacío o 0 se
+// corrige al salir del campo (mínimo 1).
+function CantidadInput({ value, onChange }: { value: number; onChange: (n: number) => void }) {
+  const [texto, setTexto] = useState<string | null>(null);
+  return (
+    <Input
+      inputMode="numeric"
+      aria-label="Cantidad"
+      value={texto ?? String(value)}
+      onFocus={(e) => e.target.select()}
+      onChange={(e) => {
+        const t = e.target.value.replace(/\D/g, "").slice(0, 6);
+        setTexto(t);
+        const n = Number(t);
+        if (n >= 1) onChange(n);
+      }}
+      onBlur={() => setTexto(null)}
+      className="h-11 w-14 px-1 text-center font-mono text-base sm:h-8 sm:w-12 sm:text-sm"
+    />
   );
 }
 
@@ -545,7 +819,7 @@ function FacturarDialog({
   detalle: ItemCarrito[];
   vendedorDefault: string;
   onClose: () => void;
-  onDone: (idFactura: number) => void;
+  onDone: (idFactura: number, vuelto: number) => void;
 }) {
   // Datos de factura (pág 45). El cliente arranca fijo en "sin cliente" (cod 1):
   // no hace falta consultar la LOV para eso, solo si el cajero lo cambia.
@@ -559,6 +833,9 @@ function FacturarDialog({
   const [cobros, setCobros] = useState<Cobro[]>([]);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [nuevoCliente, setNuevoCliente] = useState(false);
+  // Arma el cobro del subformulario (si está completo) para agregarlo sin tocar "Agregar cobro".
+  const armarCobroRef = useRef<(() => Cobro | null) | null>(null);
   // Cliente, vendedor y talonario ya vienen cargados: al abrir se va directo a la
   // forma de cobro (se enfoca y se desplaza hasta ahí).
   const formaCobroRef = useRef<HTMLButtonElement>(null);
@@ -621,25 +898,35 @@ function FacturarDialog({
   async function onSubmit() {
     setError("");
     // Cabecera
-    if (!codPersona) return setError("Selecciona el cliente");
-    if (!codVendedor) return setError("Selecciona el vendedor");
-    if (!idTalonario || !talonario) return setError("Selecciona la serie/talonario");
+    if (!codPersona) return setError("Elegí el cliente");
+    if (!codVendedor) return setError("Elegí el vendedor");
+    if (!idTalonario || !talonario) return setError("Elegí la serie/talonario");
     // Detalle
-    if (detalle.length === 0) return setError("Agrega al menos un artículo");
+    if (detalle.length === 0) return setError("Agregá al menos un artículo");
     if (detalle.some((i) => i.cantidad <= 0))
       return setError("La cantidad de cada artículo debe ser mayor a 0");
     if (detalle.some((i) => i.precio <= 0))
       return setError("El precio de cada artículo debe ser mayor a 0");
     if (total <= 0) return setError("El total de la venta debe ser mayor a 0");
-    // Cobros
-    if (cobros.length === 0) return setError("Agrega al menos una forma de cobro");
+    // Cobros: sin cobros cargados, se toma el subformulario si está completo.
+    let lista = cobros;
+    if (lista.length === 0) {
+      const auto = armarCobroRef.current?.();
+      if (auto) {
+        lista = [auto];
+        setCobros(lista);
+      }
+    }
+    if (lista.length === 0) return setError("Agregá al menos una forma de cobro");
+    const cobrado = lista.reduce((a, c) => a + c.total, 0);
+    const falta = total - cobrado;
     // El total imputado (suma de cobros) nunca puede superar el total de la venta.
-    if (totalCobrado - total > 0.5)
+    if (cobrado - total > 0.5)
       return setError(`El cobro no puede superar el total ₲ ${fmtGs(total)}`);
     // Con una sola forma de cobro no se controla el faltante; solo cuando hay varias
     // se valida que la suma de los cobros iguale el total de la venta.
-    if (cobros.length > 1 && Math.abs(restante) > 0.5)
-      return setError(`Falta cobrar ₲ ${fmtGs(restante)}`);
+    if (lista.length > 1 && Math.abs(falta) > 0.5)
+      return setError(`Falta cobrar ₲ ${fmtGs(falta)}`);
 
     setSaving(true);
     try {
@@ -666,7 +953,7 @@ function FacturarDialog({
           descuento: i.descuento || null,
           precio_lista: i.precio_lista,
         })),
-        cobros: cobros.map((c) => ({
+        cobros: lista.map((c) => ({
           id_forma: c.id_forma,
           id_banco: c.id_banco,
           nro_transaccion: c.nro_transaccion,
@@ -678,7 +965,10 @@ function FacturarDialog({
         })),
       };
       const idFactura = await registrarVentaPOS(COD_EMPRESA, input);
-      onDone(idFactura);
+      onDone(
+        idFactura,
+        lista.reduce((a, c) => a + (c.efectivo_vuelto ?? 0), 0),
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : "No se pudo registrar la venta");
     } finally {
@@ -704,7 +994,19 @@ function FacturarDialog({
 
         <div className="space-y-4">
           <div className="space-y-2">
-            <Label>Cliente</Label>
+            <div className="flex items-center justify-between gap-2">
+              <Label>Cliente</Label>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-8 text-primary"
+                onClick={() => setNuevoCliente(true)}
+              >
+                <UserPlus className="mr-1.5 h-4 w-4" />
+                Nuevo cliente
+              </Button>
+            </div>
             <BuscadorSelect
               placeholder="Buscar cliente por nombre, RUC o CI..."
               emptyLabel="Sin clientes"
@@ -721,7 +1023,7 @@ function FacturarDialog({
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="vendedor">Vendedor</Label>
               <SelectorModal
@@ -758,7 +1060,7 @@ function FacturarDialog({
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="telefono">Celular</Label>
               <Input
@@ -800,6 +1102,11 @@ function FacturarDialog({
               <div key={ix} className="flex items-center justify-between gap-2 rounded-lg bg-muted/40 px-3 py-2 text-sm">
                 <span className="min-w-0 flex-1 truncate">{c.desc_forma}</span>
                 <span className="font-mono font-semibold">₲ {fmtGs(c.total)}</span>
+                {(c.efectivo_vuelto ?? 0) > 0 && (
+                  <span className="font-mono text-xs font-semibold text-emerald-600">
+                    Vuelto ₲ {fmtGs(c.efectivo_vuelto)}
+                  </span>
+                )}
                 <button
                   type="button"
                   onClick={() => setCobros((prev) => prev.filter((_, i) => i !== ix))}
@@ -817,6 +1124,7 @@ function FacturarDialog({
               yaHayCobros={cobros.length > 0}
               onAdd={(c) => setCobros((prev) => [...prev, c])}
               selectRef={formaCobroRef}
+              armarRef={armarCobroRef}
             />
           </div>
 
@@ -839,6 +1147,150 @@ function FacturarDialog({
           </Button>
         </DialogFooter>
       </DialogContent>
+
+      {nuevoCliente && (
+        <NuevoClienteDialog
+          onClose={() => setNuevoCliente(false)}
+          onCreado={(cod, nombre) => {
+            setCodPersona(cod);
+            setClienteLabel(nombre);
+            setNuevoCliente(false);
+          }}
+        />
+      )}
+    </Dialog>
+  );
+}
+
+// ─── Alta rápida de cliente (formulario mínimo) ──────────────────────────────
+
+function NuevoClienteDialog({
+  onClose,
+  onCreado,
+}: {
+  onClose: () => void;
+  onCreado: (cod: number, nombre: string) => void;
+}) {
+  const [tipo, setTipo] = useState<"F" | "J">("F");
+  const [nombre, setNombre] = useState("");
+  const [ci, setCi] = useState("");
+  const [ruc, setRuc] = useState("");
+  const [telefono, setTelefono] = useState("");
+  const [error, setError] = useState("");
+
+  const crear = useMutation({
+    mutationFn: (input: PersonaInput) => crearPersona(input),
+    onSuccess: (cod, input) => {
+      toast.success("Cliente creado");
+      onCreado(cod, input.nombre ?? `Persona ${cod}`);
+    },
+    onError: (e: Error) => {
+      setError(e.message);
+      toast.error(e.message);
+    },
+  });
+
+  function onSubmit(e: FormEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    const n = nombre.trim();
+    if (!n) return setError("Escribí el nombre del cliente");
+    setError("");
+    crear.mutate({
+      tipo_persona: tipo,
+      nombre: n,
+      nombre_fantasia: n,
+      sexo: null,
+      fec_nacimiento: null,
+      nro_telefono: telefono.trim() || null,
+      direccion: null,
+      nro_ci: ci.trim() || null,
+      nro_ruc: ruc.trim() || null,
+      ind_cliente_proveedor: "C",
+      cod_empresa: COD_EMPRESA,
+    });
+  }
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && !crear.isPending && onClose()}>
+      <DialogContent className="max-h-[90vh] overflow-auto sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Nuevo cliente</DialogTitle>
+          <DialogDescription>Cargá lo mínimo; el resto se completa en Personas.</DialogDescription>
+        </DialogHeader>
+        <form onSubmit={onSubmit} className="space-y-3">
+          <div className="grid grid-cols-2 gap-2">
+            <Button
+              type="button"
+              variant={tipo === "F" ? "default" : "outline"}
+              className="h-11 sm:h-9"
+              onClick={() => setTipo("F")}
+            >
+              Persona física
+            </Button>
+            <Button
+              type="button"
+              variant={tipo === "J" ? "default" : "outline"}
+              className="h-11 sm:h-9"
+              onClick={() => setTipo("J")}
+            >
+              Persona jurídica
+            </Button>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="nc-nombre">Nombre o razón social</Label>
+            <Input
+              id="nc-nombre"
+              value={nombre}
+              onChange={(e) => setNombre(e.target.value)}
+              autoFocus
+            />
+          </div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="nc-ci">CI</Label>
+              <Input
+                id="nc-ci"
+                value={ci}
+                onChange={(e) => setCi(e.target.value)}
+                placeholder="Opcional"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="nc-ruc">RUC</Label>
+              <Input
+                id="nc-ruc"
+                value={ruc}
+                onChange={(e) => setRuc(e.target.value)}
+                placeholder="Opcional"
+              />
+            </div>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="nc-tel">Celular</Label>
+            <Input
+              id="nc-tel"
+              value={telefono}
+              onChange={(e) => setTelefono(e.target.value)}
+              placeholder="Opcional"
+            />
+          </div>
+          {error && (
+            <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              {error}
+            </p>
+          )}
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={onClose} disabled={crear.isPending}>
+              Cancelar
+            </Button>
+            <Button type="submit" disabled={crear.isPending}>
+              {crear.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Crear cliente
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
     </Dialog>
   );
 }
@@ -851,6 +1303,7 @@ function AgregarCobro({
   yaHayCobros,
   onAdd,
   selectRef,
+  armarRef,
 }: {
   formas: { id_forma: number; descripcion: string | null }[];
   restante: number;
@@ -858,6 +1311,8 @@ function AgregarCobro({
   onAdd: (c: Cobro) => void;
   // Ref al selector de forma de cobro: el modal lo enfoca al abrirse.
   selectRef?: Ref<HTMLButtonElement>;
+  // El padre lo usa para tomar el cobro pendiente al registrar la venta.
+  armarRef?: MutableRefObject<(() => Cobro | null) | null>;
 }) {
   const [idForma, setIdForma] = useState<number | null>(null);
   const [monto, setMonto] = useState<number | null>(null);
@@ -892,18 +1347,19 @@ function AgregarCobro({
     else setMonto((prev) => prev ?? restante);
   }
 
-  function add() {
+  // Arma el cobro con lo cargado y limpia el subformulario; null si no es válido.
+  function armar(): Cobro | null {
     setErr("");
     const totalImputado = esEfectivo ? imputadoEfectivo : monto;
-    if (!idForma || totalImputado == null || totalImputado <= 0) return;
+    if (!idForma || totalImputado == null || totalImputado <= 0) return null;
     // Solo se controla el monto cuando ya hay otra forma de cobro (reparto entre
     // varias): el primer cobro puede tomar cualquier monto sin tope.
     if (!esEfectivo && yaHayCobros && totalImputado - restante > 0.5) {
       setErr(`Monto permitido: ₲ ${fmtGs(restante)}`);
-      return;
+      return null;
     }
     const desc = formas.find((f) => f.id_forma === idForma)?.descripcion ?? "Cobro";
-    onAdd({
+    const cobro: Cobro = {
       id_forma: idForma,
       desc_forma: desc,
       total: totalImputado,
@@ -912,17 +1368,25 @@ function AgregarCobro({
       efectivo_recibido: esEfectivo ? efectivoRecibido : null,
       efectivo_vuelto: vuelto,
       observacion: null,
-    });
+    };
     setIdForma(null);
     setMonto(null);
     setIdBanco(null);
     setNroTransaccion("");
     setEfectivoRecibido(null);
+    return cobro;
   }
+
+  function add() {
+    const c = armar();
+    if (c) onAdd(c);
+  }
+
+  if (armarRef) armarRef.current = armar;
 
   return (
     <div className="space-y-2 rounded-lg border border-dashed border-border p-2.5">
-      <div className="grid grid-cols-2 gap-2">
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
         <SelectorModal
           triggerRef={selectRef}
           titulo="Forma de cobro"
@@ -949,20 +1413,30 @@ function AgregarCobro({
 
       {idForma != null &&
         (esEfectivo ? (
-          <div className="grid grid-cols-2 gap-2">
+          <div className="space-y-2">
             <InputMonto
               value={efectivoRecibido}
               onValueChange={setEfectivoRecibido}
               maxDecimals={0}
               placeholder="Recibido"
-              className="h-9 font-mono"
+              aria-label="Efectivo recibido"
+              className="h-11 font-mono sm:h-9"
             />
-            <div className="grid h-9 place-items-center rounded-md bg-muted/40 text-sm">
-              Vuelto ₲ {fmtGs(vuelto)}
+            <div
+              className={`flex items-baseline justify-between rounded-lg px-3 py-2 ${
+                (vuelto ?? 0) > 0
+                  ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400"
+                  : "bg-muted/40 text-muted-foreground"
+              }`}
+            >
+              <span className="text-sm font-medium">Vuelto</span>
+              <span className="font-display text-2xl font-bold tabular-nums">
+                ₲ {fmtGs(vuelto)}
+              </span>
             </div>
           </div>
         ) : (
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             <SelectorModal
               titulo="Banco"
               descripcion="Banco de la transacción."

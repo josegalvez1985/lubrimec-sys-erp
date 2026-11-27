@@ -1,3 +1,4 @@
+import { coincide as coincideTexto, tokensBusqueda } from "@/lib/busqueda";
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { BadgePercent, ImageIcon, Search, X } from "lucide-react";
@@ -59,12 +60,10 @@ export function PreciosMayoristasView() {
     r.precio_venta == null ? null : Math.round(r.precio_venta * (1 - porcDesc / 100));
 
   const coincide = (r: PrecioMayorista, ignora: "marca" | "rubro" | "visc" | null) => {
-    const q = busqueda.trim().toLowerCase();
+    const q = tokensBusqueda(busqueda);
     if (
-      q &&
-      !`${r.articulo ?? ""} ${r.marca ?? ""} ${r.rubro ?? ""} ${r.viscosidad ?? ""}`
-        .toLowerCase()
-        .includes(q)
+      q.length > 0 &&
+      !coincideTexto(`${r.articulo ?? ""} ${r.marca ?? ""} ${r.rubro ?? ""} ${r.viscosidad ?? ""}`, q)
     )
       return false;
     if (ignora !== "marca" && marcaSel.size > 0 && !marcaSel.has(r.marca ?? "")) return false;
@@ -243,6 +242,7 @@ export function PreciosMayoristasView() {
             <DataTable
               columns={COLUMNAS}
               rows={filasFiltradas}
+              globalSearch={false}
               getRowId={(r) => r.id_articulo}
               exportName="precios-mayoristas"
               initialSort={{ key: "cantidad_venta", dir: "desc" }}

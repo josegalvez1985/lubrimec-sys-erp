@@ -9,6 +9,7 @@ import { Faceta } from "@/components/ui/faceta";
 import { ArticuloImgModal } from "@/components/articulo-img-modal";
 import { getSesion, listarExistencia, type ExistenciaArticulo } from "@/lib/api";
 import { etiquetaSiNo } from "@/lib/utils";
+import { tokensBusqueda, coincide as coincideTexto } from "@/lib/busqueda";
 
 const COD_EMPRESA = 24;
 
@@ -64,11 +65,12 @@ export function ExistenciaArticulosView() {
 
   type ClaveFaceta = "rubro" | "oem" | "activo" | "estado";
 
+  const tokens = useMemo(() => tokensBusqueda(busqueda), [busqueda]);
+
   const coincide = (r: ExistenciaArticulo, ignora: ClaveFaceta | null) => {
-    const q = busqueda.trim().toLowerCase();
-    if (q) {
-      const txt = `${r.desc_articulo ?? ""} ${r.codigo_oem ?? ""}`.toLowerCase();
-      if (!txt.includes(q)) return false;
+    if (tokens.length > 0) {
+      const txt = `${r.id_articulo} ${r.desc_articulo ?? ""} ${r.codigo_oem ?? ""}`;
+      if (!coincideTexto(txt, tokens)) return false;
     }
     // Cantidad negativa (vendido sin compra cargada) cuenta como "Sin", igual que en Suba de Precios.
     const hayExistencia = (r.cantidad ?? 0) > 0;
@@ -168,7 +170,7 @@ export function ExistenciaArticulosView() {
     },
     {
       key: "codigo_oem",
-      header: "Cód. OEM",
+      header: "Código OEM",
       accessor: (r) => r.codigo_oem ?? "",
       render: (r) => r.codigo_oem || "—",
     },
@@ -384,7 +386,7 @@ export function ExistenciaArticulosView() {
               />
             )}
             <Faceta
-              titulo="Cód. OEM"
+              titulo="Código OEM"
               valores={facetOem}
               seleccion={oemSel}
               onToggle={(v) => toggle(oemSel, setOemSel, v)}
@@ -403,6 +405,7 @@ export function ExistenciaArticulosView() {
               columns={COLUMNAS}
               rows={filasFiltradas}
               getRowId={(r) => r.id_articulo}
+              globalSearch={false}
               exportName="existencia-articulos"
               initialSort={{ key: "cantidad", dir: "asc" }}
             />

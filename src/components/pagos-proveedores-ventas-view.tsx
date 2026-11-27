@@ -1,3 +1,4 @@
+import { coincide as coincideTexto, tokensBusqueda } from "@/lib/busqueda";
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { HandCoins, Search, X } from "lucide-react";
@@ -40,8 +41,8 @@ export function PagosProveedoresVentasView() {
   const filas = useMemo(() => data?.pagos ?? [], [data]);
 
   const coincide = (r: PagoProveedorVenta, ignora: "proveedor" | null) => {
-    const q = busqueda.trim().toLowerCase();
-    if (q && !`${r.descripcion ?? ""} ${r.nombre ?? ""}`.toLowerCase().includes(q)) return false;
+    const q = tokensBusqueda(busqueda);
+    if (q.length > 0 && !coincideTexto(`${r.descripcion ?? ""} ${r.nombre ?? ""}`, q)) return false;
     if (ignora !== "proveedor" && proveedorSel.size > 0 && !proveedorSel.has(r.nombre ?? ""))
       return false;
     return true;
@@ -190,6 +191,7 @@ export function PagosProveedoresVentasView() {
             <DataTable
               columns={COLUMNAS}
               rows={filasFiltradas}
+              globalSearch={false}
               getRowId={(r) => `${r.id_articulo}-${r.nombre}`}
               exportName="pagos-proveedores-ventas"
               initialSort={{ key: "descripcion", dir: "asc" }}

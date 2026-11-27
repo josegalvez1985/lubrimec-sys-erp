@@ -1,3 +1,4 @@
+import { coincide as coincideTexto, tokensBusqueda } from "@/lib/busqueda";
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { PackageSearch, Search, X } from "lucide-react";
@@ -25,12 +26,13 @@ export function ArticulosInventarioView() {
   const filas = useMemo(() => data ?? [], [data]);
 
   const coincide = (r: ArticuloInventario, ignora: "marca" | "rubro" | null) => {
-    const q = busqueda.trim().toLowerCase();
+    const q = tokensBusqueda(busqueda);
     if (
-      q &&
-      !`${r.id_articulo} ${r.descripcion ?? ""} ${r.codigo_oem ?? ""} ${r.marca ?? ""} ${r.rubro ?? ""}`
-        .toLowerCase()
-        .includes(q)
+      q.length > 0 &&
+      !coincideTexto(
+        `${r.id_articulo} ${r.descripcion ?? ""} ${r.codigo_oem ?? ""} ${r.marca ?? ""} ${r.rubro ?? ""}`,
+        q,
+      )
     )
       return false;
     if (ignora !== "marca" && marcaSel.size > 0 && !marcaSel.has(r.marca ?? "")) return false;
@@ -209,6 +211,7 @@ export function ArticulosInventarioView() {
             <DataTable
               columns={COLUMNAS}
               rows={filasFiltradas}
+              globalSearch={false}
               getRowId={(r) => r.id_articulo}
               exportName="articulos-para-inventario"
               initialSort={{ key: "descripcion", dir: "asc" }}

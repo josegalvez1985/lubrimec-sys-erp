@@ -33,6 +33,7 @@ import { exportarExcel, exportarPdf } from "@/lib/export";
 import { ArticuloImgModal } from "@/components/articulo-img-modal";
 
 const COD_EMPRESA = 24;
+const PASO_FILAS = 50; // ventas que se dibujan por tanda (mismo paso que el DataTable)
 
 const fmtN = (n: number | null | undefined) =>
   n == null ? "" : Math.round(n).toLocaleString("es-PY");
@@ -137,6 +138,19 @@ export function VentasArticulosView() {
   });
 
   const ventas = ventasQuery.data?.ventas ?? [];
+
+  // Se dibujan de a 50 ventas ("Mostrar más"), en tarjetas y en tabla: dibujar el
+  // período entero (dos veces) trababa la pantalla. Totales y Excel usan TODAS.
+  // Cambiar los filtros vuelve a las primeras 50.
+  const [limite, setLimite] = useState(PASO_FILAS);
+  const claveLimite = JSON.stringify(filtros);
+  const [claveAnterior, setClaveAnterior] = useState(claveLimite);
+  if (claveAnterior !== claveLimite) {
+    setClaveAnterior(claveLimite);
+    setLimite(PASO_FILAS);
+  }
+  const ventasDibujadas = ventas.slice(0, limite);
+  const restantes = ventas.length - ventasDibujadas.length;
   const fechaDefault = ventasQuery.data?.fechaDefault ?? null;
   // ver_campos lo resuelve el backend con fn_verifica_campo (pág 54 del APEX).
   const veCampos = ventasQuery.data?.veCampos ?? false;
@@ -304,7 +318,7 @@ export function VentasArticulosView() {
           <>
           {/* Móvil: tarjetas (la grilla de 16 columnas no entra en un teléfono) */}
           <div className="space-y-2 md:hidden">
-            {ventas.map((v, i) => (
+            {ventasDibujadas.map((v, i) => (
               <div key={`${v.id_articulo ?? ""}-${i}`} className="rounded-xl border border-border bg-background p-3">
                 <div className="flex items-start justify-between gap-2">
                   <p className="flex min-w-0 flex-1 items-start gap-2 text-sm font-semibold">
@@ -386,7 +400,7 @@ export function VentasArticulosView() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {ventas.map((v, i) => (
+              {ventasDibujadas.map((v, i) => (
                 <TableRow key={`${v.id_articulo ?? ""}-${i}`}>
                   {columnas.map((c) => (
                     <TableCell
@@ -424,6 +438,20 @@ export function VentasArticulosView() {
             </TableFooter>
           </Table>
           </div>
+          {restantes > 0 && (
+            <div className="flex flex-wrap items-center justify-center gap-2 p-3">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setLimite((l) => l + PASO_FILAS)}
+              >
+                Mostrar {Math.min(PASO_FILAS, restantes)} más
+              </Button>
+              <Button type="button" variant="ghost" onClick={() => setLimite(ventas.length)}>
+                Mostrar todas ({ventas.length})
+              </Button>
+            </div>
+          )}
           </>
         )}
         {ventasQuery.isFetching && !ventasQuery.isLoading && (
